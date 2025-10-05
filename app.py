@@ -115,6 +115,13 @@ def main():
                 st.success(f"✅ Found {img_count} image(s) in folder")
             elif input_folder:
                 st.error("❌ Folder does not exist")
+
+            output_folder = st.text_input(
+                "Output Folder Path",
+                placeholder="/path/to/output/folder",
+                help="Path where generated mockups will be saved"
+            )
+            
         elif mode == "📂 Folder of Folders":
             parent_folder = st.text_input(
                 "Parent Folder Path",
@@ -152,12 +159,7 @@ def main():
                 value="generated_mockup"
             )
             output_folder = None
-        elif mode == "📂 Use Folder":
-            output_folder = st.text_input(
-                "Output Folder Path",
-                placeholder="/path/to/output/folder",
-                help="Path where generated mockups will be saved"
-            )
+
     default_prompt = MOCKUP_TYPES[mockup_type]["prompt"]
     edited_prompt = st.text_area(
         "📝 Edit or Customize the Prompt",
