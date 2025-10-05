@@ -139,3 +139,26 @@ camera with a confident expression. The skirt settles around her in luxurious
 folds, and the dupatta falls softly into place as a delicate finishing touch,
 ending on a powerful and serene final pose.
 """
+
+CORD_SET_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a women’s cord set, based on the [UPLOADED CORD SET IMAGE HERE]. The final output MUST be indistinguishable from a professional 8K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4). The image must be suitable for luxury fashion campaigns, editorial magazines, and high-resolution social media platforms (Instagram, WhatsApp).
+Absolute Priority: The cord set must be replicated exactly, pixel-for-pixel, from the uploaded reference. This includes the fabric’s weave, embroidery, print, and finishing. Do not invent or hallucinate any new motifs, seams, or textures. Avoid generic filler designs or mismatched details.
+Full-Length Human Model Requirement:
+- The output MUST show a complete human model from head to toe—never cropped, never half mannequin, never mixed with a hanger.
+- The model must look alive and natural with organic posture, lifelike skin textures, realistic eyes, and flowing hair. No mannequin features, doll-like faces, stiff limbs, or artificial joints.
+- The stance must be elegant yet natural, highlighting both the top and bottom of the cord set clearly.
+Garment Styling:
+- Top: Follow the exact design of the uploaded image (length, neckline, button placement, sleeves, and cut).
+- Bottom: Match the cut and volume (palazzo, straight pants, or flared), ensuring the drape and print placement are accurate.
+- Ensure wrinkle-free finishing with crisp tailoring and luxury presentation.
+Accessories (Minimal and Optional): Subtle earrings, a sleek bracelet, rings, or heels. These should enhance but never distract from the cord set.
+Pose & Expression:
+- A graceful young Indian female model, photographed in a full-body, front-facing or three-quarter stance, standing naturally with soft movement.
+- A confident, approachable smile or poised expression consistent with luxury editorials.
+- No cropped torsos, no cut-off legs, no floating heads, no mannequins.
+Technical & Aesthetic Requirements:
+- Resolution: 8K ultra-sharp, capturing every thread, embroidery, and print detail.
+- Lighting: Professional studio lighting—soft yet sculpted, emphasizing fabric textures and natural sheen. Subtle rim light for depth. No flat or harsh shadows.
+- Background: Immaculate seamless white or neutral-toned backdrop to ensure the cord set is the sole focus.
+- Depth of Field: Shallow background blur, with model and garment in crisp prime-lens focus.
+Final Requirement:
+Completely remove all product tags, yellow hanging tags, and labels from the final output."""

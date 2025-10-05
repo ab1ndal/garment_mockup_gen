@@ -10,7 +10,8 @@ from mockup_generator.prompt import (
     SAREE_PROMPT,
     KURTA_PAJAMA_PROMPT,
     KURTI_PROMPT,
-    MEN_SHIRT_PROMPT
+    MEN_SHIRT_PROMPT,
+    CORD_SET_PROMPT,
 )
 
 # Set page config
@@ -37,6 +38,10 @@ MOCKUP_TYPES = {
     "MEN_SHIRT": {
         "prompt": MEN_SHIRT_PROMPT,
         "description": "Men's Formal/Informal Shirt"
+    },
+    "CORD_SET": {
+        "prompt": CORD_SET_PROMPT,
+        "description": "Women's Cord Set"
     }
 }
 
@@ -66,10 +71,10 @@ def main():
     
     # Mode selection
     mode = st.radio(
-        "Input Mode",
-        ["📤 Upload Files", "📁 Use Folders"],
-        horizontal=True,
-        help="Choose to upload files directly or use existing folders"
+    "Input Mode",
+    ["📤 Upload Files", "📁 Use Folder", "📂 Folder of Folders"],
+    horizontal=True,
+    help="Choose to upload files directly, use a single folder, or process multiple subfolders"
     )
     
     # Create two columns for the layout
@@ -97,7 +102,7 @@ def main():
                         st.image(image, caption=f"Image {idx+1}", use_container_width=True)
                 if len(uploaded_files) > 3:
                     st.info(f"+ {len(uploaded_files) - 3} more image(s)")
-        else:
+        elif mode == "📁 Use Folder":
             # Folder input
             input_folder = st.text_input(
                 "Input Folder Path",
@@ -110,6 +115,23 @@ def main():
                 st.success(f"✅ Found {img_count} image(s) in folder")
             elif input_folder:
                 st.error("❌ Folder does not exist")
+        elif mode == "📂 Folder of Folders":
+            parent_folder = st.text_input(
+                "Parent Folder Path",
+                placeholder="/path/to/parent/folder",
+                help="Path to folder containing multiple garment subfolders"
+            )
+            output_folder = st.text_input(
+                "Output Folder Path",
+                placeholder="/path/to/output/folder",
+                help="Path where all generated mockups will be saved"
+            )
+
+            process_mode = st.radio(
+                "Processing Mode",
+                ["Together (combine images in each subfolder)", "One by One (each image separately)"],
+                help="Choose whether to process images jointly or individually within each subfolder"
+            )
     
     with col2:
         # Mockup type selection
@@ -130,7 +152,7 @@ def main():
                 value="generated_mockup"
             )
             output_folder = None
-        else:
+        elif mode == "📂 Use Folder":
             output_folder = st.text_input(
                 "Output Folder Path",
                 placeholder="/path/to/output/folder",
@@ -151,9 +173,16 @@ def main():
             if not uploaded_files:
                 st.error("Please upload at least one image!")
                 return
-        else:
+        elif mode == "📂 Use Folder":
             if not input_folder or not Path(input_folder).exists():
                 st.error("Please provide a valid input folder path!")
+                return
+            if not output_folder:
+                st.error("Please provide an output folder path!")
+                return
+        elif mode == "📂 Folder of Folders":
+            if not parent_folder or not Path(parent_folder).exists():
+                st.error("Please provide a valid parent folder path!")
                 return
             if not output_folder:
                 st.error("Please provide an output folder path!")
@@ -204,7 +233,7 @@ def main():
                             )
                         else:
                             st.error("Failed to generate mockup. Please try again.")
-                else:
+                elif mode == "📂 Use Folder":
                     # Folder mode: use specified folders
                     input_path = Path(input_folder)
                     output_path = Path(output_folder)
@@ -233,6 +262,27 @@ def main():
                     else:
                         st.error("Failed to generate mockup. Please try again.")
                         
+                elif mode == "📂 Folder of Folders":
+
+                    parent_path = Path(parent_folder)
+                    output_path = Path(output_folder)
+                    output_path.mkdir(parents=True, exist_ok=True)
+
+                    subfolders = [p for p in parent_path.iterdir() if p.is_dir()]
+                    st.info(f"Found {len(subfolders)} subfolders to process")
+
+                    for sub in subfolders:
+                        sub_output = output_path
+                        sub_output.mkdir(parents=True, exist_ok=True)
+
+                        generate_image_for_product(
+                            product_dir=sub,
+                            prompt=edited_prompt,
+                            out_dir=sub_output,
+                            process_image_sep=(process_mode == "One by One (each image separately)")
+                        )
+
+                    st.success(f"✅ Finished processing {len(subfolders)} subfolders. Results saved in {output_path}")
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")
                 st.exception(e)  # This will show the full traceback for debugging
