@@ -10,12 +10,13 @@ from google.genai import errors
 import time
 from random import random
 from mockup_generator.prompt import *
+import streamlit as st
 
 load_dotenv()
 
 MAX_SIDE = 1024
 
-API_KEY = os.getenv("GOOGLE_API_KEY")
+API_KEY = os.getenv("GOOGLE_API_KEY") or st.secrets["GOOGLE_API_KEY"]
 if not API_KEY:
     raise RuntimeError("GOOGLE_API_KEY is not set")
 
