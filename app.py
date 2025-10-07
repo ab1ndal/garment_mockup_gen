@@ -121,7 +121,7 @@ def main():
                 placeholder="/path/to/output/folder",
                 help="Path where generated mockups will be saved"
             )
-            
+
         elif mode == "📂 Folder of Folders":
             parent_folder = st.text_input(
                 "Parent Folder Path",
@@ -169,7 +169,7 @@ def main():
     )
 
     # Generate button
-    if st.button("✨ Generate Mockup", type="primary", use_container_width=True):
+    if st.button("✨ Generate Mockup", type="primary", width="stretch"):
         # Validation
         if mode == "📤 Upload Files":
             if not uploaded_files:
@@ -231,7 +231,7 @@ def main():
                                 data=img_byte_arr.getvalue(),
                                 file_name=f"{output_name}.png",
                                 mime="image/png",
-                                use_container_width=True
+                                width="stretch"
                             )
                         else:
                             st.error("Failed to generate mockup. Please try again.")
