@@ -14,7 +14,7 @@ Style: Professional, joyful, and clean. Winter color palette of whites, soft blu
 
 MEN_SHIRT_PROMPT="""
 Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a men’s full-sleeve shirt, based on the [UPLOADED IMAGE HERE]. The shirt must precisely incorporate every garment detail explicitly visible and present in the uploaded image, including fabric texture, weave, collar style, placket design, cuff structure, stitching lines, pocket shape (if any), and button placement.  
-The final output MUST be indistinguishable from a professional 8K photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury menswear brand’s e-commerce catalog and high-resolution social media (Instagram, WhatsApp).  
+The final output MUST be indistinguishable from a professional 4K photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury menswear brand’s e-commerce catalog and high-resolution social media (Instagram, WhatsApp).  
 
 Absolute Priority: Every garment detail visible in the [UPLOADED IMAGE HERE] must be an exact, perfect, pixel-for-pixel replication of the reference. This includes the precise fabric weave, collar roll, cuff folds, button sheen, and any visible embellishments or patterns. DO NOT HALLUCINATE ANY NEW GARMENTS, LAYERS, PATTERNS, OR ELEMENTS NOT PRESENT IN THE REFERENCE. Avoid generic substitutes or deviations. No changes to print, color, or weave are allowed.  
 Preserve any logos or design elements that are part of the shirt itself, but remove all external product tags, price tags, or branding labels not intrinsic to the garment.  
@@ -25,7 +25,7 @@ Garment & Styling: The shirt should be impeccably tailored, wrinkle-free, and ex
 
 Accessories: Minimal to none. If visible in the reference, subtle additions like a sleek watch or simple cufflinks may be included, but no ties, jackets, or unrelated items.  
 
-Technical & Aesthetic Requirements: 8K resolution, razor-sharp, hyper-detailed clarity throughout, capturing every stitch, seam, thread, and micro-texture.  
+Technical & Aesthetic Requirements: 4K resolution, razor-sharp, hyper-detailed clarity throughout, capturing every stitch, seam, thread, and micro-texture.  
 
 Lighting: Bright, soft, professional studio lighting designed for catalog photography. Even illumination across the shirt to show true fabric color and weave. No harsh shadows or dramatic rim lighting.  
 
@@ -46,7 +46,7 @@ Garment & Styling: The top should appear perfectly tailored and wrinkle-free, wi
 
 Accessories: Minimal or none. Only include subtle, complementary items if they enhance realism (e.g., small earrings or a delicate bracelet). Avoid any outerwear or accessories that obscure the top.  
 
-Technical & Aesthetic Requirements: 8K resolution, sharp focus, and extreme detail capturing micro-texture and stitch definition. Lighting must be soft, even, and professional — no harsh shadows or distracting highlights.  
+Technical & Aesthetic Requirements: 4K resolution, sharp focus, and extreme detail capturing micro-texture and stitch definition. Lighting must be soft, even, and professional — no harsh shadows or distracting highlights.  
 
 Background: Clean white or neutral-toned studio backdrop ideal for e-commerce use. Alternatively, a subtle lifestyle setting (e.g., minimal interior, soft natural light) is acceptable if it enhances presentation without distracting from the top.  
 
@@ -77,7 +77,7 @@ Garment & Detailing:
 - Pocket square (if shown in reference) must be reproduced with the same fold and fabric.  
 
 Technical & Aesthetic Requirements:  
-- Output must be indistinguishable from a professional 8K editorial photograph, as if captured by a full-frame DSLR with an 85mm f/1.4 lens.  
+- Output must be indistinguishable from a professional 4K editorial photograph, as if captured by a full-frame DSLR with an 85mm f/1.4 lens.  
 - Lighting: Soft professional studio lighting with subtle rim lighting to emphasize contours and jacket textures. No harsh shadows.  
 - Background: Neutral or white seamless studio backdrop to provide depth separation and maintain jacket focus.  
 - Depth of Field: Shallow, ensuring sharp focus on the jacket and slight separation from the background.  
@@ -86,13 +86,13 @@ Technical & Aesthetic Requirements:
 
 KURTA_PAJAMA_PROMPT="""
 Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a men's Kurta Pajama set, based on the [UPLOADED IMAGE HERE]. The set will precisely incorporate all garments explicitly visible and present in the uploaded image, along with white pajama bottoms and juti footwear.
-The final output MUST be indistinguishable from a professional 8K photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury Indian ethnicwear brand’s magazine and high-resolution social media (Instagram, WhatsApp).
+The final output MUST be indistinguishable from a professional 4K photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury Indian ethnicwear brand’s magazine and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: Every garment piece visible in the [UPLOADED IMAGE HERE] must be an exact, perfect, pixel-for-pixel replication of the ones in the reference. This includes precise fabric texture, every single motif, intricate collar and placket details, and any specific embellishments like scattered stones, sequins, or embroidery on the body of each garment. DO NOT HALLUCINATE ANY NEW GARMENTS, LAYERS, PATTERNS, OR DEVIATE FROM THE REFERENCE DESIGN. Avoid generic patterns. No deviation in print or weave. Absolutely no patterns or elements not present in the uploaded image. The pajama bottoms should be a clean, crisp white.
 Model & Pose: A graceful young Indian male model with a subtle, gentle, confident smile. Full-length, head-to-toe shot, front view, in a natural, poised, and elegant stance that beautifully highlights the Kurta Pajama’s elegance and flow and the fabric's drape.
 Garment & Styling: The Kurta Pajama set should be impeccably tailored, with crisp lines, wrinkle-free fabric, and exude a luxurious finish with professional steam and styling. The white pajama bottoms should be visible and complement the Kurta.
 Footwear: The model should be wearing traditional Indian juti footwear. The juti should be elegant and complement the overall outfit, with realistic textures and detailing.
 Accessories: Minimal yet exceptionally classy—select from a statement watch, elegant cufflinks (if applicable to the Kurta style), or a subtle pocket square. The accessories should enhance, not distract from, the Kurta Pajama set. Ensure they have a realistic sheen and reflection.
-Technical & Aesthetic Requirements: 8K resolution, with razor-sharp, hyper-detailed quality throughout, capturing every individual thread, weave, and embellishment with utmost clarity, depth, and micro-texture.
+Technical & Aesthetic Requirements: 4K resolution, with razor-sharp, hyper-detailed quality throughout, capturing every individual thread, weave, and embellishment with utmost clarity, depth, and micro-texture.
 Lighting: Exquisite, soft, professional editorial studio lighting. Artfully sculpted light to emphasize fabric textures, the graceful drape flow, and the subtle sparkle/sheen of any embellishments. Employ subtle rim lighting to enhance contours. Absolutely avoid harsh shadows or flat lighting.
 Background: Impeccably clean, seamless white or neutral-toned studio backdrop, creating depth separation and allowing the Kurta Pajama to be the absolute focal point. No distracting elements.
 Depth of Field: Shallow depth of field to subtly blur the background, making the model and Kurta Pajama pop, consistent with prime lens photography.
@@ -100,13 +100,13 @@ Depth of Field: Shallow depth of field to subtly blur the background, making the
 
 KURTA_PAJAMA_CHILD_PROMPT="""
 Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of an indian boy's Kurta Pajama set, based on the [UPLOADED IMAGE HERE]. The set will precisely incorporate all garments explicitly visible and present in the uploaded image, along with white pajama bottoms and juti footwear.
-The final output MUST be indistinguishable from a professional 8K photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury Indian ethnicwear brand’s magazine and high-resolution social media (Instagram, WhatsApp).
+The final output MUST be indistinguishable from a professional 4K photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury Indian ethnicwear brand’s magazine and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: Every garment piece visible in the [UPLOADED IMAGE HERE] must be an exact, perfect, pixel-for-pixel replication of the ones in the reference. This includes precise fabric texture, every single motif, intricate collar and placket details, and any specific embellishments like scattered stones, sequins, or embroidery on the body of each garment. DO NOT HALLUCINATE ANY NEW GARMENTS, LAYERS, PATTERNS, OR DEVIATE FROM THE REFERENCE DESIGN. Avoid generic patterns. No deviation in print or weave. Absolutely no patterns or elements not present in the uploaded image. The pajama bottoms should be a clean, crisp white.
 Model & Pose: A graceful young Indian boy model with a subtle, gentle, confident smile. Full-length, head-to-toe shot, front view, in a natural, poised, and elegant stance that beautifully highlights the Kurta Pajama’s elegance and flow and the fabric's drape.
 Garment & Styling: The Kurta Pajama set should be impeccably tailored, with crisp lines, wrinkle-free fabric, and exude a luxurious finish with professional steam and styling. The white pajama bottoms should be visible and complement the Kurta.
 Footwear: The model should be wearing traditional Indian juti footwear. The juti should be elegant and complement the overall outfit, with realistic textures and detailing.
 Accessories: Minimal. The accessories should enhance, not distract from, the Kurta Pajama set. Ensure they have a realistic sheen and reflection.
-Technical & Aesthetic Requirements: 8K resolution, with razor-sharp, hyper-detailed quality throughout, capturing every individual thread, weave, and embellishment with utmost clarity, depth, and micro-texture.
+Technical & Aesthetic Requirements: 4K resolution, with razor-sharp, hyper-detailed quality throughout, capturing every individual thread, weave, and embellishment with utmost clarity, depth, and micro-texture.
 Lighting: Exquisite, soft, professional editorial studio lighting. Artfully sculpted light to emphasize fabric textures, the graceful drape flow, and the subtle sparkle/sheen of any embellishments. Employ subtle rim lighting to enhance contours. Absolutely avoid harsh shadows or flat lighting.
 Background: Impeccably clean, seamless white or neutral-toned studio backdrop, creating depth separation and allowing the Kurta Pajama to be the absolute focal point. No distracting elements.
 Depth of Field: Shallow depth of field to subtly blur the background, making the model and Kurta Pajama pop, consistent with prime lens photography.
@@ -116,10 +116,10 @@ This is a size 2 - 10 Kurta Pajama.
 REFINE_PROMPT = """
 Remove the pocket and pocket square from the mockup. 
 Regerate by replicating the rest of the mockup exactly. 
-The result should be in 8k quality.
+The result should be in 4k quality.
 """
 
-SAREE_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a saree, based on the [UPLOADED SAREE IMAGE HERE]. The final output MUST be indistinguishable from a professional 8K photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury Indian ethnicwear brand’s magazine and high-resolution social media (Instagram, WhatsApp).
+SAREE_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a saree, based on the [UPLOADED SAREE IMAGE HERE]. The final output MUST be indistinguishable from a professional 4K photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury Indian ethnicwear brand’s magazine and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: The saree must be an exact, perfect, pixel-for-pixel replication of the one in the [UPLOADED SAREE IMAGE HERE]. This includes precise fabric texture, every single motif, intricate border details, and any specific embellishments like scattered stones, sequins, or embroidery on the body of the saree. DO NOT HALLUCINATE ANY NEW PATTERNS OR DEVIATE FROM THE REFERENCE SAREE'S DESIGN. Avoid generic saree patterns. No deviation in print or weave. Absolutely no patterns not present in the uploaded image.
 Absolute Model Realism Requirement: The person must look alive, natural, and fully human. Ensure natural skin texture, facial micro-expressions, organic body posture, and realistic hair flow. Avoid all mannequin-like features such as plastic or glossy skin, blank doll-like eyes, stiff poses, artificial joints, or lifeless expressions. The model should exude warmth and presence, as if photographed during a real luxury fashion editorial shoot.
 Pallu and Borders: The pallu and borders must be an exact continuation of the uploaded reference. Replicate all motifs, borders, colors, and weaves exactly as visible. If a section is partially hidden in the reference, extend the same motifs and borders logically and seamlessly across the saree. Do not introduce any plain sections, simplified designs, or solid fills. The saree’s border and pallu must remain continuous and consistent with the uploaded reference at all times.
@@ -127,7 +127,7 @@ Model & Pose: A graceful young Indian female model with a subtle, gentle, confid
 Garment & Styling: The saree should be draped in the traditional Nivi style, with the pallu neatly draped over the back. Ensure pleats and drape are crisp, wrinkle-free, and exude a luxurious finish with professional steam and styling.
 Blouse Styles: Since the blouse may not be fully visible in reference images, generate a blouse design that perfectly complements the saree while maintaining a high-fashion editorial look (AI to randomize): Classic half-sleeve, sleeveless, boat-neck, sweetheart neckline, halter-neck, off-shoulder, high-neck, deep back, corset-style, or an elaborately embellished designer blouse.
 Accessories: Minimal yet exceptionally classy—select from statement earrings, elegant bangles/bracelets, a subtle bindi, or tasteful heels. The accessories should enhance, not distract from, the saree. Ensure they have a realistic sheen and reflection.
-Technical & Aesthetic Requirements: 8K resolution, with razor-sharp, hyper-detailed quality throughout, capturing every individual thread, weave, and embellishment with utmost clarity, depth, and micro-texture.
+Technical & Aesthetic Requirements: 4K resolution, with razor-sharp, hyper-detailed quality throughout, capturing every individual thread, weave, and embellishment with utmost clarity, depth, and micro-texture.
 Lighting: Exquisite, soft, professional editorial studio lighting. Artfully sculpted light to emphasize fabric textures, the graceful drape flow, and the subtle sparkle/sheen of any embellishments. Employ subtle rim lighting to enhance contours. Absolutely avoid harsh shadows or flat lighting.
 Background: Impeccably clean, seamless white or neutral-toned studio backdrop, creating depth separation and allowing the saree to be the absolute focal point. No distracting elements.
 Depth of Field: Shallow depth of field to subtly blur the background, making the model and saree pop, consistent with prime lens photography.
@@ -147,7 +147,7 @@ KURTI_PROMPT = """
     Exclusions: Do not add any belt or other elements not present in the original reference image. Remove any background elements in the reference image or any product tags in the image.
     Technical & Aesthetic Requirements:
     Overall Look: The image must be rich, polished, and photorealistic. Avoid any artificial or "AI-generated" appearance.
-    Image Quality: The output must be extremely sharp and hyper-detailed. Render in 8K resolution with crisp focus. Emulate a shot taken on a high-end DSLR camera with a prime lens.
+    Image Quality: The output must be extremely sharp and hyper-detailed. Render in 4K resolution with crisp focus. Emulate a shot taken on a high-end DSLR camera with a prime lens.
     Lighting: Use soft, professional editorial lighting that enhances the fabric's texture and creates a luxurious feel.
     Background: A clean, seamless, professional white studio background.
     Critical Note for the AI: 
@@ -155,7 +155,7 @@ KURTI_PROMPT = """
     """
 
 SKIRT_CROP_TOP_PROMPT = """
-Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of an ethnicwear set consisting of a kurta-style top, flared skirt, and dupatta, based on the [UPLOADED IMAGES HERE]. The final output MUST be indistinguishable from a professional 8K photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury Indian ethnicwear brand’s magazine and high-resolution social media (Instagram, WhatsApp).
+Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of an ethnicwear set consisting of a kurta-style top, flared skirt, and dupatta, based on the [UPLOADED IMAGES HERE]. The final output MUST be indistinguishable from a professional 4K photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury Indian ethnicwear brand’s magazine and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: The garments must be an exact, pixel-for-pixel replication of the reference images.
 1. Kurta-style Top: Replicate exactly as shown in the reference, including length, fit, neckline, sleeves, front opening, and overall construction. Ensure it appears properly ironed, wrinkle-free, and sharply finished.
 2. Skirt: Match precisely the flare, layering, volume, and sheen of the skirt visible in the reference. The skirt should exhibit natural bounce and luxurious movement.
@@ -168,7 +168,7 @@ Subtle confident smile, long strides that highlight the skirt flare and dupatta 
 Styling:
 Minimal and classy accessories such as delicate gold or pearl earrings, subtle bangles, and nude or golden pointed-toe heels. Accessories must complement but remain secondary to the garments.
 Technical & Aesthetic Requirements (Priority):
-- Resolution: 8K with hyper-detail and micro-texture clarity (fabric weave, threadwork, dupatta transparency).
+- Resolution: 4K with hyper-detail and micro-texture clarity (fabric weave, threadwork, dupatta transparency).
 - Lighting: Professional editorial soft lighting with gentle rim lighting to emphasize contours and garment depth. Avoid harsh shadows.
 - Background: Clean, seamless, neutral-toned studio backdrop that emphasizes the garments and walking pose.
 - Depth of Field: Shallow background blur (prime-lens effect), with model and garments in tack-sharp focus.
@@ -207,7 +207,7 @@ Upbeat, clean, and sunny background music.
 No voice-over.
 """
 
-CORD_SET_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a women’s cord set, based on the [UPLOADED CORD SET IMAGE HERE]. The final output MUST be indistinguishable from a professional 8K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4). The image must be suitable for luxury fashion campaigns, editorial magazines, and high-resolution social media platforms (Instagram, WhatsApp).
+CORD_SET_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a women’s cord set, based on the [UPLOADED CORD SET IMAGE HERE]. The final output MUST be indistinguishable from a professional 4K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4). The image must be suitable for luxury fashion campaigns, editorial magazines, and high-resolution social media platforms (Instagram, WhatsApp).
 Absolute Priority: The cord set must be replicated exactly, pixel-for-pixel, from the uploaded reference. This includes the fabric’s weave, embroidery, print, and finishing. Do not invent or hallucinate any new motifs, seams, or textures. Avoid generic filler designs or mismatched details.
 Full-Length Human Model Requirement:
 - The output MUST show a complete human model from head to toe—never cropped, never half mannequin, never mixed with a hanger.
@@ -223,7 +223,7 @@ Pose & Expression:
 - A confident, approachable smile or poised expression consistent with luxury editorials.
 - No cropped torsos, no cut-off legs, no floating heads, no mannequins.
 Technical & Aesthetic Requirements:
-- Resolution: 8K ultra-sharp, capturing every thread, embroidery, and print detail.
+- Resolution: 4K ultra-sharp, capturing every thread, embroidery, and print detail.
 - Lighting: Professional studio lighting—soft yet sculpted, emphasizing fabric textures and natural sheen. Subtle rim light for depth. No flat or harsh shadows.
 - Background: Immaculate seamless white or neutral-toned backdrop to ensure the cord set is the sole focus.
 - Depth of Field: Shallow background blur, with model and garment in crisp prime-lens focus.
@@ -231,7 +231,7 @@ Final Requirement:
 Completely remove all product tags, yellow hanging tags, and labels from the final output."""
 
 GOWN_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a ladies gown, based on the [UPLOADED GOWN IMAGE HERE]. 
-The final output MUST be indistinguishable from a professional 8K photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens 
+The final output MUST be indistinguishable from a professional 4K photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens 
 (e.g., 85mm f/1.4), suitable for a luxury Indian ethnicwear brand’s magazine and high-resolution social media (Instagram, WhatsApp).
 
 Absolute Priority: The gown must be an exact, perfect, pixel-for-pixel replication of the one in the [UPLOADED GOWN IMAGE HERE]. 
@@ -262,7 +262,7 @@ Accessories: Minimal and tasteful. Options include statement earrings, delicate 
 For ankle-length gowns, ensure footwear visibility is natural and elegant. Accessories must enhance but never overpower the gown’s intricate detailing. 
 Ensure realistic metallic shine and gemstone reflection.
 
-Technical & Aesthetic Requirements: Ultra-clear 8K resolution, hyper-detailed rendering that captures every stitch, weave, and embellishment. Preserve depth, texture, and fine metallic sparkle of embroidery with maximum clarity.
+Technical & Aesthetic Requirements: Ultra-clear 4K resolution, hyper-detailed rendering that captures every stitch, weave, and embellishment. Preserve depth, texture, and fine metallic sparkle of embroidery with maximum clarity.
 
 Lighting: Professional editorial studio lighting—soft yet sculpted to emphasize fabric sheen, embroidery sparkle, and the depth of textures. Use subtle rim-lighting to define contours. Avoid flat or harsh lighting.
 
@@ -274,25 +274,15 @@ Final Cleanup: Ensure product tags, pins, stands, or supports visible in the ref
 """
 
 LEHENGA_PROMPT = """
-Core Objective: Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a Ladies Lehenga Choli, based on the [UPLOADED LEHENGA IMAGE]. The final output must be indistinguishable from a professional 8K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), specifically for a luxury Indian ethnicwear brand’s magazine and high-resolution social media.
-
+Core Objective: Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a Ladies Lehenga Choli, based on the [UPLOADED LEHENGA IMAGE]. The final output must be indistinguishable from a professional 4K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), specifically for a luxury Indian ethnicwear brand’s magazine and high-resolution social media.
 Absolute Garment Fidelity: The lehenga, choli (blouse), and dupatta must be an exact, pixel-for-pixel replication of the design in the [UPLOADED LEHENGA IMAGE]. This includes the precise fabric texture, every intricate motif, embroidery pattern, border width, and neckline detail. Do not hallucinate new patterns or deviate from the reference garment’s design. The garment must appear perfectly tailored, wrinkle-free, and steamed for a high-fashion look.
-
 Model Realism & Persona: A graceful young Indian female model with a natural, "alive" presence. Ensure realistic skin texture (not plastic), organic body posture, and natural hair flow. The model should exude elegance and confidence with a subtle, sophisticated expression. Avoid "doll-like" or "mannequin" features.
-
 Pose & Framing: Full-length, head-to-toe shot with the model in a centered, elegant stance that showcases the full flare of the lehenga skirt and the fit of the choli. The dupatta must be draped exactly as shown in the reference image, ensuring the borders and embroidery are fully visible and flow naturally. The floor-length skirt should completely obscure the feet.
-
 Styling & Accessories: Minimal and high-end. Include a traditional maang tikka, statement earrings, and a ring (consistent with the reference style). Ensure realistic metallic luster and gemstone reflections to complement the garment's intricate detailing.
-
 Technical & Lighting Specifications:
-
 Lighting: Professional editorial studio lighting. Use soft, sculpted light to emphasize the fabric’s sheen, the depth of the embroidery, and the metallic sparkle of any zari or stonework. Subtle rim-lighting to define the model’s silhouette against the background.
-
 Background: A pristine, seamless white or neutral-toned studio backdrop that provides depth and separation.
-
 Depth of Field: Shallow depth of field; the model and lehenga must remain razor-sharp from head to toe, while the background has a soft, professional blur.
-
-Resolution: 8K resolution, capturing every fine stitch and weave with maximum clarity.
-
+Resolution: 4K resolution, capturing every fine stitch and weave with maximum clarity.
 Final Cleanup: Ensure all product tags, pins, or support stands from the reference image are removed. The final image must be a clean, ready-to-post professional marketing asset.
 """

@@ -23,8 +23,9 @@ if not API_KEY:
 client = genai.Client(api_key=API_KEY)
 
 ALLOWED_EXT = {".png", ".jpg", ".jpeg", ".webp"}
-MODEL_NAME = "gemini-2.5-flash-image"
+MODEL_NAME = "gemini-3-pro-image-preview"
 ASPECT_RATIO = "1:1"
+RESOLUTION = "4K" 
 
 def part_from_pil(im: Image.Image, fmt: str = "JPEG", quality: int = 90):
     buf = BytesIO()
@@ -54,6 +55,10 @@ def save_first_image_part(response, save_path: Path):
     return False
 
 def generate_with_retries(model_name: str, contents, max_attempts: int = 5):
+    safety_settings = [
+        types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_NONE"),
+        types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
+    ]
     wait = 8
     for attempt in range(1, max_attempts + 1):
         try:
@@ -61,9 +66,12 @@ def generate_with_retries(model_name: str, contents, max_attempts: int = 5):
                 model=model_name,
                 contents=contents,
                 config=types.GenerateContentConfig(
-                    response_modalities=["Image"],
+                    system_instruction="You are a professional fashion editor for Bindal's Creation. Always produce high-end, editorial quality images. Garments must be wrinkle-free and tailored.",
+                    response_modalities=["IMAGE"],
+                    safety_settings=safety_settings,
                     image_config=types.ImageConfig(
-                        aspect_ratio=ASPECT_RATIO
+                        aspect_ratio=ASPECT_RATIO,
+                        image_size=RESOLUTION,
                     ),
                 ),
             )
@@ -82,20 +90,18 @@ def generate_with_retries(model_name: str, contents, max_attempts: int = 5):
 
 def generate_image_for_product(product_dir: Path, prompt: str, out_dir: Path, process_image_sep: bool = False):
     product_id = product_dir.name
-    images = load_images_from_folder(product_dir, limit=10)  # load more for individual processing
+    images = load_images_from_folder(product_dir, limit=14)  # load more for individual processing
     if not images:
         print(f"No images in {product_dir}")
         return
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    prompt_with_ref = prompt.replace("[UPLOADED KURTI IMAGE]", "the provided kurti image")
-
     if process_image_sep:
         # Process each image individually with suffix A, B, C, ...
         for idx, im in enumerate(images):
             suffix = chr(ord("A") + idx)
             image_part = part_from_pil(im)
-            contents = [prompt_with_ref, image_part]
+            contents = [prompt, image_part]
 
             print(f"Generating for {product_id}_{suffix} using 1 ref image")
             try:
@@ -112,13 +118,13 @@ def generate_image_for_product(product_dir: Path, prompt: str, out_dir: Path, pr
     else:
         # Default: use first few images together
         image_parts = [part_from_pil(im) for im in images]
-        contents = [prompt_with_ref, *image_parts[:3]]
-        print(f"Generating for {product_id} using {len(images[:3])} ref image(s)")
+        contents = [prompt, *image_parts[:14]]
+        print(f"Generating for {product_id} using {len(images[:14])} ref image(s)")
         try:
             response = generate_with_retries(MODEL_NAME, contents)
         except Exception:
             if len(image_parts) > 1:
-                contents = [prompt_with_ref, image_parts[0]]
+                contents = [prompt, image_parts[0]]
                 response = generate_with_retries(MODEL_NAME, contents)
             else:
                 raise

@@ -119,7 +119,7 @@ def main():
                 for idx, uploaded_file in enumerate(uploaded_files[:3]):
                     with cols[idx]:
                         image = Image.open(uploaded_file)
-                        st.image(image, caption=f"Image {idx+1}", use_container_width=True)
+                        st.image(image, caption=f"Image {idx+1}", width='stretch')
                 if len(uploaded_files) > 3:
                     st.info(f"+ {len(uploaded_files) - 3} more image(s)")
         elif mode == "📁 Use Folder":
@@ -241,7 +241,7 @@ def main():
                             # Display the result
                             st.success("✅ Mockup generated successfully!")
                             result_image = Image.open(output_files[0])
-                            st.image(result_image, caption="Generated Mockup", use_container_width=True)
+                            st.image(result_image, caption="Generated Mockup", width='stretch')
                             
                             # Add download button
                             img_byte_arr = io.BytesIO()
@@ -279,7 +279,7 @@ def main():
                         
                         # Display the result
                         result_image = Image.open(output_files[-1])  # Show the latest generated image
-                        st.image(result_image, caption="Generated Mockup", use_container_width=True)
+                        st.image(result_image, caption="Generated Mockup", width='stretch')
                         st.info(f"Generated {len(output_files)} mockup(s) in total")
                     else:
                         st.error("Failed to generate mockup. Please try again.")
