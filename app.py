@@ -12,7 +12,10 @@ from mockup_generator.prompt import (
     KURTI_PROMPT,
     MEN_SHIRT_PROMPT,
     CORD_SET_PROMPT,
-    GOWN_PROMPT
+    GOWN_PROMPT,
+    NEHRU_JACKET_PROMPT,
+    WOMEN_TOP,
+    LEHENGA_PROMPT
 )
 
 # Set page config
@@ -47,6 +50,18 @@ MOCKUP_TYPES = {
     "GOWN": {
         "prompt": GOWN_PROMPT,
         "description": "Women's Gown"
+    },
+    "NEHRU_JACKET": {
+        "prompt": NEHRU_JACKET_PROMPT,
+        "description": "Men's Nehru Cut Jacket"
+    },
+    "WOMEN_TOP": {
+        "prompt": WOMEN_TOP,
+        "description": "Women's Top"
+    },
+    "LEHENGA": {
+        "prompt": LEHENGA_PROMPT,
+        "description": "Women's Lehenga"
     }
 }
 

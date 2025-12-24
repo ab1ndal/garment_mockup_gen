@@ -1,3 +1,17 @@
+GREETING_PROMPT="""
+A high-fidelity cinematic animation based on the provided group photo. Strictly preserve the exact faces, expressions, and identities of all people; the subjects must remain realistic and static with no morphing.
+
+Atmosphere & Lighting: Transform the environment into a subtle winter setting with soft, cool winter lighting and a warm, festive glow highlighting the faces. Add a slight vignette for a cozy holiday feel.
+
+Animation Effects: Generate gentle snowfall falling naturally in the foreground and background. Animate delicate fairy lights softly glowing around the edges of the frame and warm golden bokeh orbs drifting slowly. Show subtle animated snowflakes accumulating lightly near the bottom.
+
+Text & Typography: Overlay elegant festive typography that fades in smoothly with a gentle shimmer: 'Warm Winter Wishes' (center/top) followed by 'Season’s Greetings & Happy Holidays' (below).
+
+Camera Movement: Apply a very slow, cinematic camera push-in (zoom) to create a parallax effect.
+
+Style: Professional, joyful, and clean. Winter color palette of whites, soft blues, and warm gold highlights. 4k resolution, photorealistic.
+"""
+
 MEN_SHIRT_PROMPT="""
 Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a men’s full-sleeve shirt, based on the [UPLOADED IMAGE HERE]. The shirt must precisely incorporate every garment detail explicitly visible and present in the uploaded image, including fabric texture, weave, collar style, placket design, cuff structure, stitching lines, pocket shape (if any), and button placement.  
 The final output MUST be indistinguishable from a professional 8K photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury menswear brand’s e-commerce catalog and high-resolution social media (Instagram, WhatsApp).  
@@ -19,6 +33,54 @@ Background: Impeccably clean, seamless white or neutral-toned studio backdrop, o
 
 Depth of Field: Shallow depth of field to gently blur the background while keeping the model and shirt perfectly in focus, consistent with prime lens product photography.  
 
+"""
+
+WOMEN_TOP = """
+Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a women’s top, based on the [UPLOADED IMAGE HERE]. The mockup must precisely replicate every garment detail explicitly visible in the uploaded image, including fabric texture, weave, neckline shape, sleeve design, stitching lines, hems, and any embellishments or surface patterns.  
+
+Absolute Priority: Every visible garment detail in the [UPLOADED IMAGE HERE] must be an exact, pixel-level match — including color tone, pattern scale, print direction, and stitching. DO NOT add, remove, or modify any design elements. No new embroidery, prints, or accessories should be hallucinated. The mockup must preserve the original garment’s authenticity exactly as shown.  
+
+Model & Pose: A natural, confident **Indian-origin female model** wearing the top. The framing should be **waist-up (bust to head)** for a clean, catalog-style composition. The model’s pose must be elegant yet relaxed — for example, standing casually, adjusting hair, slightly turning the torso, or smiling naturally. The model’s expression should feel warm and approachable, suitable for e-commerce and social media use.  
+
+Garment & Styling: The top should appear perfectly tailored and wrinkle-free, with accurate drape and fit reflecting the material type from the uploaded image. Ensure natural folds and realistic fabric behavior, particularly around shoulders, neckline, and waist. Preserve the original design features — neckline cut, sleeve style, hem length, and seam lines — exactly.  
+
+Accessories: Minimal or none. Only include subtle, complementary items if they enhance realism (e.g., small earrings or a delicate bracelet). Avoid any outerwear or accessories that obscure the top.  
+
+Technical & Aesthetic Requirements: 8K resolution, sharp focus, and extreme detail capturing micro-texture and stitch definition. Lighting must be soft, even, and professional — no harsh shadows or distracting highlights.  
+
+Background: Clean white or neutral-toned studio backdrop ideal for e-commerce use. Alternatively, a subtle lifestyle setting (e.g., minimal interior, soft natural light) is acceptable if it enhances presentation without distracting from the top.  
+
+Depth of Field: Shallow, with the background softly blurred while keeping the model and garment in perfect focus, consistent with prime-lens fashion photography.  
+
+Camera Specs: Simulate capture from a high-end full-frame DSLR using an 85mm f/1.4 prime lens for an elegant editorial look, optimized for online retail, lookbooks, and social media (Instagram, WhatsApp).
+
+"""
+
+NEHRU_JACKET_PROMPT="""
+Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a men's Nehru Cut Jacket, based on the [UPLOADED IMAGE HERE]. The jacket must be replicated pixel-for-pixel exactly as shown in the uploaded image, with no deviation in color, fabric, texture, button style, motifs, pocket placement, or embellishments. If a pocket square is visible in the reference, replicate it precisely. Do not add or invent any new design details beyond what is present in the reference image.
+
+Focus & Cropping:  
+The final mockup should show the model from the head down to just below the waist. The Nehru Jacket must be the central and dominant element, with no distractions from full-length styling.
+
+Kurta Styling:  
+Style the jacket over a solid-colored plain kurta that contrasts the jacket’s tone. The kurta must remain understated and should not draw attention away from the jacket. It should act purely as a supporting garment.
+
+Plain Jacket Enhancement:  
+If the uploaded jacket is plain, add a subtle light jari work integrated naturally into the fabric weave to enhance richness without overpowering or distracting from the jacket itself. The work must remain delicate, tonal, and secondary to the jacket’s overall aesthetic.
+
+Model & Pose:  
+A graceful young Indian male model with a confident yet natural expression. Waist-up shot, front view, in an elegant stance that highlights the jacket’s fit, cut, and styling.
+
+Garment & Detailing:  
+- Jacket must appear impeccably tailored with crisp lines and luxurious finish.  
+- Every element such as button design, collar shape, pocket placement, fabric sheen, and textures must be hyper-realistically replicated.  
+- Pocket square (if shown in reference) must be reproduced with the same fold and fabric.  
+
+Technical & Aesthetic Requirements:  
+- Output must be indistinguishable from a professional 8K editorial photograph, as if captured by a full-frame DSLR with an 85mm f/1.4 lens.  
+- Lighting: Soft professional studio lighting with subtle rim lighting to emphasize contours and jacket textures. No harsh shadows.  
+- Background: Neutral or white seamless studio backdrop to provide depth separation and maintain jacket focus.  
+- Depth of Field: Shallow, ensuring sharp focus on the jacket and slight separation from the background.  
 """
 
 
@@ -114,25 +176,35 @@ Technical & Aesthetic Requirements (Priority):
 """
 
 VIDEO_PROMPT = """
-An 8-second, single-take cinematic shot of a beautiful Indian woman in a
-green and gold traditional dress with a sheer yellow dupatta. The setting is a
-modern conservatory oasis with polished dark concrete floors and lush,
-out-of-focus greenery behind large glass panels at twilight. The lighting is
-soft, warm, and cinematic.
+Mood & Setting
 
-The video begins with her in a three-quarter profile. She turns to the camera
-and begins to walk slowly forward. Her sheer yellow dupatta drapes over one
-shoulder and flows distinctly beside her, catching the light with subtle
-translucency. In one fluid, sweeping gesture, she lifts the side of her skirt
-and gently tosses it forward, creating a magnificent rolling wave of fabric
-that billows beside her, while the dupatta continues to trail gracefully,
-separate from the skirt. This is a graceful, linear "casting" motion, not a
-spin. The camera smoothly tracks backward, keeping her in frame.
+A bright, high-key modern studio setting with a warm beige seamless background, matching the source image. The lighting is soft, diffused daylight that makes the mustard yellow fabric pop.
 
-As the wave of fabric cascades down, she comes to an elegant stop, facing the
-camera with a confident expression. The skirt settles around her in luxurious
-folds, and the dupatta falls softly into place as a delicate finishing touch,
-ending on a powerful and serene final pose.
+Her outfit: The sleeveless mustard yellow patterned top with the solid yellow panel and dark trousers, as seen in the source image. She wears small gold hoop earrings.
+
+The motion is confident, relaxed, and editorial. The video is in portrait mode (9:16).
+
+Shot Sequence Outline
+
+Shot 1 (0-2 s): Mid-shot (waist up). She begins by looking off-camera, then slowly turns her head to face the lens with a soft, confident smile. Her hand rests naturally by her side. The camera focuses on the pattern of the blouse.
+
+Shot 2 (2-5 s): Mid-shot (waist up). She performs a subtle weight shift from one hip to the other, bringing one hand up to rest on her hip. She tilts her head slightly to the left, looking directly at the camera with a poised expression.
+
+Shot 3 (5-8 s): Full body shot. She steps one foot back and turns her body slightly to the side to show the profile of the top, then turns back to face the front. Her gaze remains engaged with the camera.
+
+End Frame (last 1-2 seconds): She holds the final pose, hands relaxed at her sides, looking into the camera with a gentle smile. Fade out.
+
+Camera & Lighting Notes
+
+Format: Vertical 9:16 portrait aspect ratio.
+Use a shallow depth of field to keep the focus entirely on the model and the top.
+Lighting: High-key setup. Large softbox source to illuminate the face evenly. Color temperature should be daylight balanced (5500K).
+Motion style: Smooth, with very slight camera movement to keep it dynamic.
+
+Sound & Music
+
+Upbeat, clean, and sunny background music.
+No voice-over.
 """
 
 CORD_SET_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a women’s cord set, based on the [UPLOADED CORD SET IMAGE HERE]. The final output MUST be indistinguishable from a professional 8K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4). The image must be suitable for luxury fashion campaigns, editorial magazines, and high-resolution social media platforms (Instagram, WhatsApp).
@@ -158,15 +230,69 @@ Technical & Aesthetic Requirements:
 Final Requirement:
 Completely remove all product tags, yellow hanging tags, and labels from the final output."""
 
-GOWN_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a ladies gown, based on the [UPLOADED GOWN IMAGE HERE]. The final output MUST be indistinguishable from a professional 8K photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury Indian ethnicwear brand’s magazine and high-resolution social media (Instagram, WhatsApp).
-Absolute Priority: The gown must be an exact, perfect, pixel-for-pixel replication of the one in the [UPLOADED GOWN IMAGE HERE]. This includes precise fabric texture, every motif, embroidery, border detail, neckline embellishment, slit styling, and any specific handwork or zari elements. DO NOT HALLUCINATE NEW PATTERNS OR DEVIATE FROM THE REFERENCE GOWN'S DESIGN. No simplified sections or plain replacements. Every embroidery, border, and seam must remain consistent with the uploaded gown.
-Absolute Model Realism Requirement: The person must look alive, natural, and fully human. Ensure natural skin texture, facial micro-expressions, organic body posture, and realistic hair flow. Avoid mannequin-like or doll-like features such as plastic skin, blank eyes, stiff body poses, or lifeless expressions. The model should exude warmth, grace, and elegance, as if captured in a real luxury fashion editorial shoot.
-Dupatta and Borders: The dupatta and gown borders must be exactly replicated. Recreate motifs, embroidery, and embellishments seamlessly across the garment. Extend partially visible sections with logical, continuous design. Do not introduce plain or filler areas; every inch must remain consistent with the uploaded gown.
-Model & Pose: A graceful young Indian female model with a confident yet subtle smile. Full-length, head-to-toe shot, front-facing, in an elegant and natural stance that highlights the gown’s silhouette, neckline embroidery, and slit detail. Ensure the dupatta is draped gracefully over one shoulder, matching the uploaded reference style.
-Garment & Styling: The gown should appear perfectly tailored, wrinkle-free, and luxurious in finish, styled as though prepared for a high-fashion editorial. Retain the sleeveless cut, neckline embellishment, and embroidery-heavy borders as seen in the reference.
-Accessories: Minimal and tasteful. Options include statement earrings, delicate bangles, subtle bindi, and refined footwear. Accessories must enhance but never overpower the gown’s intricate detailing. Ensure realistic metallic shine and gemstone reflection.
+GOWN_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a ladies gown, based on the [UPLOADED GOWN IMAGE HERE]. 
+The final output MUST be indistinguishable from a professional 8K photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens 
+(e.g., 85mm f/1.4), suitable for a luxury Indian ethnicwear brand’s magazine and high-resolution social media (Instagram, WhatsApp).
+
+Absolute Priority: The gown must be an exact, perfect, pixel-for-pixel replication of the one in the [UPLOADED GOWN IMAGE HERE]. 
+This includes precise fabric texture, every motif, embroidery, border detail, neckline embellishment, and any specific handwork or zari elements. 
+DO NOT HALLUCINATE NEW PATTERNS OR ELEMENTS. Do not introduce a slit unless it is clearly visible in the reference. 
+No simplified sections or plain replacements. Every embroidery, border, and seam must remain consistent with the uploaded gown.
+
+Garment Length & Silhouette: Match the length exactly as per the uploaded reference.  
+- If the reference shows a floor-length gown with flair, render it with graceful pooling and natural drape that extends beyond the ankle.  
+- If the reference shows an ankle-length gown, ensure the hem ends precisely at the ankle level (appearing to touch the floor on a mannequin or model) without any extra extension.  
+Never alter or invent the length; replicate precisely what is visible.
+
+Absolute Model Realism Requirement: The person must look alive, natural, and fully human. Ensure natural skin texture, facial micro-expressions, organic body posture, 
+and realistic hair flow. Avoid mannequin-like or doll-like features such as plastic skin, blank eyes, stiff body poses, or lifeless expressions. 
+The model should exude warmth, grace, and elegance, as if captured in a real luxury fashion editorial shoot.
+
+Dupatta and Borders: Only include a dupatta if it is clearly visible in the [UPLOADED GOWN IMAGE HERE]. 
+If no dupatta exists in the reference, do not generate or invent one. For gowns with a dupatta, replicate it exactly as shown, including motifs, embroidery, and embellishments, 
+ensuring logical continuation of partially visible areas. Never introduce plain or filler sections; every detail must match the reference image.
+
+Model & Pose: A graceful young Indian female model with a confident yet subtle smile. Full-length, head-to-toe shot, front-facing, in an elegant and natural stance 
+that highlights the gown’s silhouette, neckline embellishment, and other defining features visible in the reference. Replicate draping, styling, and stance exactly as per the reference.
+
+Garment & Styling: The gown should appear perfectly tailored, wrinkle-free, and luxurious in finish, styled as though prepared for a high-fashion editorial. 
+Retain every cut, embellishment, and embroidery as seen in the reference.
+
+Accessories: Minimal and tasteful. Options include statement earrings, delicate bangles, subtle bindi, and refined footwear.  
+For ankle-length gowns, ensure footwear visibility is natural and elegant. Accessories must enhance but never overpower the gown’s intricate detailing. 
+Ensure realistic metallic shine and gemstone reflection.
+
 Technical & Aesthetic Requirements: Ultra-clear 8K resolution, hyper-detailed rendering that captures every stitch, weave, and embellishment. Preserve depth, texture, and fine metallic sparkle of embroidery with maximum clarity.
+
 Lighting: Professional editorial studio lighting—soft yet sculpted to emphasize fabric sheen, embroidery sparkle, and the depth of textures. Use subtle rim-lighting to define contours. Avoid flat or harsh lighting.
+
 Background: A pristine, seamless white or neutral-toned studio backdrop that provides depth and separation while keeping the gown as the focal point. No distractions or unnecessary props.
+
 Depth of Field: Shallow depth of field consistent with prime lens photography. The model and gown remain razor-sharp, while the background is subtly blurred to create cinematic focus.
-Final Cleanup: Ensure product tags, pins, stands, or supports visible in the reference image are completely removed in the final output."""
+
+Final Cleanup: Ensure product tags, pins, stands, or supports visible in the reference image are completely removed in the final output.
+"""
+
+LEHENGA_PROMPT = """
+Core Objective: Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a Ladies Lehenga Choli, based on the [UPLOADED LEHENGA IMAGE]. The final output must be indistinguishable from a professional 8K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), specifically for a luxury Indian ethnicwear brand’s magazine and high-resolution social media.
+
+Absolute Garment Fidelity: The lehenga, choli (blouse), and dupatta must be an exact, pixel-for-pixel replication of the design in the [UPLOADED LEHENGA IMAGE]. This includes the precise fabric texture, every intricate motif, embroidery pattern, border width, and neckline detail. Do not hallucinate new patterns or deviate from the reference garment’s design. The garment must appear perfectly tailored, wrinkle-free, and steamed for a high-fashion look.
+
+Model Realism & Persona: A graceful young Indian female model with a natural, "alive" presence. Ensure realistic skin texture (not plastic), organic body posture, and natural hair flow. The model should exude elegance and confidence with a subtle, sophisticated expression. Avoid "doll-like" or "mannequin" features.
+
+Pose & Framing: Full-length, head-to-toe shot with the model in a centered, elegant stance that showcases the full flare of the lehenga skirt and the fit of the choli. The dupatta must be draped exactly as shown in the reference image, ensuring the borders and embroidery are fully visible and flow naturally. The floor-length skirt should completely obscure the feet.
+
+Styling & Accessories: Minimal and high-end. Include a traditional maang tikka, statement earrings, and a ring (consistent with the reference style). Ensure realistic metallic luster and gemstone reflections to complement the garment's intricate detailing.
+
+Technical & Lighting Specifications:
+
+Lighting: Professional editorial studio lighting. Use soft, sculpted light to emphasize the fabric’s sheen, the depth of the embroidery, and the metallic sparkle of any zari or stonework. Subtle rim-lighting to define the model’s silhouette against the background.
+
+Background: A pristine, seamless white or neutral-toned studio backdrop that provides depth and separation.
+
+Depth of Field: Shallow depth of field; the model and lehenga must remain razor-sharp from head to toe, while the background has a soft, professional blur.
+
+Resolution: 8K resolution, capturing every fine stitch and weave with maximum clarity.
+
+Final Cleanup: Ensure all product tags, pins, or support stands from the reference image are removed. The final image must be a clean, ready-to-post professional marketing asset.
+"""
