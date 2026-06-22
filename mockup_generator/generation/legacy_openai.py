@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from PIL import Image, PngImagePlugin, ImageOps
 
-from prompt_config import MALE_KURTA_PROMPT
+from mockup_generator.prompts.legacy_config import MALE_KURTA_PROMPT
 
 load_dotenv()
 

@@ -5,8 +5,8 @@ import tempfile
 import shutil
 from PIL import Image
 import io
-from mockup_generator.create_base import generate_image_for_product
-from mockup_generator.prompt import (
+from mockup_generator.generation.images import generate_image_for_product
+from mockup_generator.prompts.defaults import (
     SAREE_PROMPT,
     KURTA_PAJAMA_PROMPT,
     KURTI_PROMPT,

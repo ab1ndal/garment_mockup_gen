@@ -1,20 +1,17 @@
-import os
 import io
 import time
 from pathlib import Path
 from io import BytesIO
 from PIL import Image
-from dotenv import load_dotenv
 
-from google import genai
 from google.genai import types
-from prompt import VIDEO_PROMPT
 
-load_dotenv()
+from mockup_generator.generation.common import get_genai_client, part_from_pil
+from mockup_generator.prompts.defaults import VIDEO_PROMPT
 
 # Configuration
 MAX_SIDE = 1024
-ASPECT_RATIO = "16:9"
+ASPECT_RATIO = "9:16"
 RESOLUTION = "720p"
 VEO_MODEL = "veo-3.1-generate-preview"
 #NEGATIVE_PROMPT = (
@@ -28,18 +25,6 @@ FLASH_MODEL = "gemini-2.5-flash-image"
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 PERSON_GENERATION = "allow_adult"
 
-API_KEY = os.getenv("GOOGLE_API_KEY")
-if not API_KEY:
-    raise RuntimeError("GOOGLE_API_KEY is not set")
-
-client = genai.Client(api_key=API_KEY)
-
-
-def part_from_pil(im: Image.Image, fmt: str = "JPEG", quality: int = 90):
-    buf = BytesIO()
-    im.save(buf, format=fmt, quality=quality)
-    return types.Part.from_bytes(data=buf.getvalue(), mime_type="image/jpeg")
-
 
 def refine_and_create_video(input_folder: Path, prompt: str, output_folder: Path, generate_image: bool = False):
     """Optionally refine input images with Gemini Flash and create videos using VEO."""
@@ -52,6 +37,7 @@ def refine_and_create_video(input_folder: Path, prompt: str, output_folder: Path
     if not input_images:
         raise RuntimeError("No valid input images found")
 
+    client = get_genai_client()
     for img_path in input_images:
         if generate_image:
             im = Image.open(img_path).convert("RGB")
@@ -89,6 +75,7 @@ def generate_video(prompt: str, image_path: Path, output_folder: Path, filename:
     im.save(buf, format="JPEG", quality=90)
     image_bytes = buf.getvalue()
 
+    client = get_genai_client()
     print(f"Submitting video job for {filename} ...")
     operation = client.models.generate_videos(
         model=VEO_MODEL,
