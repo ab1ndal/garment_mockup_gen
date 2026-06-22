@@ -3,3 +3,32 @@ Data/
 __pycache__
 .DS_Store
 .env
+
+# image / video assets (never commit generated or input media)
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.bmp
+*.tiff
+*.heic
+*.mp4
+*.mov
+*.webm
+*.avi
+*.mkv
+try_in/
+try_out/
+
+# node / react frontend
+node_modules/
+frontend/dist/
+frontend/.env
+.vite/
+
+# python
+*.pyc
+.pytest_cache/
+
+frontend/tsconfig.tsbuildinfo
