@@ -1,6 +1,8 @@
 import { supabase } from "./supabaseClient";
 
-const API_URL = import.meta.env.VITE_API_URL as string;
+// Empty = same origin (single-server deploy, e.g. HF Spaces). For split local
+// dev, set VITE_API_URL=http://localhost:8000 in frontend/.env.
+const API_URL = (import.meta.env.VITE_API_URL as string) ?? "";
 
 /** Call the backend with the current Supabase access token attached. */
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
