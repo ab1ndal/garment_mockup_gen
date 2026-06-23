@@ -29,7 +29,8 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     }
     throw new Error(`${res.status}: ${detail}`);
   }
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export interface Me {
@@ -39,3 +40,89 @@ export interface Me {
 }
 
 export const getMe = () => apiFetch<Me>("/api/me");
+
+export interface Category {
+  categoryid: string;
+  name: string;
+}
+
+export interface Product {
+  productid: string;
+  name: string;
+  categoryid: string | null;
+  category_name: string | null;
+  base_mockup: boolean;
+  producturl: string | null;
+}
+
+export interface Prompt {
+  prompt_id: number;
+  categoryid: string;
+  label: string;
+  body: string;
+  is_default: boolean;
+}
+
+export interface GenResult {
+  status: string;
+  detail: string;
+}
+
+export const getCategories = () => apiFetch<Category[]>("/api/categories");
+
+export function listProducts(p: {
+  category?: string;
+  id?: string;
+  id_start?: string;
+  id_end?: string;
+  pending?: boolean;
+  limit?: number;
+  offset?: number;
+}): Promise<Product[]> {
+  const q = new URLSearchParams();
+  if (p.category) q.set("category", p.category);
+  if (p.id) q.set("id", p.id);
+  if (p.id_start) q.set("id_start", p.id_start);
+  if (p.id_end) q.set("id_end", p.id_end);
+  q.set("pending", String(p.pending ?? true));
+  if (p.limit != null) q.set("limit", String(p.limit));
+  if (p.offset != null) q.set("offset", String(p.offset));
+  return apiFetch<Product[]>(`/api/products?${q.toString()}`);
+}
+
+export const getProduct = (id: string) =>
+  apiFetch<Product>(`/api/products/${encodeURIComponent(id)}`);
+
+export const listPrompts = (categoryid: string) =>
+  apiFetch<Prompt[]>(`/api/prompts?categoryid=${encodeURIComponent(categoryid)}`);
+
+export const createPrompt = (b: {
+  categoryid: string;
+  label: string;
+  body: string;
+  is_default?: boolean;
+}) => apiFetch<Prompt>("/api/prompts", { method: "POST", body: JSON.stringify(b) });
+
+export const updatePrompt = (
+  id: number,
+  b: { label?: string; body?: string; is_default?: boolean }
+) =>
+  apiFetch<Prompt>(`/api/prompts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(b),
+  });
+
+export const deletePrompt = (id: number) =>
+  apiFetch<void>(`/api/prompts/${id}`, { method: "DELETE" });
+
+export const generateImage = (b: { productid: string; prompt: string }) =>
+  apiFetch<GenResult>("/api/generate/image", {
+    method: "POST",
+    body: JSON.stringify(b),
+  });
+
+export const generateVideo = (b: { productid: string; prompt: string }) =>
+  apiFetch<GenResult>("/api/generate/video", {
+    method: "POST",
+    body: JSON.stringify(b),
+  });
