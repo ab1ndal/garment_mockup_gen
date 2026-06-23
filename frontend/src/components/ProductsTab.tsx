@@ -60,7 +60,7 @@ export default function ProductsTab() {
             </div>
           </div>
           <div className="flex items-center justify-between gap-3">
-            <label className="check !min-h-0 text-sm">
+            <label className="check min-h-0! text-sm">
               <input type="checkbox" checked={pending}
                      onChange={(e) => setPending(e.target.checked)} />
               Pending only
@@ -84,7 +84,7 @@ export default function ProductsTab() {
                     type="button"
                     onClick={() => setSelected(p)}
                     aria-current={isSel}
-                    className={`flex w-full items-center gap-3 border-0 border-l-2 !justify-start !rounded-none px-4 py-3 text-left !min-h-0
+                    className={`flex w-full items-center gap-3 border-0 border-l-2 justify-start! rounded-none! px-4 py-3 text-left min-h-0!
                       ${isSel
                         ? "border-l-accent bg-accent-soft"
                         : "border-l-transparent bg-transparent hover:bg-surface-2"}`}
@@ -195,7 +195,7 @@ function GenerationStage({ product }: { product: Product }) {
       {/* Source images */}
       <section className="mt-7">
         <div className="flex items-center justify-between">
-          <p className="section-label !mt-0">Source images</p>
+          <p className="section-label mt-0!">Source images</p>
           {pickedCount > 0 && (
             <span className="text-xs font-semibold text-accent">{pickedCount} selected</span>
           )}
@@ -211,7 +211,7 @@ function GenerationStage({ product }: { product: Product }) {
         )}
         {imgState === "error" && <p className="alert alert-error">{imgErr}</p>}
         {imgState === "ready" && images.length === 0 && (
-          <p className="empty !py-6">No images found in this product's Drive folder.</p>
+          <p className="empty py-6!">No images found in this product's Drive folder.</p>
         )}
         {imgState === "ready" && images.length > 0 && (
           <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
@@ -224,8 +224,8 @@ function GenerationStage({ product }: { product: Product }) {
                   onClick={() => togglePick(img.id)}
                   aria-pressed={sel}
                   title={img.name}
-                  className={`relative aspect-square !min-h-0 overflow-hidden !rounded-lg !p-0 transition
-                    ${sel ? "!border-accent ring-2 ring-accent/30" : "!border-line hover:!border-line-strong"}`}
+                  className={`relative aspect-square min-h-0! overflow-hidden rounded-lg! p-0! transition
+                    ${sel ? "border-accent! ring-2 ring-accent/30" : "border-line! hover:border-line-strong!"}`}
                 >
                   <img src={img.thumbnail_url} alt={img.name}
                        className="h-full w-full object-cover" loading="lazy" />
@@ -244,7 +244,7 @@ function GenerationStage({ product }: { product: Product }) {
       {/* Image prompt + primary CTA — the focal action */}
       <section className="mt-7">
         <div className="field">
-          <p className="section-label !mt-0">Image prompt</p>
+          <p className="section-label mt-0!">Image prompt</p>
           <select
             aria-label="Prompt template"
             onChange={(e) => {
@@ -292,7 +292,7 @@ function GenerationStage({ product }: { product: Product }) {
       {/* Video — secondary */}
       <section className="mt-7 border-t border-line pt-6">
         <div className="field">
-          <p className="section-label !mt-0">Video (custom prompt)</p>
+          <p className="section-label mt-0!">Video (custom prompt)</p>
           <textarea
             aria-label="Video prompt text"
             value={videoPrompt}
