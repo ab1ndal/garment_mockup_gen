@@ -18,6 +18,7 @@
 - Published image name: `{productid}/{slug(color)}_{shorthex}.png`; when no color: `{productid}/{shorthex}.png`. `shorthex` = first 8 chars of a uuid4 hex.
 - **Generate writes nothing** (no Storage, no DB). **Approve is the only writer.** No regeneration in this work.
 - `productimages.imageurl` stores the **permanent public URL**.
+- **No DB redundancy:** at most one `productimages` row per `(productid, color)`. Re-approve **replaces** that row (delete-then-insert) and **deletes the previously-published Storage object** (orphan cleanup) after the new upload succeeds. `mockup_variations` stays **append-only** (it is the audit/history log — multiple rows are intentional, not redundant).
 - All endpoints require an active profile via the existing `get_current_user` dependency.
 
 ---
@@ -388,16 +389,21 @@ git commit -m "feat(db): mockups_repo.set_base_mockup"
 
 ---
 
-### Task 6: `productimages_repo.insert`
+### Task 6: `productimages_repo` — insert + list_for + delete_for (no-redundancy support)
 
 **Files:**
 - Create: `mockup_generator/db/productimages_repo.py`
 - Test: `tests/test_productimages_repo.py`
 
 **Interfaces:**
-- Produces: `insert(client, *, productid, imageurl, caption=None, displayorder=None) -> dict` — when `displayorder is None`, compute it as the current row count for the product.
+- Produces:
+  - `insert(client, *, productid, imageurl, caption=None, displayorder=None) -> dict` — when `displayorder is None`, compute it as the current row count for the product.
+  - `list_for(client, productid, caption: str | None) -> list[dict]` — existing rows matching `productid` AND `caption` (when `caption is None`, match SQL `NULL`). Returns dicts with at least `imageid` and `imageurl`. Used by approve to find the prior published object for orphan cleanup.
+  - `delete_for(client, productid, caption: str | None) -> None` — delete rows matching `productid` AND `caption` (NULL-aware). Enforces "one row per (productid, color)".
 
-- [ ] **Step 1: Write the failing test**
+**Why:** Approve must not pile up duplicate rows. The handler (Task 9) calls `list_for` → upload new → delete old Storage objects → `delete_for` → `insert`.
+
+- [ ] **Step 1: Write the failing tests**
 
 ```python
 # tests/test_productimages_repo.py
@@ -430,7 +436,8 @@ class _InsertQ:
         return type("R", (), {"data": [{"imageid": 1, **self.sink["payload"]}]})()
 
 
-class _Db:
+class _InsertDb:
+    """Two table() calls: first the count query, second the insert."""
     def __init__(self, sink, count):
         self.sink = sink
         self._count = count
@@ -439,14 +446,13 @@ class _Db:
     def table(self, name):
         self.sink["table"] = name
         self._calls += 1
-        # first call = count query, second = insert
         return _CountQ(self._count) if self._calls == 1 else _InsertQ(self.sink)
 
 
 def test_insert_computes_displayorder_from_count_and_sets_caption():
     sink = {}
     row = productimages_repo.insert(
-        _Db(sink, count=2), productid="BC1", imageurl="https://public/x.png", caption="Red"
+        _InsertDb(sink, count=2), productid="BC1", imageurl="https://public/x.png", caption="Red"
     )
     assert sink["table"] == "productimages"
     p = sink["payload"]
@@ -458,12 +464,84 @@ def test_insert_computes_displayorder_from_count_and_sets_caption():
 def test_insert_omits_caption_when_none_and_honors_explicit_displayorder():
     sink = {}
     productimages_repo.insert(
-        _Db(sink, count=99), productid="BC1", imageurl="u", displayorder=5
+        _InsertDb(sink, count=99), productid="BC1", imageurl="u", displayorder=5
     )
     assert sink["payload"] == {"productid": "BC1", "imageurl": "u", "displayorder": 5}
+
+
+# ---- list_for / delete_for: capture the query chain (eq vs is_ for NULL) ----
+
+class _ChainQ:
+    """Records select/eq/is_/delete calls; returns rows on execute."""
+    def __init__(self, sink, rows):
+        self.sink = sink
+        self._rows = rows
+
+    def select(self, cols):
+        self.sink.setdefault("ops", []).append(("select", cols))
+        return self
+
+    def delete(self):
+        self.sink.setdefault("ops", []).append(("delete",))
+        return self
+
+    def eq(self, col, val):
+        self.sink.setdefault("filters", []).append(("eq", col, val))
+        return self
+
+    def is_(self, col, val):
+        self.sink.setdefault("filters", []).append(("is_", col, val))
+        return self
+
+    def execute(self):
+        return type("R", (), {"data": self._rows})()
+
+
+class _ChainDb:
+    def __init__(self, sink, rows=None):
+        self.sink = sink
+        self._rows = rows or []
+
+    def table(self, name):
+        self.sink["table"] = name
+        return _ChainQ(self.sink, self._rows)
+
+
+def test_list_for_filters_by_productid_and_color():
+    sink = {}
+    rows = productimages_repo.list_for(
+        _ChainDb(sink, rows=[{"imageid": 7, "imageurl": "https://public/old.png"}]),
+        "BC1", "Red",
+    )
+    assert sink["table"] == "productimages"
+    assert ("eq", "productid", "BC1") in sink["filters"]
+    assert ("eq", "caption", "Red") in sink["filters"]
+    assert rows[0]["imageurl"] == "https://public/old.png"
+
+
+def test_list_for_uses_is_null_when_caption_none():
+    sink = {}
+    productimages_repo.list_for(_ChainDb(sink), "BC1", None)
+    assert ("eq", "productid", "BC1") in sink["filters"]
+    assert ("is_", "caption", "null") in sink["filters"]
+
+
+def test_delete_for_filters_by_productid_and_color():
+    sink = {}
+    productimages_repo.delete_for(_ChainDb(sink), "BC1", "Red")
+    assert ("delete",) in sink["ops"]
+    assert ("eq", "productid", "BC1") in sink["filters"]
+    assert ("eq", "caption", "Red") in sink["filters"]
+
+
+def test_delete_for_uses_is_null_when_caption_none():
+    sink = {}
+    productimages_repo.delete_for(_ChainDb(sink), "BC1", None)
+    assert ("delete",) in sink["ops"]
+    assert ("is_", "caption", "null") in sink["filters"]
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: Run tests to verify they fail**
 
 Run: `poetry run pytest tests/test_productimages_repo.py -v`
 Expected: FAIL with `ModuleNotFoundError`.
@@ -472,11 +550,34 @@ Expected: FAIL with `ModuleNotFoundError`.
 
 ```python
 # mockup_generator/db/productimages_repo.py
-"""Insert published mockup images into the existing ``productimages`` table."""
+"""Publish mockup images into the existing ``productimages`` table.
+
+At most one row per ``(productid, caption)`` where caption holds the variant
+color — re-publishing replaces it (see ``delete_for``), so no duplicates pile
+up. ``list_for`` lets the caller find the prior row's URL for Storage cleanup.
+"""
 
 from __future__ import annotations
 
 from supabase import Client
+
+
+def _filter_color(query, caption: str | None):
+    """Apply a productid is implied by the caller; add the NULL-aware color filter."""
+    return query.eq("caption", caption) if caption is not None else query.is_("caption", "null")
+
+
+def list_for(client: Client, productid: str, caption: str | None) -> list[dict]:
+    """Existing rows for one product + color (NULL-aware on caption)."""
+    q = client.table("productimages").select("imageid, imageurl").eq("productid", productid)
+    resp = _filter_color(q, caption).execute()
+    return list(resp.data or [])
+
+
+def delete_for(client: Client, productid: str, caption: str | None) -> None:
+    """Delete rows for one product + color (NULL-aware) — keeps one row per pair."""
+    q = client.table("productimages").delete().eq("productid", productid)
+    _filter_color(q, caption).execute()
 
 
 def insert(
@@ -503,7 +604,7 @@ def insert(
     return (resp.data or [{}])[0]
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Run tests to verify they pass**
 
 Run: `poetry run pytest tests/test_productimages_repo.py -v`
 Expected: PASS.
@@ -512,7 +613,7 @@ Expected: PASS.
 
 ```bash
 git add mockup_generator/db/productimages_repo.py tests/test_productimages_repo.py
-git commit -m "feat(db): productimages_repo.insert with computed displayorder"
+git commit -m "feat(db): productimages_repo insert/list_for/delete_for (one row per product+color)"
 ```
 
 ---
@@ -528,6 +629,8 @@ git commit -m "feat(db): productimages_repo.insert with computed displayorder"
   - `upload_mockup(productid, data, key, *, bucket="mockups") -> tuple[str, str]` now returns `(object_path, public_url)` (public URL, not signed).
   - `slugify(text: str | None) -> str` — lowercase, non-alphanumeric runs → single `-`, trimmed of leading/trailing `-`.
   - `short_hex() -> str` — 8 hex chars from a uuid4.
+  - `delete_object(object_path, *, bucket="mockups") -> None` — remove one object (best-effort orphan cleanup on re-approve).
+  - `path_from_public_url(url, *, bucket="mockups") -> str | None` — extract the stored object path from a public URL (so the caller can delete a prior published object known only by its URL).
 
 - [ ] **Step 1: Update the existing upload test + add helper tests**
 
@@ -562,12 +665,36 @@ def test_short_hex_is_8_hex_chars():
     h = storage_client.short_hex()
     assert len(h) == 8
     int(h, 16)  # raises if not hex
+
+
+def test_path_from_public_url_extracts_object_path():
+    url = "https://proj.supabase.co/storage/v1/object/public/mockups/BC1/parrot-green_deadbeef.png"
+    assert storage_client.path_from_public_url(url) == "BC1/parrot-green_deadbeef.png"
+    # strips query string if present
+    assert storage_client.path_from_public_url(url + "?t=1") == "BC1/parrot-green_deadbeef.png"
+    # unrecognized URL -> None
+    assert storage_client.path_from_public_url("https://example.com/x.png") is None
+
+
+def test_delete_object_removes_path(monkeypatch):
+    sink = {}
+    monkeypatch.setattr(storage_client, "service_client", lambda: _FakeServiceClient(sink))
+    storage_client.delete_object("BC1/old.png")
+    assert sink["bucket"] == "mockups"
+    assert sink["removed"] == ["BC1/old.png"]
+```
+
+Add a `remove` method to `_FakeBucket` (alongside its existing methods):
+
+```python
+    def remove(self, paths):
+        self.sink["removed"] = paths
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `poetry run pytest tests/test_storage_and_variations.py -v`
-Expected: FAIL — old assertion expected a signed URL; `slugify`/`short_hex` missing.
+Expected: FAIL — old assertion expected a signed URL; `slugify`/`short_hex`/`path_from_public_url`/`delete_object` missing.
 
 - [ ] **Step 3: Update `storage_client.py`**
 
@@ -606,6 +733,23 @@ def slugify(text: str | None) -> str:
 def short_hex() -> str:
     """8 hex chars (uuid4) — uniqueness so re-approves don't overwrite."""
     return uuid.uuid4().hex[:8]
+
+
+def path_from_public_url(url: str, *, bucket: str = _BUCKET) -> str | None:
+    """Recover the stored object path from a Supabase public URL, else None."""
+    marker = f"/object/public/{bucket}/"
+    i = url.find(marker)
+    if i == -1:
+        return None
+    return url[i + len(marker):].split("?")[0]
+
+
+def delete_object(object_path: str, *, bucket: str = _BUCKET) -> None:
+    """Remove one object from the bucket (orphan cleanup). Service-role only."""
+    client = service_client()
+    if client is None:
+        raise StorageNotConfigured("SUPABASE_SECRET_KEY is required to delete objects")
+    client.storage.from_(bucket).remove([object_path])
 ```
 
 The `_SIGNED_TTL` constant is now unused — delete it.
@@ -619,7 +763,7 @@ Expected: PASS.
 
 ```bash
 git add mockup_generator/integrations/storage_client.py tests/test_storage_and_variations.py
-git commit -m "feat(storage): public-URL uploads + slugify/short_hex helpers"
+git commit -m "feat(storage): public-URL uploads + slugify/short_hex/delete_object/path_from_public_url"
 ```
 
 ---
@@ -794,10 +938,12 @@ git commit -m "feat(generate): /image is preview-only and requires >=1 source im
 - Test: `tests/test_approve_publish.py` (create)
 
 **Interfaces:**
-- Consumes: `storage_client.upload_mockup`, `storage_client.slugify`, `storage_client.short_hex`, `mockup_variations_repo.insert`, `mockups_repo.set_base_mockup`, `productimages_repo.insert`.
+- Consumes: `storage_client.upload_mockup`, `storage_client.slugify`, `storage_client.short_hex`, `storage_client.path_from_public_url`, `storage_client.delete_object`, `mockup_variations_repo.insert`, `mockups_repo.set_base_mockup`, `productimages_repo.list_for`, `productimages_repo.delete_for`, `productimages_repo.insert`.
 - Produces:
   - `ApproveResponse(BaseModel)`: `status: str`, `detail: str`, `image_url: str`, `variation_id: int | None`.
   - `POST /api/generate/approve` (multipart: `productid`, `color?`, `prompt_text?`, `source` default `"generated"`, file `image`) → publishes, returns `ApproveResponse`.
+
+**No-redundancy behavior (Global Constraints):** after the new upload succeeds, the handler finds any prior `productimages` row for `(productid, color)`, deletes its Storage object (best-effort — a cleanup failure must NOT fail the publish), deletes the old row, then inserts the new one. `mockup_variations` is appended every time (audit log).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -844,6 +990,14 @@ def _wire(monkeypatch, calls):
                         lambda db, pid, value=True: calls.__setitem__("flag", (pid, value)))
     monkeypatch.setattr(gen.productimages_repo, "insert",
                         lambda db, **kw: (calls.__setitem__("image", kw) or {"imageid": 1}))
+    # no-redundancy seam: prior rows (default none), delete row, delete object
+    monkeypatch.setattr(gen.productimages_repo, "list_for",
+                        lambda db, pid, cap: calls.get("existing", []))
+    monkeypatch.setattr(gen.productimages_repo, "delete_for",
+                        lambda db, pid, cap: calls.__setitem__("deleted_for", (pid, cap)))
+    monkeypatch.setattr(gen.storage_client, "delete_object",
+                        lambda path, **kw: calls.setdefault("removed", []).append(path))
+    # path_from_public_url is the real pure function (not mocked)
 
 
 def test_approve_generated_publishes(client, monkeypatch):
@@ -867,6 +1021,23 @@ def test_approve_generated_publishes(client, monkeypatch):
     assert calls["flag"] == ("BC25001", True)
     assert calls["image"]["imageurl"] == "https://public/BC25001/parrot-green_deadbeef.png"
     assert calls["image"]["caption"] == "Parrot Green"
+    assert calls["deleted_for"] == ("BC25001", "Parrot Green")
+    assert "removed" not in calls  # no prior row -> nothing deleted from storage
+
+
+def test_approve_replaces_existing_row_and_deletes_old_object(client, monkeypatch):
+    calls = {}
+    _wire(monkeypatch, calls)
+    calls["existing"] = [{
+        "imageid": 5,
+        "imageurl": "https://proj.supabase.co/storage/v1/object/public/mockups/BC25001/old_cafef00d.png",
+    }]
+    r = client.post("/api/generate/approve",
+                    data={"productid": "BC25001", "color": "Red", "source": "generated"},
+                    files={"image": ("m.png", _png_bytes(), "image/png")})
+    assert r.status_code == 200
+    assert calls["removed"] == ["BC25001/old_cafef00d.png"]   # old object cleaned up
+    assert calls["deleted_for"] == ("BC25001", "Red")          # old row replaced
 
 
 def test_approve_corrected_defaults_prompt_text(client, monkeypatch):
@@ -965,6 +1136,18 @@ async def approve_mockup(
         raise HTTPException(status_code=503, detail="Storage is not configured on the server") from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Could not store the mockup: {exc}") from exc
+
+    # No redundancy: one productimages row per (productid, color). Replace any
+    # prior row and clean up its orphaned Storage object (best-effort — a
+    # cleanup failure must not fail an otherwise-successful publish).
+    for prior in productimages_repo.list_for(db, productid, color):
+        old_path = storage_client.path_from_public_url(prior.get("imageurl") or "")
+        if old_path:
+            try:
+                storage_client.delete_object(old_path)
+            except Exception:  # noqa: BLE001 - orphan cleanup is non-fatal
+                pass
+    productimages_repo.delete_for(db, productid, color)
 
     text = prompt_text or ("(manual upload)" if source == "corrected" else "")
     row = mockup_variations_repo.insert(
@@ -1373,6 +1556,6 @@ git commit -m "docs(plan): Phase 3 generate-preview + approve/publish complete"
 
 ## Self-Review
 
-- **Spec coverage:** require ≥1 source (Task 8), colors surfaced (Tasks 2-3, 11), generate preview-only (Task 8, 11), approve publishes to public bucket + flip flag + productimages + audit row (Tasks 1, 4-7, 9), disapprove discards (Task 12), corrected upload (Tasks 9, 12), meaningful name (Task 7, 9), download (Task 12), public/view-only bucket (Task 1). All covered.
+- **Spec coverage:** require ≥1 source (Task 8), colors surfaced (Tasks 2-3, 11), generate preview-only (Task 8, 11), approve publishes to public bucket + flip flag + productimages + audit row (Tasks 1, 4-7, 9), disapprove discards (Task 12), corrected upload (Tasks 9, 12), meaningful name (Task 7, 9), download (Task 12), public/view-only bucket (Task 1), **no DB redundancy — one productimages row per (productid, color) with old-object cleanup (Tasks 6, 7, 9)**. All covered.
 - **Placeholders:** none — every code step shows full code; the only soft note is "match existing button classes," which is a styling parity instruction, not missing logic.
 - **Type consistency:** `GeneratePreview.image_b64` / `GenPreview.image_b64`, `ApproveResponse`/`ApproveResult` (`image_url`, `variation_id`), `upload_mockup -> (path, public_url)`, `slugify`/`short_hex`, `set_base_mockup(client, productid, value=True)`, `productimages_repo.insert(productid, imageurl, caption, displayorder)`, `mockup_variations_repo.insert(..., color=None)` — consistent across backend tasks, tests, and frontend.
