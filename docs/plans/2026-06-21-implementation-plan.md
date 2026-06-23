@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-21 (revised: React + FastAPI stack)
 **Companion to:** `2026-06-21-design.md`
-**Status:** Draft for review — **building piece by piece, refactor first, then auth**
+**Status:** In progress — Phases 0–2 ✅ shipped; Phase 3 🚧 partial (Drive read + image-select UI; generation still stubbed). Last synced to code: 2026-06-23.
 
 Each phase ships independently and leaves the repo working.
 
@@ -39,25 +39,27 @@ Each phase ships independently and leaves the repo working.
 
 ---
 
-## Phase 2 — Product data + prompts + status API
-- [ ] `db/products_repo.py` (join categories + mockups), `db/prompts_repo.py` (by categoryid), `db/mockups_repo.py`.
-- [ ] Seed prompt table from `prompts/defaults.py`; migration via MCP `apply_migration` (additive only).
-- [ ] Backend routers: list/filter products (default pending = `base_mockup=false`), get prompt by category, edit prompt (admin).
-- [ ] React: product list + filters; prompt view/edit.
+## Phase 2 — Product data + prompts + status API  ← ✅ DONE (merged to main 2026-06-23, 23 tests green)
+**Detailed plan:** `2026-06-22-phase2-implementation-plan.md` (13 TDD tasks).
+- [x] `db/products_repo.py` (over `product_browse` view: products + category + mockup flag), `db/prompts_repo.py` (CRUD by categoryid + idempotent seed), `db/mockups_repo.py`, plus `db/product_ids.py` (numeric `BC<YY><seq>` key for non-lexical range filtering).
+- [x] Seed `prompts` table from `prompts/defaults.py` (11 defaults); additive migration via MCP `apply_migration` — new `prompts` table + read-only `product_browse` view (no existing table altered).
+- [x] Backend routers: list/filter products (default pending = `base_mockup=false`, by category / single id / numeric range), prompts CRUD by category. **No admin gate this phase — any active profile may edit** (deviation from "admin" in original line; intentional per Phase 2 plan).
+- [x] React: tabbed shell (Products | Prompts); product list + filters + select; prompt view/edit/add/delete.
+- [x] Generation endpoints (`/api/generate/image|video`) scaffolded as 501 stubs — Phase 3 seam.
 
-**Verify:** Product list shows pending; category prompt loads; admin edit persists.
+**Verify:** ✅ Product list shows pending; category prompt loads; prompt edit persists. 23 tests pass, frontend build clean. (Perf follow-up 2026-06-23: 30s per-token auth cache in `backend/auth.py` cuts repeat-request latency — was 3 serial Supabase round-trips/request.)
 
 ---
 
-## Phase 3 — Generation + Drive + variations
+## Phase 3 — Generation + Drive + variations  ← 🚧 PARTIAL
 **Prereqs:** service-account JSON; folders shared with SA; `mockup_variations` approved.
-- [ ] `integrations/drive_client.py` — `parse_folder_id` (3 formats), list/download/upload.
-- [ ] `integrations/storage_client.py` — Supabase Storage upload + public URL.
-- [ ] `db/variations_repo.py`; migration for `mockup_variations`.
-- [ ] Backend `/generate`: parse producturl → download inputs → generate → save raw to Drive → insert `mockup_variations` (status pending). Skip if `base_mockup` true unless `redo`.
-- [ ] React: trigger generation; poll/stream status.
+- [~] `integrations/drive_client.py` — **DONE for read:** `extract_folder_id` (3 formats), `list_folder_images` + thumbnail data-URIs, `DriveNotConfigured`. **Variant subfolders:** `list_folder_image_groups` descends one level — returns `{loose, groups[]}` where each immediate subfolder = a named variant group (decision 2026-06-23; depth 1, ≤30 subfolders, empty ones omitted). UI renders loose images + per-variant sections. **Not yet:** download (bytes) + upload.
+- [ ] `integrations/storage_client.py` — Supabase Storage upload + public URL. *(not started)*
+- [ ] `db/variations_repo.py`; migration for `mockup_variations`. *(not started)*
+- [ ] Backend `/generate`: parse producturl → download inputs → generate → save raw to Drive → insert `mockup_variations` (status pending). Skip if `base_mockup` true unless `redo`. **Still a 501 stub** in `backend/routers/generate.py` — real wiring outstanding.
+- [~] React: trigger generation; poll/stream status. **DONE:** Products tab has generate buttons + Drive image preview/multi-select (`GET /api/products/{id}/images`, `image_ids` passed to generate). **Not yet:** real result/poll/stream (buttons hit the 501 stub).
 
-**Verify:** Generate a pending product → inputs from Drive → variation row created → raw in Drive.
+**Verify:** ⬜ Not yet — generation not wired. (Drive folder preview + image selection verified live.)
 
 ---
 
