@@ -14,3 +14,8 @@ def get_flags(client: Client, productid: str) -> dict | None:
     )
     rows = resp.data or []
     return rows[0] if rows else None
+
+
+def set_base_mockup(client: Client, productid: str, value: bool = True) -> None:
+    """Flip the product's ``base_mockup`` flag (row exists per product)."""
+    client.table("mockups").update({"base_mockup": value}).eq("productid", productid).execute()
