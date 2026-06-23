@@ -11,7 +11,6 @@ from backend.routers import generate as gen
 from mockup_generator.db.profiles_repo import Profile
 from mockup_generator.db.products_repo import Product
 from mockup_generator.generation.service import NoImageReturned
-from mockup_generator.integrations.storage_client import StorageNotConfigured
 
 
 def _png_bytes() -> bytes:
@@ -45,10 +44,6 @@ def _wire_happy(monkeypatch, *, calls):
         return _png_bytes()
 
     monkeypatch.setattr(gen.service, "generate_mockup_bytes", fake_generate)
-    monkeypatch.setattr(gen.storage_client, "upload_mockup",
-                        lambda pid, data, key, **kw: (f"{pid}/{key}.png", "https://signed/x"))
-    monkeypatch.setattr(gen.mockup_variations_repo, "insert",
-                        lambda db, **kw: {"variation_id": 99, **kw})
 
 
 def test_generate_image_success_with_explicit_ids(client, monkeypatch):
@@ -62,26 +57,11 @@ def test_generate_image_success_with_explicit_ids(client, monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
-    assert body["image_url"] == "https://signed/x"
-    assert body["variation_id"] == 99
+    assert isinstance(body["image_b64"], str) and len(body["image_b64"]) > 0
+    assert "image_url" not in body
     assert calls["downloaded"] == ["f1", "f2"]
     assert calls["gen"]["n_images"] == 2
     assert calls["gen"]["prompt"] == "a luxe saree"
-
-
-def test_generate_image_falls_back_to_folder_listing(client, monkeypatch):
-    calls = {}
-    _wire_happy(monkeypatch, calls=calls)
-    # no image_ids -> list folder; loose + one variant group
-    monkeypatch.setattr(gen.drive_client, "list_folder_image_groups", lambda fid: {
-        "loose": [{"id": "L1"}],
-        "groups": [{"id": "g", "name": "RED", "images": [{"id": "R1"}, {"id": "R2"}]}],
-    })
-
-    r = client.post("/api/generate/image", json={"productid": "BC25001", "prompt": "p"})
-
-    assert r.status_code == 200
-    assert calls["downloaded"] == ["L1", "R1", "R2"]
 
 
 def test_generate_image_caps_references_at_14(client, monkeypatch):
@@ -98,21 +78,22 @@ def test_generate_image_caps_references_at_14(client, monkeypatch):
 
 def test_generate_image_product_not_found_404(client, monkeypatch):
     monkeypatch.setattr(gen.products_repo, "get_product", lambda db, pid: None)
-    r = client.post("/api/generate/image", json={"productid": "X", "prompt": "p"})
+    r = client.post("/api/generate/image",
+                    json={"productid": "X", "prompt": "p", "image_ids": ["f1"]})
     assert r.status_code == 404
 
 
 def test_generate_image_no_folder_400(client, monkeypatch):
     monkeypatch.setattr(gen.products_repo, "get_product", lambda db, pid: _product(url=None))
-    r = client.post("/api/generate/image", json={"productid": "BC25001", "prompt": "p"})
+    r = client.post("/api/generate/image",
+                    json={"productid": "BC25001", "prompt": "p", "image_ids": ["f1"]})
     assert r.status_code == 400
 
 
-def test_generate_image_no_images_400(client, monkeypatch):
+def test_generate_image_requires_source_images_400(client, monkeypatch):
     monkeypatch.setattr(gen.products_repo, "get_product", lambda db, pid: _product())
-    monkeypatch.setattr(gen.drive_client, "list_folder_image_groups",
-                        lambda fid: {"loose": [], "groups": []})
-    r = client.post("/api/generate/image", json={"productid": "BC25001", "prompt": "p"})
+    r = client.post("/api/generate/image",
+                    json={"productid": "BC25001", "prompt": "p", "image_ids": []})
     assert r.status_code == 400
 
 
@@ -124,16 +105,6 @@ def test_generate_image_gemini_failure_502(client, monkeypatch):
     r = client.post("/api/generate/image",
                     json={"productid": "BC25001", "prompt": "p", "image_ids": ["f1"]})
     assert r.status_code == 502
-
-
-def test_generate_image_storage_not_configured_503(client, monkeypatch):
-    calls = {}
-    _wire_happy(monkeypatch, calls=calls)
-    monkeypatch.setattr(gen.storage_client, "upload_mockup",
-                        lambda *a, **k: (_ for _ in ()).throw(StorageNotConfigured("no key")))
-    r = client.post("/api/generate/image",
-                    json={"productid": "BC25001", "prompt": "p", "image_ids": ["f1"]})
-    assert r.status_code == 503
 
 
 def test_generate_image_threads_model_resolution_aspect(client, monkeypatch):
