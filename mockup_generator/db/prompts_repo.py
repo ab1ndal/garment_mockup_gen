@@ -56,7 +56,7 @@ def create(client: Client, *, categoryid: str, label: str, body: str,
 def update(client: Client, prompt_id: int, *, label: str | None = None,
            body: str | None = None, is_default: bool | None = None,
            updated_by: str | None = None) -> Prompt:
-    if is_default:
+    if is_default is True:
         cur = client.table("prompts").select("categoryid").eq("prompt_id", prompt_id).limit(1).execute()
         if cur.data:
             _clear_defaults(client, cur.data[0]["categoryid"])

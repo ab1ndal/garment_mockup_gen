@@ -38,3 +38,19 @@ def test_list_by_category_maps_rows():
     c = FakeClient(rows)
     out = prompts_repo.list_by_category(c, "SA")
     assert out[0].label == "Default" and out[0].prompt_id == 5
+
+
+def test_update_default_clears_siblings():
+    rows = [{"prompt_id": 1, "categoryid": "SA", "label": "Studio",
+             "body": "b", "is_default": False}]
+    c = FakeClient(rows)
+    p = prompts_repo.update(c, 1, is_default=True)
+    assert p.prompt_id == 1 and p.is_default is False
+    # verify select, then update(is_default=False), then final update(payload) occur in order
+    kinds = [s[0] for s in c.sink]
+    assert kinds.index("select") < kinds.index("update")
+    # find the two update calls: first should have is_default=False
+    updates = [s for s in c.sink if s[0] == "update"]
+    assert len(updates) == 2
+    assert updates[0][1] == {"is_default": False}  # sibling clear
+    assert updates[1][1].get("is_default") is True  # main payload
