@@ -67,6 +67,38 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
+/** Like apiFetch but for multipart/form-data — lets the browser set the boundary. */
+export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const token = session?.access_token;
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method: "POST",
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: form,
+    });
+  } catch {
+    throw new ApiError(0, STATUS_HINTS[0]);
+  }
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const body = await res.json();
+      if (typeof body?.detail === "string") detail = body.detail;
+      else if (body?.detail) detail = JSON.stringify(body.detail);
+    } catch {
+      /* non-JSON body */
+    }
+    throw new ApiError(res.status, detail || STATUS_HINTS[res.status] || res.statusText);
+  }
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
 export interface Me {
   id: string;
   email: string;
@@ -122,6 +154,19 @@ export interface GenResult {
   variation_id?: number;
 }
 
+export interface GenPreview {
+  status: string;
+  detail: string;
+  image_b64: string;
+}
+
+export interface ApproveResult {
+  status: string;
+  detail: string;
+  image_url: string;
+  variation_id?: number;
+}
+
 // Categories are a small, near-static list hit by every tab on mount.
 // Cache the in-flight promise so it's fetched once and shared (no refetch on
 // tab switch / remount). Call invalidateCategories() if the list ever changes.
@@ -164,6 +209,9 @@ export const getProduct = (id: string) =>
 
 export const listProductImages = (id: string) =>
   apiFetch<ProductImages>(`/api/products/${encodeURIComponent(id)}/images`);
+
+export const getProductColors = (id: string) =>
+  apiFetch<{ colors: string[] }>(`/api/products/${encodeURIComponent(id)}/colors`);
 
 export const listPrompts = (categoryid: string) =>
   apiFetch<Prompt[]>(`/api/prompts?categoryid=${encodeURIComponent(categoryid)}`);
@@ -213,11 +261,15 @@ export const generateImage = (b: {
   model?: string;
   resolution?: string;
   aspect_ratio?: string;
+  color?: string;
 }) =>
-  apiFetch<GenResult>("/api/generate/image", {
+  apiFetch<GenPreview>("/api/generate/image", {
     method: "POST",
     body: JSON.stringify(b),
   });
+
+export const approveMockup = (form: FormData) =>
+  apiUpload<ApproveResult>("/api/generate/approve", form);
 
 export const generateVideo = (b: { productid: string; prompt: string; image_ids?: string[] }) =>
   apiFetch<GenResult>("/api/generate/video", {
