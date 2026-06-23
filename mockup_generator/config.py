@@ -39,6 +39,36 @@ class Settings:
     raise only when actually accessed, so importing the package never fails."""
 
     @property
+    def use_vertex(self) -> bool:
+        """Route google-genai through Vertex AI (Cloud billing) instead of the
+        Gemini Developer API (AI Studio prepay credits). Enable by setting
+        ``GOOGLE_GENAI_USE_VERTEXAI=true`` in the environment."""
+        return str(_get("GOOGLE_GENAI_USE_VERTEXAI", default="") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+
+    @property
+    def google_cloud_project(self) -> str:
+        """GCP project id for Vertex AI. Required when ``use_vertex`` is on."""
+        return _get("GOOGLE_CLOUD_PROJECT", required=True)  # type: ignore[return-value]
+
+    @property
+    def google_cloud_location(self) -> str:
+        return _get("GOOGLE_CLOUD_LOCATION", default="global")  # type: ignore[return-value]
+
+    @property
+    def vertex_sa_json(self) -> str | None:
+        """Service-account credentials for Vertex AI (path or JSON content).
+
+        Used on headless deploys (HF Spaces) where user ADC is unavailable.
+        Falls back to the Drive SA so a single key can serve both — that SA
+        must hold ``roles/aiplatform.user`` on the project. When unset, the
+        client uses ADC (local ``gcloud auth application-default login``)."""
+        return _get("GOOGLE_VERTEX_SA_JSON") or self.google_drive_sa_json
+
+    @property
     def google_api_key(self) -> str:
         return _get("GOOGLE_API_KEY", required=True)  # type: ignore[return-value]
 

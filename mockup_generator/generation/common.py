@@ -25,8 +25,41 @@ ALLOWED_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 
 @lru_cache(maxsize=1)
 def get_genai_client() -> genai.Client:
-    """Lazily build the Google GenAI client from settings (cached)."""
+    """Lazily build the Google GenAI client from settings (cached).
+
+    When ``GOOGLE_GENAI_USE_VERTEXAI`` is set, route through Vertex AI so calls
+    bill against the GCP project's pay-as-you-go account (uses Application
+    Default Credentials) instead of AI Studio prepay credits. Otherwise fall
+    back to the Gemini Developer API with an API key.
+    """
+    if settings.use_vertex:
+        return genai.Client(
+            vertexai=True,
+            project=settings.google_cloud_project,
+            location=settings.google_cloud_location,
+            credentials=_vertex_credentials(),
+        )
     return genai.Client(api_key=settings.google_api_key)
+
+
+def _vertex_credentials():
+    """Service-account credentials for Vertex, or None to use ADC.
+
+    Headless deploys (HF Spaces) have no user ADC, so load a service-account
+    key from ``GOOGLE_VERTEX_SA_JSON`` / ``GOOGLE_DRIVE_SA_JSON`` (path or raw
+    JSON). Locally the env is unset and we return None so the client uses ADC.
+    """
+    import json
+
+    raw = settings.vertex_sa_json
+    if not raw:
+        return None
+    from google.oauth2 import service_account
+
+    info = json.loads(raw) if raw.lstrip().startswith("{") else json.load(open(raw))
+    return service_account.Credentials.from_service_account_info(
+        info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
 
 
 def part_from_pil(im: Image.Image, fmt: str = "JPEG", quality: int = 90) -> types.Part:
@@ -60,8 +93,9 @@ def first_image_bytes(response) -> bytes | None:
     ``as_image()`` is non-None rather than assuming ``parts[0]``.
     """
     for part in response.candidates[0].content.parts:
-        img = part.as_image()
-        if img is not None:
+        inline = getattr(part, "inline_data", None)
+        if inline and inline.data:
+            img = Image.open(BytesIO(inline.data)).convert("RGB")
             buf = BytesIO()
             img.save(buf, format="PNG")
             return buf.getvalue()
