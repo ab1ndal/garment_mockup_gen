@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabaseClient";
-import { getMe, type Me } from "./api";
+import { getMe, getCategories, type Me } from "./api";
 import ProductsTab from "./components/ProductsTab";
 import PromptsTab from "./components/PromptsTab";
 
@@ -29,7 +29,10 @@ export default function App() {
     }
     setError(null);
     getMe()
-      .then(setMe)
+      .then((m) => {
+        setMe(m);
+        void getCategories().catch(() => {}); // warm the cache; tabs reuse it
+      })
       .catch((e: Error) => setError(e.message));
   }, [session]);
 

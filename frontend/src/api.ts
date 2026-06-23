@@ -70,7 +70,22 @@ export interface GenResult {
   detail: string;
 }
 
-export const getCategories = () => apiFetch<Category[]>("/api/categories");
+// Categories are a small, near-static list hit by every tab on mount.
+// Cache the in-flight promise so it's fetched once and shared (no refetch on
+// tab switch / remount). Call invalidateCategories() if the list ever changes.
+let _categoriesPromise: Promise<Category[]> | null = null;
+export function getCategories(): Promise<Category[]> {
+  if (!_categoriesPromise) {
+    _categoriesPromise = apiFetch<Category[]>("/api/categories").catch((e) => {
+      _categoriesPromise = null; // allow retry after a failed load
+      throw e;
+    });
+  }
+  return _categoriesPromise;
+}
+export const invalidateCategories = () => {
+  _categoriesPromise = null;
+};
 
 export function listProducts(p: {
   category?: string;
