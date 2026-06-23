@@ -118,6 +118,8 @@ export interface Prompt {
 export interface GenResult {
   status: string;
   detail: string;
+  image_url?: string;
+  variation_id?: number;
 }
 
 // Categories are a small, near-static list hit by every tab on mount.
@@ -185,7 +187,33 @@ export const updatePrompt = (
 export const deletePrompt = (id: number) =>
   apiFetch<void>(`/api/prompts/${id}`, { method: "DELETE" });
 
-export const generateImage = (b: { productid: string; prompt: string; image_ids?: string[] }) =>
+export interface GenOptions {
+  models: string[];
+  resolutions: string[];
+  aspect_ratios: string[];
+  defaults: { model: string; resolution: string; aspect_ratio: string };
+}
+
+// Static, near-constant; fetched once and shared.
+let _genOptionsPromise: Promise<GenOptions> | null = null;
+export function getGenerationOptions(): Promise<GenOptions> {
+  if (!_genOptionsPromise) {
+    _genOptionsPromise = apiFetch<GenOptions>("/api/generate/options").catch((e) => {
+      _genOptionsPromise = null;
+      throw e;
+    });
+  }
+  return _genOptionsPromise;
+}
+
+export const generateImage = (b: {
+  productid: string;
+  prompt: string;
+  image_ids?: string[];
+  model?: string;
+  resolution?: string;
+  aspect_ratio?: string;
+}) =>
   apiFetch<GenResult>("/api/generate/image", {
     method: "POST",
     body: JSON.stringify(b),

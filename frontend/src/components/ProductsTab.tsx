@@ -1,9 +1,19 @@
 import { useEffect, useState } from "react";
 import {
   getCategories, listProducts, listPrompts, listProductImages,
-  generateImage, generateVideo,
+  generateImage, generateVideo, getGenerationOptions,
   type Category, type Product, type Prompt, type ProductImage, type ProductImages,
+  type GenOptions,
 } from "../api";
+
+// Human labels for the resolution / aspect choices.
+const RES_LABEL: Record<string, string> = {
+  "1K": "1K", "2K": "2K · web", "4K": "4K · print",
+};
+const ASPECT_LABEL: Record<string, string> = {
+  "1:1": "1:1 · square", "3:4": "3:4 · portrait", "4:3": "4:3 · landscape",
+  "9:16": "9:16 · story/reel", "16:9": "16:9 · wide", "2:3": "2:3", "3:2": "3:2", "21:9": "21:9",
+};
 
 export default function ProductsTab() {
   const [cats, setCats] = useState<Category[]>([]);
@@ -132,6 +142,22 @@ function GenerationStage({ product }: { product: Product }) {
   const [videoPrompt, setVideoPrompt] = useState("");
   const [busy, setBusy] = useState<null | "image" | "video">(null);
   const [msg, setMsg] = useState<{ kind: "info" | "error"; text: string } | null>(null);
+  const [resultUrl, setResultUrl] = useState<string | null>(null);
+
+  // Generation options (model / quality / aspect) + current selection.
+  const [opts, setOpts] = useState<GenOptions | null>(null);
+  const [model, setModel] = useState("");
+  const [resolution, setResolution] = useState("");
+  const [aspect, setAspect] = useState("");
+
+  useEffect(() => {
+    getGenerationOptions().then((o) => {
+      setOpts(o);
+      setModel(o.defaults.model);
+      setResolution(o.defaults.resolution);
+      setAspect(o.defaults.aspect_ratio);
+    }).catch(() => {/* options optional; generation still works with server defaults */});
+  }, []);
 
   // Source images from Drive: loose (top-level) + per-subfolder variant groups
   const [imgs, setImgs] = useState<ProductImages>({ loose: [], groups: [] });
@@ -151,7 +177,7 @@ function GenerationStage({ product }: { product: Product }) {
 
   useEffect(() => {
     setImgState("loading"); setImgErr(null);
-    setImgs({ loose: [], groups: [] }); setPicked(new Set());
+    setImgs({ loose: [], groups: [] }); setPicked(new Set()); setResultUrl(null);
     listProductImages(product.productid)
       .then((r) => { setImgs(r); setImgState("ready"); })
       .catch((e: Error) => { setImgErr(e.message.replace(/^\d+:\s*/, "")); setImgState("error"); });
@@ -167,12 +193,20 @@ function GenerationStage({ product }: { product: Product }) {
   const run = (kind: "image" | "video") => {
     setBusy(kind);
     setMsg(null);
+    if (kind === "image") setResultUrl(null);
     const image_ids = [...picked];
     const call = kind === "image"
-      ? generateImage({ productid: product.productid, prompt: promptText, image_ids })
+      ? generateImage({
+          productid: product.productid, prompt: promptText, image_ids,
+          model: model || undefined, resolution: resolution || undefined,
+          aspect_ratio: aspect || undefined,
+        })
       : generateVideo({ productid: product.productid, prompt: videoPrompt, image_ids });
     call
-      .then((r) => setMsg({ kind: "info", text: r.detail }))
+      .then((r) => {
+        setMsg({ kind: "info", text: r.detail });
+        if (kind === "image" && r.image_url) setResultUrl(r.image_url);
+      })
       .catch((e: Error) => setMsg({ kind: "error", text: e.message.replace(/^\d+:\s*/, "") }))
       .finally(() => setBusy(null));
   };
@@ -257,6 +291,28 @@ function GenerationStage({ product }: { product: Product }) {
             rows={7}
           />
         </div>
+        {opts && (
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <label className="field mb-0!">
+              <span className="text-xs font-semibold text-subtle">Model</span>
+              <select aria-label="Model" value={model} onChange={(e) => setModel(e.target.value)}>
+                {opts.models.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </label>
+            <label className="field mb-0!">
+              <span className="text-xs font-semibold text-subtle">Quality</span>
+              <select aria-label="Quality" value={resolution} onChange={(e) => setResolution(e.target.value)}>
+                {opts.resolutions.map((r) => <option key={r} value={r}>{RES_LABEL[r] ?? r}</option>)}
+              </select>
+            </label>
+            <label className="field mb-0!">
+              <span className="text-xs font-semibold text-subtle">Aspect ratio</span>
+              <select aria-label="Aspect ratio" value={aspect} onChange={(e) => setAspect(e.target.value)}>
+                {opts.aspect_ratios.map((a) => <option key={a} value={a}>{ASPECT_LABEL[a] ?? a}</option>)}
+              </select>
+            </label>
+          </div>
+        )}
         <button
           className="btn-primary mt-4 w-full text-[15px] shadow-card"
           style={{ minHeight: 52 }}
@@ -278,6 +334,23 @@ function GenerationStage({ product }: { product: Product }) {
         >
           {msg.text}
         </p>
+      )}
+
+      {/* Generated mockup */}
+      {resultUrl && (
+        <section className="mt-5">
+          <div className="flex items-center justify-between">
+            <p className="section-label mt-0!">Generated mockup</p>
+            <a href={resultUrl} download className="text-sm">Download ↓</a>
+          </div>
+          <a href={resultUrl} target="_blank" rel="noreferrer">
+            <img
+              src={resultUrl}
+              alt="Generated mockup"
+              className="mt-2 w-full rounded-lg border border-line"
+            />
+          </a>
+        </section>
       )}
 
       {/* Video — secondary */}

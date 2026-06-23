@@ -52,6 +52,22 @@ def load_images_from_folder(
     return imgs
 
 
+def first_image_bytes(response) -> bytes | None:
+    """Return PNG bytes of the first image part, or None if there is none.
+
+    Gemini 3 image models are *thinking* models: a response can interleave
+    ``thought`` / ``text`` parts with the image. Scan for the first part whose
+    ``as_image()`` is non-None rather than assuming ``parts[0]``.
+    """
+    for part in response.candidates[0].content.parts:
+        img = part.as_image()
+        if img is not None:
+            buf = BytesIO()
+            img.save(buf, format="PNG")
+            return buf.getvalue()
+    return None
+
+
 def save_first_image_part(response, save_path: Path) -> bool:
     for part in response.candidates[0].content.parts:
         if getattr(part, "inline_data", None):
@@ -67,10 +83,20 @@ def generate_with_retries(
     *,
     aspect_ratio: str = "1:1",
     resolution: str = "4K",
+    person_generation: str | None = None,
     system_instruction: str | None = None,
     max_attempts: int = 5,
 ):
-    """Call Gemini image generation with exponential backoff on 429/5xx."""
+    """Call Gemini image generation with exponential backoff on 429/5xx.
+
+    ``person_generation`` is left unset by default: the google-genai 2.x SDK
+    accepts it on ``ImageConfig`` client-side, but the **Gemini Developer API
+    (api-key) rejects it at call time** ("only supported in Gemini Enterprise
+    Agent Platform mode"). Pass it only when running against Vertex.
+    """
+    image_config = types.ImageConfig(aspect_ratio=aspect_ratio, image_size=resolution)
+    if person_generation is not None:
+        image_config.person_generation = person_generation
     client = get_genai_client()
     if system_instruction is None:
         system_instruction = (
@@ -92,10 +118,7 @@ def generate_with_retries(
                     system_instruction=system_instruction,
                     response_modalities=["IMAGE"],
                     safety_settings=safety_settings,
-                    image_config=types.ImageConfig(
-                        aspect_ratio=aspect_ratio,
-                        image_size=resolution,
-                    ),
+                    image_config=image_config,
                 ),
             )
         except errors.ClientError as e:
