@@ -67,6 +67,38 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
+/** Like apiFetch but for multipart/form-data — lets the browser set the boundary. */
+export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const token = session?.access_token;
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method: "POST",
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: form,
+    });
+  } catch {
+    throw new ApiError(0, STATUS_HINTS[0]);
+  }
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const body = await res.json();
+      if (typeof body?.detail === "string") detail = body.detail;
+      else if (body?.detail) detail = JSON.stringify(body.detail);
+    } catch {
+      /* non-JSON body */
+    }
+    throw new ApiError(res.status, detail || STATUS_HINTS[res.status] || res.statusText);
+  }
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
 export interface Me {
   id: string;
   email: string;
@@ -118,6 +150,21 @@ export interface Prompt {
 export interface GenResult {
   status: string;
   detail: string;
+  image_url?: string;
+  variation_id?: number;
+}
+
+export interface GenPreview {
+  status: string;
+  detail: string;
+  image_b64: string;
+}
+
+export interface ApproveResult {
+  status: string;
+  detail: string;
+  image_url: string;
+  variation_id?: number;
 }
 
 // Categories are a small, near-static list hit by every tab on mount.
@@ -163,6 +210,9 @@ export const getProduct = (id: string) =>
 export const listProductImages = (id: string) =>
   apiFetch<ProductImages>(`/api/products/${encodeURIComponent(id)}/images`);
 
+export const getProductColors = (id: string) =>
+  apiFetch<{ colors: string[] }>(`/api/products/${encodeURIComponent(id)}/colors`);
+
 export const listPrompts = (categoryid: string) =>
   apiFetch<Prompt[]>(`/api/prompts?categoryid=${encodeURIComponent(categoryid)}`);
 
@@ -185,11 +235,41 @@ export const updatePrompt = (
 export const deletePrompt = (id: number) =>
   apiFetch<void>(`/api/prompts/${id}`, { method: "DELETE" });
 
-export const generateImage = (b: { productid: string; prompt: string; image_ids?: string[] }) =>
-  apiFetch<GenResult>("/api/generate/image", {
+export interface GenOptions {
+  models: string[];
+  resolutions: string[];
+  aspect_ratios: string[];
+  defaults: { model: string; resolution: string; aspect_ratio: string };
+}
+
+// Static, near-constant; fetched once and shared.
+let _genOptionsPromise: Promise<GenOptions> | null = null;
+export function getGenerationOptions(): Promise<GenOptions> {
+  if (!_genOptionsPromise) {
+    _genOptionsPromise = apiFetch<GenOptions>("/api/generate/options").catch((e) => {
+      _genOptionsPromise = null;
+      throw e;
+    });
+  }
+  return _genOptionsPromise;
+}
+
+export const generateImage = (b: {
+  productid: string;
+  prompt: string;
+  image_ids?: string[];
+  model?: string;
+  resolution?: string;
+  aspect_ratio?: string;
+  color?: string;
+}) =>
+  apiFetch<GenPreview>("/api/generate/image", {
     method: "POST",
     body: JSON.stringify(b),
   });
+
+export const approveMockup = (form: FormData) =>
+  apiUpload<ApproveResult>("/api/generate/approve", form);
 
 export const generateVideo = (b: { productid: string; prompt: string; image_ids?: string[] }) =>
   apiFetch<GenResult>("/api/generate/video", {

@@ -6,7 +6,7 @@ from supabase import Client
 from backend.auth import CurrentUser, get_current_user
 from backend.deps import get_db
 from backend.schemas import CategoryOut, ProductImages, ProductOut
-from mockup_generator.db import products_repo
+from mockup_generator.db import products_repo, variants_repo
 from mockup_generator.integrations import drive_client
 from mockup_generator.integrations.drive_client import DriveNotConfigured
 
@@ -74,3 +74,13 @@ def list_product_images(
         raise HTTPException(status_code=502, detail=f"Could not read Drive folder: {exc}") from exc
 
     return ProductImages(**grouped)
+
+
+@router.get("/products/{productid}/colors")
+def list_product_colors(
+    productid: str,
+    user: CurrentUser = Depends(get_current_user),
+    db: Client = Depends(get_db),
+):
+    """Distinct variant colors for the product (for the generation selector)."""
+    return {"colors": variants_repo.list_colors(db, productid)}

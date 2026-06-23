@@ -5,6 +5,7 @@ from backend.main import app
 from backend.auth import get_current_user, CurrentUser
 from backend.deps import get_db
 from mockup_generator.db import products_repo
+from backend.routers import products as products_router
 from mockup_generator.db.profiles_repo import Profile
 from mockup_generator.integrations import drive_client
 from mockup_generator.integrations.drive_client import DriveNotConfigured
@@ -92,3 +93,11 @@ def test_list_product_images_drive_not_configured_503(client, monkeypatch):
     monkeypatch.setattr(drive_client, "list_folder_image_groups", boom)
     r = client.get("/api/products/BC25001/images")
     assert r.status_code == 503
+
+
+def test_list_product_colors(client, monkeypatch):
+    monkeypatch.setattr(products_router.variants_repo, "list_colors",
+                        lambda db, pid: ["Black", "Red"])
+    r = client.get("/api/products/BC25001/colors")
+    assert r.status_code == 200
+    assert r.json() == {"colors": ["Black", "Red"]}

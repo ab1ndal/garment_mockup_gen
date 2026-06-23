@@ -63,8 +63,27 @@ class GenerateRequest(BaseModel):
     productid: str
     prompt: str
     image_ids: list[str] = []
+    model: str | None = None
+    resolution: str | None = None
+    aspect_ratio: str | None = None
+    color: str | None = None
+
+
+class GeneratePreview(BaseModel):
+    status: str
+    detail: str
+    image_b64: str
 
 
 class GenerateResponse(BaseModel):
     status: str
     detail: str
+    image_url: str | None = None
+    variation_id: int | None = None
+
+
+class ApproveResponse(BaseModel):
+    status: str
+    detail: str
+    image_url: str
+    variation_id: int | None = None

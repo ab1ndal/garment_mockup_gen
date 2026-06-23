@@ -21,6 +21,9 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
+from io import BytesIO
+
+from googleapiclient.http import MediaIoBaseDownload
 
 from mockup_generator.config import settings
 
@@ -135,6 +138,22 @@ def list_folder_images(folder_id: str) -> list[dict]:
     files = _list_image_files(svc, folder_id)
     items = _attach_thumbnails(session, files)
     return [items[f["id"]] for f in files]
+
+
+def download_file(file_id: str) -> bytes:
+    """Download a Drive file's full-resolution bytes (``drive.readonly`` scope).
+
+    Thumbnails are capped at ~w600, too small to use as generation references,
+    so the real file bytes must be streamed via ``get_media``.
+    """
+    svc, _ = _clients()
+    request = svc.files().get_media(fileId=file_id, supportsAllDrives=True)
+    buf = BytesIO()
+    downloader = MediaIoBaseDownload(buf, request)
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    return buf.getvalue()
 
 
 def list_folder_image_groups(folder_id: str) -> dict:

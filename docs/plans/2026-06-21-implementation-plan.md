@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-21 (revised: React + FastAPI stack)
 **Companion to:** `2026-06-21-design.md`
-**Status:** In progress — Phases 0–2 ✅ shipped; Phase 3 🚧 partial (Drive read + image-select UI; generation still stubbed). Last synced to code: 2026-06-23.
+**Status:** In progress — Phases 0–3 ✅ shipped (Phase 3 = generate-preview → approve/publish + variant color); Phase 4 review UI next. Last synced to code: 2026-06-23.
 
 Each phase ships independently and leaves the repo working.
 
@@ -51,15 +51,16 @@ Each phase ships independently and leaves the repo working.
 
 ---
 
-## Phase 3 — Generation + Drive + variations  ← 🚧 PARTIAL
+## Phase 3 — Generation + Drive + variations  ← ✅ DONE (generate-preview → approve/publish + variant color)
 **Prereqs:** service-account JSON; folders shared with SA; `mockup_variations` approved.
-- [~] `integrations/drive_client.py` — **DONE for read:** `extract_folder_id` (3 formats), `list_folder_images` + thumbnail data-URIs, `DriveNotConfigured`. **Variant subfolders:** `list_folder_image_groups` descends one level — returns `{loose, groups[]}` where each immediate subfolder = a named variant group (decision 2026-06-23; depth 1, ≤30 subfolders, empty ones omitted). UI renders loose images + per-variant sections. **Not yet:** download (bytes) + upload.
-- [ ] `integrations/storage_client.py` — Supabase Storage upload + public URL. *(not started)*
-- [ ] `db/variations_repo.py`; migration for `mockup_variations`. *(not started)*
-- [ ] Backend `/generate`: parse producturl → download inputs → generate → save raw to Drive → insert `mockup_variations` (status pending). Skip if `base_mockup` true unless `redo`. **Still a 501 stub** in `backend/routers/generate.py` — real wiring outstanding.
-- [~] React: trigger generation; poll/stream status. **DONE:** Products tab has generate buttons + Drive image preview/multi-select (`GET /api/products/{id}/images`, `image_ids` passed to generate). **Not yet:** real result/poll/stream (buttons hit the 501 stub).
+**Companion plan:** `docs/superpowers/plans/2026-06-23-variant-aware-generate-approve.md` (variant-aware generate → approve/publish; the flow below supersedes the original "save raw to Drive" sketch).
+- [x] `integrations/drive_client.py` — read (`extract_folder_id`, `list_folder_image_groups` → `{loose, groups[]}`) + `download_file` (bytes).
+- [x] `integrations/storage_client.py` — public-URL `upload_mockup` + `slugify`/`short_hex`/`delete_object`/`path_from_public_url` (Task 7).
+- [x] `db/` repos — `mockup_variations_repo.insert(..., color)`, `mockups_repo.set_base_mockup`, `productimages_repo` (insert/list_for/delete_for, one row per product+color), `variants_repo.list_colors`. Migration: `mockup_variations.color` + public `mockups` bucket (`docs/migrations/2026-06-23-color-and-public-bucket.md`).
+- [x] Backend `/generate/image` is **preview-only** (returns base64, writes nothing, requires ≥1 source image); `/generate/approve` is the sole writer (upload to public bucket → audit row → flip `base_mockup` → replace product+color `productimages` row + orphan-cleanup the prior Storage object). `GET /products/{id}/colors` surfaces variant colors.
+- [x] React: color selector, required source selection, preview → Approve / Disapprove / Download / Upload-corrected.
 
-**Verify:** ⬜ Not yet — generation not wired. (Drive folder preview + image selection verified live.)
+**Verify:** ✅ Backend suite 73 green; frontend build clean. Manual smoke (preview writes nothing → approve publishes public URL renders anon → corrected upload → download) — to confirm live.
 
 ---
 

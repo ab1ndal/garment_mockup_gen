@@ -97,3 +97,35 @@ def test_list_folder_images_flat(monkeypatch):
     out = drive_client.list_folder_images("F")
     assert [i["id"] for i in out] == ["x", "y"]
     assert out[0]["thumbnail_url"] == "data:thumb:x"
+
+
+class _FakeDownloader:
+    """Stand-in for MediaIoBaseDownload: writes the file's bytes in two chunks."""
+
+    def __init__(self, buf, request):
+        self.buf = buf
+        self.request = request  # the get_media request object
+        self._chunks = [b"PNG", b"DATA"]
+
+    def next_chunk(self):
+        self.buf.write(self._chunks.pop(0))
+        return (None, len(self._chunks) == 0)
+
+
+def test_download_file_streams_full_bytes(monkeypatch):
+    captured = {}
+
+    class _Files:
+        def get_media(self, *, fileId, supportsAllDrives):
+            captured["fileId"] = fileId
+            captured["supportsAllDrives"] = supportsAllDrives
+            return f"req:{fileId}"
+
+    svc = type("Svc", (), {"files": lambda self: _Files()})()
+    monkeypatch.setattr(drive_client, "_clients", lambda: (svc, object()))
+    monkeypatch.setattr(drive_client, "MediaIoBaseDownload", _FakeDownloader)
+
+    data = drive_client.download_file("FILE1")
+
+    assert data == b"PNGDATA"
+    assert captured == {"fileId": "FILE1", "supportsAllDrives": True}
