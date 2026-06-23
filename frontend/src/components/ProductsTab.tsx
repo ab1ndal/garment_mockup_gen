@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import {
   getCategories, listProducts, listPrompts, listProductImages,
   generateImage, generateVideo,
-  type Category, type Product, type Prompt, type ProductImage,
+  type Category, type Product, type Prompt, type ProductImage, type ProductImages,
 } from "../api";
 
 export default function ProductsTab() {
@@ -133,8 +133,8 @@ function GenerationStage({ product }: { product: Product }) {
   const [busy, setBusy] = useState<null | "image" | "video">(null);
   const [msg, setMsg] = useState<{ kind: "info" | "error"; text: string } | null>(null);
 
-  // Source images from Drive
-  const [images, setImages] = useState<ProductImage[]>([]);
+  // Source images from Drive: loose (top-level) + per-subfolder variant groups
+  const [imgs, setImgs] = useState<ProductImages>({ loose: [], groups: [] });
   const [imgState, setImgState] = useState<"loading" | "ready" | "error">("loading");
   const [imgErr, setImgErr] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -150,9 +150,10 @@ function GenerationStage({ product }: { product: Product }) {
   }, [product.productid, product.categoryid]);
 
   useEffect(() => {
-    setImgState("loading"); setImgErr(null); setImages([]); setPicked(new Set());
+    setImgState("loading"); setImgErr(null);
+    setImgs({ loose: [], groups: [] }); setPicked(new Set());
     listProductImages(product.productid)
-      .then((imgs) => { setImages(imgs); setImgState("ready"); })
+      .then((r) => { setImgs(r); setImgState("ready"); })
       .catch((e: Error) => { setImgErr(e.message.replace(/^\d+:\s*/, "")); setImgState("error"); });
   }, [product.productid]);
 
@@ -177,6 +178,7 @@ function GenerationStage({ product }: { product: Product }) {
   };
 
   const pickedCount = picked.size;
+  const totalImages = imgs.loose.length + imgs.groups.reduce((n, g) => n + g.images.length, 0);
 
   return (
     <div className="card p-6 sm:p-8">
@@ -210,33 +212,22 @@ function GenerationStage({ product }: { product: Product }) {
           </div>
         )}
         {imgState === "error" && <p className="alert alert-error">{imgErr}</p>}
-        {imgState === "ready" && images.length === 0 && (
+        {imgState === "ready" && totalImages === 0 && (
           <p className="empty py-6!">No images found in this product's Drive folder.</p>
         )}
-        {imgState === "ready" && images.length > 0 && (
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
-            {images.map((img) => {
-              const sel = picked.has(img.id);
-              return (
-                <button
-                  key={img.id}
-                  type="button"
-                  onClick={() => togglePick(img.id)}
-                  aria-pressed={sel}
-                  title={img.name}
-                  className={`relative aspect-square min-h-0! overflow-hidden rounded-lg! p-0! transition
-                    ${sel ? "border-accent! ring-2 ring-accent/30" : "border-line! hover:border-line-strong!"}`}
-                >
-                  <img src={img.thumbnail_url} alt={img.name}
-                       className="h-full w-full object-cover" loading="lazy" />
-                  {sel && (
-                    <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-accent text-[11px] font-bold text-white">
-                      ✓
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+        {imgState === "ready" && totalImages > 0 && (
+          <div className="flex flex-col gap-5">
+            {imgs.loose.length > 0 && (
+              <ImageGrid images={imgs.loose} picked={picked} onToggle={togglePick} />
+            )}
+            {imgs.groups.map((g) => (
+              <div key={g.id}>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-subtle">
+                  {g.name} <span className="text-muted">· {g.images.length}</span>
+                </p>
+                <ImageGrid images={g.images} picked={picked} onToggle={togglePick} />
+              </div>
+            ))}
           </div>
         )}
       </section>
@@ -310,6 +301,37 @@ function GenerationStage({ product }: { product: Product }) {
           {busy === "video" ? "Generating…" : "Generate Video"}
         </button>
       </section>
+    </div>
+  );
+}
+
+function ImageGrid({ images, picked, onToggle }: {
+  images: ProductImage[]; picked: Set<string>; onToggle: (id: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
+      {images.map((img) => {
+        const sel = picked.has(img.id);
+        return (
+          <button
+            key={img.id}
+            type="button"
+            onClick={() => onToggle(img.id)}
+            aria-pressed={sel}
+            title={img.name}
+            className={`relative aspect-square min-h-0! overflow-hidden rounded-lg! p-0! transition
+              ${sel ? "border-accent! ring-2 ring-accent/30" : "border-line! hover:border-line-strong!"}`}
+          >
+            <img src={img.thumbnail_url} alt={img.name}
+                 className="h-full w-full object-cover" loading="lazy" />
+            {sel && (
+              <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-accent text-[11px] font-bold text-white">
+                ✓
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }

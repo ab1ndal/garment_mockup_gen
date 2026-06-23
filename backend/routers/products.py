@@ -5,7 +5,7 @@ from supabase import Client
 
 from backend.auth import CurrentUser, get_current_user
 from backend.deps import get_db
-from backend.schemas import CategoryOut, ProductImage, ProductOut
+from backend.schemas import CategoryOut, ProductImages, ProductOut
 from mockup_generator.db import products_repo
 from mockup_generator.integrations import drive_client
 from mockup_generator.integrations.drive_client import DriveNotConfigured
@@ -48,13 +48,16 @@ def get_product(productid: str, user: CurrentUser = Depends(get_current_user), d
     return ProductOut(**vars(p))
 
 
-@router.get("/products/{productid}/images", response_model=list[ProductImage])
+@router.get("/products/{productid}/images", response_model=ProductImages)
 def list_product_images(
     productid: str,
     user: CurrentUser = Depends(get_current_user),
     db: Client = Depends(get_db),
 ):
-    """Source images in the product's Drive folder, for preview + selection."""
+    """Source images in the product's Drive folder, for preview + selection.
+
+    Returns loose top-level images plus one group per variant subfolder.
+    """
     p = products_repo.get_product(db, productid)
     if p is None:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -64,10 +67,10 @@ def list_product_images(
         raise HTTPException(status_code=409, detail="Product has no linked Drive folder")
 
     try:
-        images = drive_client.list_folder_images(folder_id)
+        grouped = drive_client.list_folder_image_groups(folder_id)
     except DriveNotConfigured as exc:
         raise HTTPException(status_code=503, detail="Drive access is not configured on the server") from exc
     except Exception as exc:  # Drive API / network errors
         raise HTTPException(status_code=502, detail=f"Could not read Drive folder: {exc}") from exc
 
-    return [ProductImage(**img) for img in images]
+    return ProductImages(**grouped)

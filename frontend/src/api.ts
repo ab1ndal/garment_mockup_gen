@@ -96,6 +96,17 @@ export interface ProductImage {
   thumbnail_url: string;
 }
 
+export interface ProductImageGroup {
+  id: string;
+  name: string;
+  images: ProductImage[];
+}
+
+export interface ProductImages {
+  loose: ProductImage[];
+  groups: ProductImageGroup[];
+}
+
 export interface Prompt {
   prompt_id: number;
   categoryid: string;
@@ -150,7 +161,7 @@ export const getProduct = (id: string) =>
   apiFetch<Product>(`/api/products/${encodeURIComponent(id)}`);
 
 export const listProductImages = (id: string) =>
-  apiFetch<ProductImage[]>(`/api/products/${encodeURIComponent(id)}/images`);
+  apiFetch<ProductImages>(`/api/products/${encodeURIComponent(id)}/images`);
 
 export const listPrompts = (categoryid: string) =>
   apiFetch<Prompt[]>(`/api/prompts?categoryid=${encodeURIComponent(categoryid)}`);

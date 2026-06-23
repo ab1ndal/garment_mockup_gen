@@ -25,6 +25,19 @@ class ProductImage(BaseModel):
     thumbnail_url: str
 
 
+class ProductImageGroup(BaseModel):
+    """A variant subfolder and its images."""
+    id: str
+    name: str
+    images: list[ProductImage]
+
+
+class ProductImages(BaseModel):
+    """Source images for a product: loose (top-level) + per-subfolder variant groups."""
+    loose: list[ProductImage]
+    groups: list[ProductImageGroup]
+
+
 class PromptOut(BaseModel):
     prompt_id: int
     categoryid: str
