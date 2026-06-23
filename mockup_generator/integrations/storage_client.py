@@ -1,15 +1,18 @@
 """Upload generated mockups to a Supabase Storage bucket.
 
-Writes use the service-role client (bypasses RLS); the bucket is private and we
-hand back a signed URL so the browser can render the result without extra auth.
+Writes use the service-role client (bypasses RLS). The ``mockups`` bucket is
+public (view-only for anon), so we hand back the permanent public URL — no
+signing needed and no expiry to manage.
 """
 
 from __future__ import annotations
 
+import re
+import uuid
+
 from mockup_generator.integrations.supabase_client import service_client
 
 _BUCKET = "mockups"
-_SIGNED_TTL = 7 * 24 * 3600  # 7 days
 
 
 class StorageNotConfigured(RuntimeError):
@@ -22,12 +25,11 @@ def upload_mockup(
     key: str,
     *,
     bucket: str = _BUCKET,
-    signed_ttl: int = _SIGNED_TTL,
 ) -> tuple[str, str]:
-    """Upload PNG ``data`` under ``{productid}/{key}.png``.
+    """Upload PNG ``data`` under ``{productid}/{key}.png`` to the public bucket.
 
-    Returns ``(object_path, signed_url)``: persist the stable object path,
-    hand the (expiring) signed URL to the browser.
+    Returns ``(object_path, public_url)``: persist the stable path; hand the
+    permanent public URL to the browser / store it in productimages.
     """
     client = service_client()
     if client is None:
@@ -36,5 +38,33 @@ def upload_mockup(
     path = f"{productid}/{key}.png"
     store = client.storage.from_(bucket)
     store.upload(path, data, {"content-type": "image/png", "upsert": "true"})
-    res = store.create_signed_url(path, signed_ttl)
-    return path, res["signedURL"]
+    return path, store.get_public_url(path)
+
+
+def slugify(text: str | None) -> str:
+    """Filesystem/URL-safe slug: lowercase, non-alphanumeric runs -> single '-'."""
+    if not text:
+        return ""
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def short_hex() -> str:
+    """8 hex chars (uuid4) — uniqueness so re-approves don't overwrite."""
+    return uuid.uuid4().hex[:8]
+
+
+def path_from_public_url(url: str, *, bucket: str = _BUCKET) -> str | None:
+    """Recover the stored object path from a Supabase public URL, else None."""
+    marker = f"/object/public/{bucket}/"
+    i = url.find(marker)
+    if i == -1:
+        return None
+    return url[i + len(marker):].split("?")[0]
+
+
+def delete_object(object_path: str, *, bucket: str = _BUCKET) -> None:
+    """Remove one object from the bucket (orphan cleanup). Service-role only."""
+    client = service_client()
+    if client is None:
+        raise StorageNotConfigured("SUPABASE_SECRET_KEY is required to delete objects")
+    client.storage.from_(bucket).remove([object_path])
