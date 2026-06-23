@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Communication style
+
+Use **caveman mode (full)** for all responses in this repo (`caveman:caveman` skill). Drop articles, filler, pleasantries, and hedging; fragments are fine; prefer short synonyms. Keep code, commit messages, PR bodies, and security/destructive-action warnings in normal prose. Stays active across the whole session unless the user says "stop caveman" / "normal mode". Requires the `caveman` plugin installed (user-level: `/plugin`); this directive scopes it to the project.
+
 ## Project Overview
 
 AI-powered luxury garment mockup generator for Bindal's Creation (Indian ethnic wear brand). Generates photorealistic fashion mockups using Google Gemini and OpenAI APIs, plus short product videos using Google VEO.
