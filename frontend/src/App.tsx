@@ -57,7 +57,7 @@ export default function App() {
       <Centered>
         <div className="card stack" role="group" aria-label="Sign in">
           <div>
-            <h1 style={{ fontSize: "var(--fs-2xl)" }}>Bindal's Creation</h1>
+            <h1 className="font-display" style={{ fontSize: "var(--fs-2xl)" }}>Bindal's Creation</h1>
             <p className="muted" style={{ margin: "8px 0 0" }}>
               Mockup Generator — team access only
             </p>
@@ -105,21 +105,16 @@ function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   const [tab, setTab] = useState<TabId>("products");
   return (
     <div className="page">
-      <header className="app-header">
-        <h1>Mockup Generator</h1>
+      <header className="app-header border-b border-line pb-4">
+        <h1 className="font-display tracking-tight">Mockup Generator</h1>
         <div className="user-meta">
-          <span>
-            {me.email}
-            {me.role && (
-              <>
-                {" · "}
-                <strong>{me.role}</strong>
-              </>
-            )}
-          </span>
-          <button className="btn-ghost" onClick={onSignOut}>
-            Sign out
-          </button>
+          <span className="text-subtle">{me.email}</span>
+          {me.role && (
+            <span className="rounded-full border border-line bg-surface-2 px-2.5 py-0.5 text-xs font-medium text-muted">
+              {me.role}
+            </span>
+          )}
+          <button onClick={onSignOut}>Sign out</button>
         </div>
       </header>
 

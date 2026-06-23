@@ -1,3 +1,38 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Tailwind theme — expose the design tokens below as utilities
+   (bg-surface, text-muted, border-line, shadow-card, font-display…)
+   so new markup can use Tailwind while existing CSS keeps working.
+   ============================================================ */
+@theme {
+  --font-display: "Georgia", "Iowan Old Style", "Times New Roman", serif;
+
+  --color-bg: oklch(97.07% 0.0027 286.35);
+  --color-surface: oklch(100% 0 0);
+  --color-surface-2: oklch(98.51% 0 0);
+  --color-line: oklch(92.61% 0.0054 286.29);
+  --color-line-strong: oklch(86.89% 0.0096 286.2);
+  --color-ink: oklch(21.03% 0.0059 285.89);
+  --color-muted: oklch(44.19% 0.0146 285.79);
+  --color-subtle: oklch(55.17% 0.0138 285.94);
+
+  --color-accent: oklch(51.06% 0.2301 276.97);
+  --color-accent-hover: oklch(45.68% 0.2146 277.02);
+  --color-accent-soft: oklch(96.19% 0.0179 272.31);
+
+  --color-warn: oklch(55.53% 0.1455 49);
+  --color-warn-soft: oklch(98.69% 0.0214 95.28);
+  --color-warn-border: oklch(92.43% 0.1151 95.75);
+  --color-success: oklch(52.73% 0.1371 150.07);
+  --color-success-soft: oklch(98.19% 0.0181 155.83);
+  --color-success-border: oklch(92.5% 0.0806 155.99);
+  --color-danger: oklch(57.71% 0.2152 27.33);
+
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
+  --shadow-float: 0 4px 14px rgba(16, 24, 40, 0.1);
+}
+
 /* ============================================================
    Design tokens — Bindal's Creation Mockup Generator (admin)
    Data-dense dashboard · refined neutral + indigo accent
@@ -30,38 +65,38 @@
   --r-lg: 12px;
   --r-full: 999px;
 
-  /* Neutral surfaces */
-  --bg: #f5f5f7;
-  --surface: #ffffff;
-  --surface-2: #fafafa;
-  --border: #e6e6ea;
-  --border-strong: #d3d3da;
-  --text: #18181b;
-  --text-muted: #52525b;
-  --text-subtle: #71717a;
+  /* Neutral surfaces (oklch) */
+  --bg: oklch(97.07% 0.0027 286.35);
+  --surface: oklch(100% 0 0);
+  --surface-2: oklch(98.51% 0 0);
+  --border: oklch(92.61% 0.0054 286.29);
+  --border-strong: oklch(86.89% 0.0096 286.2);
+  --text: oklch(21.03% 0.0059 285.89);
+  --text-muted: oklch(44.19% 0.0146 285.79);
+  --text-subtle: oklch(55.17% 0.0138 285.94);
 
   /* Brand accent (indigo → violet, matches HF Space) */
-  --accent: #4f46e5;
-  --accent-hover: #4338ca;
-  --accent-soft: #eef2ff;
-  --accent-on: #ffffff;
+  --accent: oklch(51.06% 0.2301 276.97);
+  --accent-hover: oklch(45.68% 0.2146 277.02);
+  --accent-soft: oklch(96.19% 0.0179 272.31);
+  --accent-on: oklch(100% 0 0);
 
   /* Semantic */
-  --danger: #dc2626;
-  --danger-hover: #b91c1c;
-  --danger-soft: #fef2f2;
-  --danger-border: #fecaca;
-  --success: #15803d;
-  --success-soft: #f0fdf4;
-  --success-border: #bbf7d0;
-  --warn: #b45309;
-  --warn-soft: #fffbeb;
-  --warn-border: #fde68a;
+  --danger: oklch(57.71% 0.2152 27.33);
+  --danger-hover: oklch(50.54% 0.1905 27.52);
+  --danger-soft: oklch(97.05% 0.0129 17.38);
+  --danger-border: oklch(88.45% 0.0593 18.33);
+  --success: oklch(52.73% 0.1371 150.07);
+  --success-soft: oklch(98.19% 0.0181 155.83);
+  --success-border: oklch(92.5% 0.0806 155.99);
+  --warn: oklch(55.53% 0.1455 49);
+  --warn-soft: oklch(98.69% 0.0214 95.28);
+  --warn-border: oklch(92.43% 0.1151 95.75);
 
   /* Elevation */
   --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.10);
   --shadow-md: 0 4px 14px rgba(16, 24, 40, 0.10);
-  --ring: 0 0 0 3px rgba(79, 70, 229, 0.32);
+  --ring: 0 0 0 3px oklch(51.06% 0.2301 276.97 / 0.32);
 
   color: var(--text);
   background: var(--bg);

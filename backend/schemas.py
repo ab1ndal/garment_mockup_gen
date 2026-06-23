@@ -18,6 +18,13 @@ class ProductOut(BaseModel):
     producturl: str | None = None
 
 
+class ProductImage(BaseModel):
+    id: str
+    name: str
+    mime_type: str
+    thumbnail_url: str
+
+
 class PromptOut(BaseModel):
     prompt_id: int
     categoryid: str
@@ -42,6 +49,7 @@ class PromptUpdate(BaseModel):
 class GenerateRequest(BaseModel):
     productid: str
     prompt: str
+    image_ids: list[str] = []
 
 
 class GenerateResponse(BaseModel):

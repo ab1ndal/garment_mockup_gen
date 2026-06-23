@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import {
-  getCategories, listProducts, listPrompts, generateImage, generateVideo,
-  type Category, type Product, type Prompt,
+  getCategories, listProducts, listPrompts, listProductImages,
+  generateImage, generateVideo,
+  type Category, type Product, type Prompt, type ProductImage,
 } from "../api";
 
 export default function ProductsTab() {
@@ -31,13 +32,14 @@ export default function ProductsTab() {
       .finally(() => setSearching(false));
   };
 
+  // Show the category line per row only when the list spans categories.
+  const showRowCategory = category === "";
+
   return (
-    <div className="split">
-      <div>
-        <form
-          className="toolbar"
-          onSubmit={(e) => { e.preventDefault(); search(); }}
-        >
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(300px,360px)_1fr]">
+      {/* ── Sidebar: find + pick a product (secondary) ── */}
+      <aside className="flex flex-col gap-4">
+        <form className="card flex flex-col gap-3 p-4" onSubmit={(e) => { e.preventDefault(); search(); }}>
           <div className="field">
             <label htmlFor="flt-cat">Category</label>
             <select id="flt-cat" value={category} onChange={(e) => setCategory(e.target.value)}>
@@ -45,67 +47,78 @@ export default function ProductsTab() {
               {cats.map((c) => <option key={c.categoryid} value={c.categoryid}>{c.name}</option>)}
             </select>
           </div>
-          <div className="field">
-            <label htmlFor="flt-id">Product ID</label>
-            <input id="flt-id" placeholder="e.g. BC25001" value={idSingle}
-                   onChange={(e) => setIdSingle(e.target.value)} />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="field">
+              <label htmlFor="flt-id">Product ID</label>
+              <input id="flt-id" placeholder="e.g. BC25001" value={idSingle}
+                     onChange={(e) => setIdSingle(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="flt-id-end">Range end</label>
+              <input id="flt-id-end" placeholder="optional" value={idEnd}
+                     onChange={(e) => setIdEnd(e.target.value)} />
+            </div>
           </div>
-          <div className="field">
-            <label htmlFor="flt-id-end">Range end</label>
-            <input id="flt-id-end" placeholder="optional" value={idEnd}
-                   onChange={(e) => setIdEnd(e.target.value)} />
+          <div className="flex items-center justify-between gap-3">
+            <label className="check !min-h-0 text-sm">
+              <input type="checkbox" checked={pending}
+                     onChange={(e) => setPending(e.target.checked)} />
+              Pending only
+            </label>
+            <button type="submit" className="btn-primary" disabled={searching}>
+              {searching && <span className="spinner" aria-hidden />}
+              {searching ? "Searching…" : "Search"}
+            </button>
           </div>
-          <label className="check">
-            <input type="checkbox" checked={pending}
-                   onChange={(e) => setPending(e.target.checked)} />
-            Pending only
-          </label>
-          <button type="submit" className="btn-primary" disabled={searching}>
-            {searching && <span className="spinner" aria-hidden />}
-            {searching ? "Searching…" : "Search"}
-          </button>
         </form>
 
-        {err && <p className="alert alert-error" role="alert" style={{ marginTop: "var(--sp-3)" }}>{err}</p>}
+        {err && <p className="alert alert-error" role="alert">{err}</p>}
 
         {rows.length > 0 ? (
-          <div className="table-wrap">
-            <table className="data">
-              <thead>
-                <tr>
-                  <th>ID</th><th>Name</th><th>Category</th><th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((p) => (
-                  <tr key={p.productid} onClick={() => setSelected(p)}
-                      aria-selected={selected?.productid === p.productid}>
-                    <td className="mono">{p.productid}</td>
-                    <td>{p.name}</td>
-                    <td>{p.category_name ?? p.categoryid}</td>
-                    <td>
-                      <span className={p.base_mockup ? "pill pill-done" : "pill pill-pending"}>
-                        {p.base_mockup ? "Done" : "Pending"}
+          <ul className="card max-h-[70vh] divide-y divide-line overflow-auto p-0">
+            {rows.map((p) => {
+              const isSel = selected?.productid === p.productid;
+              return (
+                <li key={p.productid}>
+                  <button
+                    type="button"
+                    onClick={() => setSelected(p)}
+                    aria-current={isSel}
+                    className={`flex w-full items-center gap-3 border-0 border-l-2 !justify-start !rounded-none px-4 py-3 text-left !min-h-0
+                      ${isSel
+                        ? "border-l-accent bg-accent-soft"
+                        : "border-l-transparent bg-transparent hover:bg-surface-2"}`}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium text-ink">{p.name}</span>
+                      <span className="mono block text-xs text-subtle">
+                        {p.productid}{showRowCategory && (p.category_name ?? p.categoryid) ? ` · ${p.category_name ?? p.categoryid}` : ""}
                       </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </span>
+                    <span className={p.base_mockup ? "pill pill-done" : "pill pill-pending"}>
+                      {p.base_mockup ? "Done" : "Pending"}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         ) : (
           <p className="empty">
             {searched ? "No products match these filters." : "Run a search to list products."}
           </p>
         )}
-      </div>
+      </aside>
 
+      {/* ── Stage: generate the mockup (the main event) ── */}
       {selected
-        ? <ProductDetail product={selected} />
+        ? <GenerationStage key={selected.productid} product={selected} />
         : (
-          <div className="detail card" style={{ padding: "var(--sp-5)" }}>
-            <p className="empty" style={{ padding: "var(--sp-5) 0" }}>
-              Select a product to generate its mockup.
+          <div className="card flex min-h-[60vh] flex-col items-center justify-center gap-3 p-8 text-center">
+            <CanvasIcon />
+            <h2 className="font-display text-2xl text-ink">Generate a mockup</h2>
+            <p className="max-w-sm text-muted">
+              Pick a product from the list to load its source images and start generating.
             </p>
           </div>
         )}
@@ -113,12 +126,18 @@ export default function ProductsTab() {
   );
 }
 
-function ProductDetail({ product }: { product: Product }) {
+function GenerationStage({ product }: { product: Product }) {
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [promptText, setPromptText] = useState("");
   const [videoPrompt, setVideoPrompt] = useState("");
   const [busy, setBusy] = useState<null | "image" | "video">(null);
   const [msg, setMsg] = useState<{ kind: "info" | "error"; text: string } | null>(null);
+
+  // Source images from Drive
+  const [images, setImages] = useState<ProductImage[]>([]);
+  const [imgState, setImgState] = useState<"loading" | "ready" | "error">("loading");
+  const [imgErr, setImgErr] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setMsg(null);
@@ -130,89 +149,178 @@ function ProductDetail({ product }: { product: Product }) {
     }).catch((e) => setMsg({ kind: "error", text: e.message }));
   }, [product.productid, product.categoryid]);
 
+  useEffect(() => {
+    setImgState("loading"); setImgErr(null); setImages([]); setPicked(new Set());
+    listProductImages(product.productid)
+      .then((imgs) => { setImages(imgs); setImgState("ready"); })
+      .catch((e: Error) => { setImgErr(e.message.replace(/^\d+:\s*/, "")); setImgState("error"); });
+  }, [product.productid]);
+
+  const togglePick = (id: string) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
   const run = (kind: "image" | "video") => {
     setBusy(kind);
     setMsg(null);
+    const image_ids = [...picked];
     const call = kind === "image"
-      ? generateImage({ productid: product.productid, prompt: promptText })
-      : generateVideo({ productid: product.productid, prompt: videoPrompt });
+      ? generateImage({ productid: product.productid, prompt: promptText, image_ids })
+      : generateVideo({ productid: product.productid, prompt: videoPrompt, image_ids });
     call
       .then((r) => setMsg({ kind: "info", text: r.detail }))
       .catch((e: Error) => setMsg({ kind: "error", text: e.message.replace(/^\d+:\s*/, "") }))
       .finally(() => setBusy(null));
   };
 
-  return (
-    <div className="detail card" style={{ padding: "var(--sp-5)" }}>
-      <h3>
-        <span className="mono">{product.productid}</span> — {product.name}
-      </h3>
-      <p style={{ margin: "var(--sp-2) 0 0" }}>
-        {product.producturl
-          ? <a href={product.producturl} target="_blank" rel="noreferrer">Open Drive folder ↗</a>
-          : <span className="subtle">No Drive folder linked</span>}
-      </p>
+  const pickedCount = picked.size;
 
-      <div className="field" style={{ marginTop: "var(--sp-5)" }}>
-        <p className="section-label" style={{ margin: 0 }}>Image prompt</p>
-        <select
-          aria-label="Prompt template"
-          onChange={(e) => {
-            const p = prompts.find((x) => String(x.prompt_id) === e.target.value);
-            if (p) setPromptText(p.body);
-          }}
-        >
-          {prompts.length === 0 && <option>No templates for this category</option>}
-          {prompts.map((p) => (
-            <option key={p.prompt_id} value={p.prompt_id}>
-              {p.label}{p.is_default ? " (default)" : ""}
-            </option>
-          ))}
-        </select>
-        <textarea
-          aria-label="Image prompt text"
-          value={promptText}
-          onChange={(e) => setPromptText(e.target.value)}
-          rows={6}
-        />
+  return (
+    <div className="card p-6 sm:p-8">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-display text-2xl leading-tight text-ink">{product.name}</h2>
+          <p className="mono mt-1 text-sm text-subtle">{product.productid}</p>
+        </div>
+        {product.producturl
+          ? <a href={product.producturl} target="_blank" rel="noreferrer"
+               className="text-sm">Open Drive folder ↗</a>
+          : <span className="subtle">No Drive folder linked</span>}
+      </div>
+
+      {/* Source images */}
+      <section className="mt-7">
+        <div className="flex items-center justify-between">
+          <p className="section-label !mt-0">Source images</p>
+          {pickedCount > 0 && (
+            <span className="text-xs font-semibold text-accent">{pickedCount} selected</span>
+          )}
+        </div>
+        <p className="mb-3 text-sm text-muted">
+          Select one or more images to pass to generation.
+        </p>
+
+        {imgState === "loading" && (
+          <div className="flex items-center gap-2 text-sm text-subtle">
+            <span className="spinner" style={{ color: "var(--accent)" }} aria-hidden /> Loading from Drive…
+          </div>
+        )}
+        {imgState === "error" && <p className="alert alert-error">{imgErr}</p>}
+        {imgState === "ready" && images.length === 0 && (
+          <p className="empty !py-6">No images found in this product's Drive folder.</p>
+        )}
+        {imgState === "ready" && images.length > 0 && (
+          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
+            {images.map((img) => {
+              const sel = picked.has(img.id);
+              return (
+                <button
+                  key={img.id}
+                  type="button"
+                  onClick={() => togglePick(img.id)}
+                  aria-pressed={sel}
+                  title={img.name}
+                  className={`relative aspect-square !min-h-0 overflow-hidden !rounded-lg !p-0 transition
+                    ${sel ? "!border-accent ring-2 ring-accent/30" : "!border-line hover:!border-line-strong"}`}
+                >
+                  <img src={img.thumbnail_url} alt={img.name}
+                       className="h-full w-full object-cover" loading="lazy" />
+                  {sel && (
+                    <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-accent text-[11px] font-bold text-white">
+                      ✓
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Image prompt + primary CTA — the focal action */}
+      <section className="mt-7">
+        <div className="field">
+          <p className="section-label !mt-0">Image prompt</p>
+          <select
+            aria-label="Prompt template"
+            onChange={(e) => {
+              const p = prompts.find((x) => String(x.prompt_id) === e.target.value);
+              if (p) setPromptText(p.body);
+            }}
+          >
+            {prompts.length === 0 && <option>No templates for this category</option>}
+            {prompts.map((p) => (
+              <option key={p.prompt_id} value={p.prompt_id}>
+                {p.label}{p.is_default ? " (default)" : ""}
+              </option>
+            ))}
+          </select>
+          <textarea
+            aria-label="Image prompt text"
+            value={promptText}
+            onChange={(e) => setPromptText(e.target.value)}
+            rows={7}
+          />
+        </div>
         <button
-          className="btn-primary"
+          className="btn-primary mt-4 w-full text-[15px] shadow-card"
+          style={{ minHeight: 52 }}
           onClick={() => run("image")}
           disabled={busy !== null || !promptText.trim()}
         >
           {busy === "image" && <span className="spinner" aria-hidden />}
-          {busy === "image" ? "Generating…" : "Generate Image"}
+          {busy === "image"
+            ? "Generating…"
+            : `Generate Image${pickedCount > 0 ? ` · ${pickedCount} source${pickedCount > 1 ? "s" : ""}` : ""}`}
         </button>
-      </div>
+      </section>
 
-      <div className="field" style={{ marginTop: "var(--sp-5)" }}>
-        <p className="section-label" style={{ margin: 0 }}>Video (custom prompt)</p>
-        <textarea
-          aria-label="Video prompt text"
-          value={videoPrompt}
-          onChange={(e) => setVideoPrompt(e.target.value)}
-          rows={4}
-          placeholder="Describe the video for this product…"
-        />
+      {msg && (
+        <p
+          className={`mt-4 ${msg.kind === "error" ? "alert alert-error" : "alert alert-info"}`}
+          role={msg.kind === "error" ? "alert" : "status"}
+          aria-live="polite"
+        >
+          {msg.text}
+        </p>
+      )}
+
+      {/* Video — secondary */}
+      <section className="mt-7 border-t border-line pt-6">
+        <div className="field">
+          <p className="section-label !mt-0">Video (custom prompt)</p>
+          <textarea
+            aria-label="Video prompt text"
+            value={videoPrompt}
+            onChange={(e) => setVideoPrompt(e.target.value)}
+            rows={3}
+            placeholder="Describe the video for this product…"
+          />
+        </div>
         <button
+          className="mt-3 w-full"
           onClick={() => run("video")}
           disabled={busy !== null || !videoPrompt.trim()}
         >
           {busy === "video" && <span className="spinner" aria-hidden />}
           {busy === "video" ? "Generating…" : "Generate Video"}
         </button>
-      </div>
-
-      {msg && (
-        <p
-          className={msg.kind === "error" ? "alert alert-error" : "alert alert-info"}
-          role={msg.kind === "error" ? "alert" : "status"}
-          aria-live="polite"
-          style={{ marginTop: "var(--sp-4)" }}
-        >
-          {msg.text}
-        </p>
-      )}
+      </section>
     </div>
+  );
+}
+
+function CanvasIcon() {
+  return (
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+         stroke="var(--text-subtle)" strokeWidth="1.5" aria-hidden>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <path d="M21 15l-5-5L5 21" />
+    </svg>
   );
 }

@@ -57,6 +57,13 @@ export interface Product {
   producturl: string | null;
 }
 
+export interface ProductImage {
+  id: string;
+  name: string;
+  mime_type: string;
+  thumbnail_url: string;
+}
+
 export interface Prompt {
   prompt_id: number;
   categoryid: string;
@@ -110,6 +117,9 @@ export function listProducts(p: {
 export const getProduct = (id: string) =>
   apiFetch<Product>(`/api/products/${encodeURIComponent(id)}`);
 
+export const listProductImages = (id: string) =>
+  apiFetch<ProductImage[]>(`/api/products/${encodeURIComponent(id)}/images`);
+
 export const listPrompts = (categoryid: string) =>
   apiFetch<Prompt[]>(`/api/prompts?categoryid=${encodeURIComponent(categoryid)}`);
 
@@ -132,13 +142,13 @@ export const updatePrompt = (
 export const deletePrompt = (id: number) =>
   apiFetch<void>(`/api/prompts/${id}`, { method: "DELETE" });
 
-export const generateImage = (b: { productid: string; prompt: string }) =>
+export const generateImage = (b: { productid: string; prompt: string; image_ids?: string[] }) =>
   apiFetch<GenResult>("/api/generate/image", {
     method: "POST",
     body: JSON.stringify(b),
   });
 
-export const generateVideo = (b: { productid: string; prompt: string }) =>
+export const generateVideo = (b: { productid: string; prompt: string; image_ids?: string[] }) =>
   apiFetch<GenResult>("/api/generate/video", {
     method: "POST",
     body: JSON.stringify(b),

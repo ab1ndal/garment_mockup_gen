@@ -47,6 +47,13 @@ class Settings:
         return _get("OPENAI_API_KEY", required=True)  # type: ignore[return-value]
 
     @property
+    def google_drive_sa_json(self) -> str | None:
+        """Service-account credentials for Drive read access. Either a path to
+        a JSON key file or the JSON content itself. Optional — only needed for
+        the Drive image-preview endpoint."""
+        return _get("GOOGLE_DRIVE_SA_JSON")
+
+    @property
     def supabase_project_id(self) -> str | None:
         return _get("SUPABASE_PROJECT_ID")
 
