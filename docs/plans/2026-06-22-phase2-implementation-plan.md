@@ -21,7 +21,7 @@
 
 ---
 
-### Task 1: Supabase migration — `prompts` table + `product_browse` view
+### Task 1: Supabase migration — `prompts` table + `product_browse` view  ← ✅ APPLIED 2026-06-22 (user-approved)
 
 > ⛔ **STOP — LIVE DB WRITE. Do NOT run without explicit user confirmation.**
 > This is the first write to the shared production database (`epotsxdugwfhyeiudjox`,
@@ -566,7 +566,7 @@ Note: `"updated_at": "now()"` is sent as a literal string; the table default alr
 Run: `poetry run pytest tests/test_prompts_repo.py -v`
 Expected: PASS (2 tests)
 
-- [ ] **Step 5: Seed the live table + verify** (one-time, via a throwaway script using the service or anon client)
+- [x] **Step 5: Seed the live table + verify** — ✅ DONE 2026-06-22 via MCP service_role (anon client hit RLS; reseed idempotent). 11 default prompts present.
 
 > ⛔ **STOP — LIVE DB WRITE. Do NOT run without explicit user confirmation.**
 > This inserts 11 rows into the new `prompts` table. Additive only (no existing
