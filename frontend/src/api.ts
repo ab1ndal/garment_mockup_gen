@@ -6,6 +6,31 @@ import { supabase } from "./supabaseClient";
 // (e.g. host//api/me), which FastAPI serves a 404 for.
 const API_URL = ((import.meta.env.VITE_API_URL as string) ?? "").replace(/\/+$/, "");
 
+/** Friendly fallback when the server gives no `detail` (e.g. an empty body or
+ *  a proxy 5xx). Keyed by HTTP status; status 0 means the request never landed. */
+const STATUS_HINTS: Record<number, string> = {
+  0: "Can't reach the server — check your connection and try again.",
+  401: "Your session has expired. Sign in again.",
+  403: "You don't have access to this.",
+  404: "Not found.",
+  409: "That conflicts with the current state.",
+  500: "The server hit an unexpected error. Try again shortly.",
+  502: "The database request failed. Try again shortly.",
+  503: "The server is missing required configuration. Contact the admin.",
+};
+
+/** Error from an API call. `status` is 0 for network/CORS failures (no response). */
+export class ApiError extends Error {
+  status: number;
+  detail: string;
+  constructor(status: number, detail: string) {
+    super(detail || STATUS_HINTS[status] || `Request failed (HTTP ${status}).`);
+    this.name = "ApiError";
+    this.status = status;
+    this.detail = this.message;
+  }
+}
+
 /** Call the backend with the current Supabase access token attached. */
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const {
@@ -13,23 +38,30 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   } = await supabase.auth.getSession();
   const token = session?.access_token;
 
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init.headers ?? {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init.headers ?? {}),
+      },
+    });
+  } catch {
+    throw new ApiError(0, STATUS_HINTS[0]);
+  }
 
   if (!res.ok) {
-    let detail = res.statusText;
+    let detail = "";
     try {
-      detail = (await res.json()).detail ?? detail;
+      const body = await res.json();
+      if (typeof body?.detail === "string") detail = body.detail;
+      else if (body?.detail) detail = JSON.stringify(body.detail);
     } catch {
-      /* ignore */
+      /* non-JSON or empty body — fall back to a status hint below */
     }
-    throw new Error(`${res.status}: ${detail}`);
+    throw new ApiError(res.status, detail || STATUS_HINTS[res.status] || res.statusText);
   }
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;

@@ -59,6 +59,18 @@ async def _supabase_error_handler(_req: Request, exc: APIError) -> JSONResponse:
         )
     return JSONResponse(status_code=502, content={"detail": "Database request failed."})
 
+
+# Last-resort handler so an unexpected error becomes a readable message with a
+# 500 status instead of an empty body (which the frontend renders as a bare
+# "500:"). The class name is safe to surface; details stay in the Space logs.
+@app.exception_handler(Exception)
+async def _unhandled_error_handler(_req: Request, exc: Exception) -> JSONResponse:
+    log.exception("Unhandled error on %s %s", _req.method, _req.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Unexpected server error ({type(exc).__name__}). See server logs."},
+    )
+
 # Allow the React dev server (Vite) by default; override via FRONTEND_ORIGINS.
 _origins = os.getenv("FRONTEND_ORIGINS", "http://localhost:5173").split(",")
 app.add_middleware(
