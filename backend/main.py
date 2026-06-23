@@ -11,8 +11,15 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.auth import CurrentUser, get_current_user
+from backend.routers import generate as generate_router
+from backend.routers import products as products_router
+from backend.routers import prompts as prompts_router
 
 app = FastAPI(title="Bindal's Creation — Mockup Generator API")
+
+app.include_router(generate_router.router)
+app.include_router(products_router.router)
+app.include_router(prompts_router.router)
 
 # Allow the React dev server (Vite) by default; override via FRONTEND_ORIGINS.
 _origins = os.getenv("FRONTEND_ORIGINS", "http://localhost:5173").split(",")

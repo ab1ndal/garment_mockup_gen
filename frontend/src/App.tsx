@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabaseClient";
 import { getMe, type Me } from "./api";
+import ProductsTab from "./components/ProductsTab";
+import PromptsTab from "./components/PromptsTab";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -64,18 +66,30 @@ export default function App() {
 
   if (!me) return <Centered>Verifying access…</Centered>;
 
+  return <Shell me={me} onSignOut={signOut} />;
+}
+
+function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
+  const [tab, setTab] = useState<"products" | "prompts">("products");
   return (
-    <div style={{ padding: 32 }}>
+    <div style={{ padding: 32, fontFamily: "system-ui, sans-serif" }}>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1>Mockup Generator</h1>
         <div>
-          <span style={{ marginRight: 12 }}>
-            {me.email} · <strong>{me.role}</strong>
-          </span>
-          <button onClick={signOut}>Sign out</button>
+          <span style={{ marginRight: 12 }}>{me.email} · <strong>{me.role}</strong></span>
+          <button onClick={onSignOut}>Sign out</button>
         </div>
       </header>
-      <p>You're in. Product list, generation, and review coming in the next phases.</p>
+      <nav style={{ display: "flex", gap: 8, margin: "16px 0", borderBottom: "1px solid #ddd" }}>
+        {(["products", "prompts"] as const).map((t) => (
+          <button key={t} onClick={() => setTab(t)}
+            style={{ fontWeight: tab === t ? 700 : 400, border: "none", background: "none",
+                     borderBottom: tab === t ? "2px solid #333" : "2px solid transparent", padding: "8px 12px", cursor: "pointer" }}>
+            {t === "products" ? "Products" : "Prompts"}
+          </button>
+        ))}
+      </nav>
+      {tab === "products" ? <ProductsTab /> : <PromptsTab />}
     </div>
   );
 }

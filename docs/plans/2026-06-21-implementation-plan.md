@@ -8,34 +8,34 @@ Each phase ships independently and leaves the repo working.
 
 ---
 
-## Phase 0 — Refactor core to a clean, framework-agnostic package  ← STARTING NOW
+## Phase 0 — Refactor core to a clean, framework-agnostic package  ← ✅ DONE
 **Goal:** Carve `mockup_generator` into a pure-Python core (no Streamlit) that a FastAPI backend can import. Fix breakage. `app.py` (legacy Streamlit) keeps working on top of the new core.
 
-- [ ] `config.py` — `Settings` loads `.env` (and guarded `st.secrets` fallback only if Streamlit present). Single source for `GOOGLE_API_KEY`, `OPENAI_API_KEY`, `SUPABASE_PROJECT_ID`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`.
-- [ ] `prompts/defaults.py` — move all prompt constants from `prompt.py`; add `CATEGORY_PROMPTS` map keyed by `categoryid`. Keep `prompt.py` as a re-export shim.
-- [ ] `generation/common.py` — dedup `part_from_pil`, `load_images_from_folder`, `save_first_image_part`, `generate_with_retries`; add lazy `get_genai_client()` (from config, **no module-level client, no `import streamlit`**).
-- [ ] `generation/images.py` — from `create_base.py` (`generate_image_for_product`, `refine_only_folder`, `output_exists`), using `common`. Leave `create_base.py` as a re-export shim.
-- [ ] `generation/video.py` — from `create_video.py`; **fix `from prompt import` → package-relative**.
-- [ ] `generation/legacy_openai.py` — from `create_mockup.py`; **fix `from prompt_config import`**.
-- [ ] Update `app.py` imports to new paths; verify all 3 modes still work.
-- [ ] Delete throwaway `trial.py`.
-- [ ] Smoke test `tests/test_imports.py` — imports resolve, key funcs exist, `CATEGORY_PROMPTS` populated, **no `streamlit` import in core modules**.
+- [x] `config.py` — `Settings` loads `.env` (and guarded `st.secrets` fallback only if Streamlit present). Single source for `GOOGLE_API_KEY`, `OPENAI_API_KEY`, `SUPABASE_PROJECT_ID`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`.
+- [x] `prompts/defaults.py` — move all prompt constants from `prompt.py`; add `CATEGORY_PROMPTS` map keyed by `categoryid`. Keep `prompt.py` as a re-export shim.
+- [x] `generation/common.py` — dedup `part_from_pil`, `load_images_from_folder`, `save_first_image_part`, `generate_with_retries`; add lazy `get_genai_client()` (from config, **no module-level client, no `import streamlit`**).
+- [x] `generation/images.py` — from `create_base.py` (`generate_image_for_product`, `refine_only_folder`, `output_exists`), using `common`. Leave `create_base.py` as a re-export shim.
+- [x] `generation/video.py` — from `create_video.py`; **fix `from prompt import` → package-relative**.
+- [x] `generation/legacy_openai.py` — from `create_mockup.py`; **fix `from prompt_config import`**.
+- [x] Update `app.py` imports to new paths; verify all 3 modes still work.
+- [x] Delete throwaway `trial.py`.
+- [x] Smoke test `tests/test_imports.py` — imports resolve, key funcs exist, `CATEGORY_PROMPTS` populated, **no `streamlit` import in core modules**.
 
 **Verify:** `poetry run python -m pytest -q` (smoke) + `poetry run streamlit run app.py` renders and generates one mockup identically.
 
 ---
 
-## Phase 1 — Auth (Supabase Google login + profiles gate)
+## Phase 1 — Auth (Supabase Google login + profiles gate)  ← ✅ DONE (deployed + verified 2026-06-23)
 **Goal:** Backend verifies Supabase JWT and enforces `profiles.is_active`; minimal React login shell.
 **Prereqs:** Supabase secret key; Supabase Google provider enabled.
 
-- [ ] `poetry add supabase fastapi uvicorn pyjwt[crypto]`.
-- [ ] `integrations/supabase_client.py` — anon + service clients from config.
-- [ ] `db/profiles_repo.py` — lookup by email/uid; return role + is_active.
-- [ ] `backend/main.py` — FastAPI app; JWT-verify dependency (Supabase JWKS) → reject if no active profile; `/me` endpoint.
-- [ ] Scaffold `frontend/` (Vite + TS + `supabase-js`): Google login button, store session, call `/me`, gated shell.
+- [x] `poetry add supabase fastapi uvicorn pyjwt[crypto]`.
+- [x] `integrations/supabase_client.py` — anon + service clients from config.
+- [x] `db/profiles_repo.py` — lookup by email/uid; return role + is_active.
+- [x] `backend/main.py` — FastAPI app; auth dependency verifies token via Supabase `auth.get_user` → reject if no active profile; `/api/me` endpoint.
+- [x] Scaffold `frontend/` (Vite + TS + `supabase-js`): Google login button, store session, call `/me`, gated shell.
 
-**Verify:** Unauthed → login. Inactive/unknown → 403. `bindal.abhinav@gmail.com` → `/me` returns superadmin.
+**Verify:** Unauthed → login. Inactive/unknown → 403. `bindal.abhinav@gmail.com` → `/me` returns superadmin. ✅ Deployed: backend on HF Spaces, frontend on Vercel; `profiles.is_active` default flipped to `false` (allowlist gating shared with Inventory app).
 
 ---
 
