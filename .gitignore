@@ -32,3 +32,6 @@ frontend/.env
 .pytest_cache/
 .agents/
 frontend/tsconfig.tsbuildinfo
+
+# claude code local state (worktrees, agent scratch)
+.claude/
