@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  getCategories, listProducts, listPrompts, listProductImages,
-  generateImage, generateVideo, getGenerationOptions,
+  getCategories, listProducts, listPrompts, listProductImages, getProductColors,
+  generateImage, generateVideo, approveMockup, getGenerationOptions,
   type Category, type Product, type Prompt, type ProductImage, type ProductImages,
   type GenOptions,
 } from "../api";
@@ -142,7 +142,11 @@ function GenerationStage({ product }: { product: Product }) {
   const [videoPrompt, setVideoPrompt] = useState("");
   const [busy, setBusy] = useState<null | "image" | "video">(null);
   const [msg, setMsg] = useState<{ kind: "info" | "error"; text: string } | null>(null);
-  const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [previewB64, setPreviewB64] = useState<string | null>(null);
+  const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [colors, setColors] = useState<string[]>([]);
+  const [color, setColor] = useState("");
 
   // Generation options (model / quality / aspect) + current selection.
   const [opts, setOpts] = useState<GenOptions | null>(null);
@@ -177,10 +181,18 @@ function GenerationStage({ product }: { product: Product }) {
 
   useEffect(() => {
     setImgState("loading"); setImgErr(null);
-    setImgs({ loose: [], groups: [] }); setPicked(new Set()); setResultUrl(null);
+    setImgs({ loose: [], groups: [] }); setPicked(new Set());
+    setPreviewB64(null); setPublishedUrl(null);
     listProductImages(product.productid)
       .then((r) => { setImgs(r); setImgState("ready"); })
       .catch((e: Error) => { setImgErr(e.message.replace(/^\d+:\s*/, "")); setImgState("error"); });
+  }, [product.productid]);
+
+  useEffect(() => {
+    setColor("");
+    getProductColors(product.productid)
+      .then((r) => setColors(r.colors))
+      .catch(() => setColors([]));  // optional; generation works without color
   }, [product.productid]);
 
   const togglePick = (id: string) =>
@@ -193,22 +205,59 @@ function GenerationStage({ product }: { product: Product }) {
   const run = (kind: "image" | "video") => {
     setBusy(kind);
     setMsg(null);
-    if (kind === "image") setResultUrl(null);
     const image_ids = [...picked];
-    const call = kind === "image"
-      ? generateImage({
-          productid: product.productid, prompt: promptText, image_ids,
-          model: model || undefined, resolution: resolution || undefined,
-          aspect_ratio: aspect || undefined,
-        })
-      : generateVideo({ productid: product.productid, prompt: videoPrompt, image_ids });
-    call
-      .then((r) => {
-        setMsg({ kind: "info", text: r.detail });
-        if (kind === "image" && r.image_url) setResultUrl(r.image_url);
+    if (kind === "image") {
+      setPreviewB64(null); setPublishedUrl(null);
+      generateImage({
+        productid: product.productid, prompt: promptText, image_ids,
+        color: color || undefined,
+        model: model || undefined, resolution: resolution || undefined,
+        aspect_ratio: aspect || undefined,
       })
+        .then((r) => { setMsg({ kind: "info", text: r.detail }); setPreviewB64(r.image_b64); })
+        .catch((e: Error) => setMsg({ kind: "error", text: e.message.replace(/^\d+:\s*/, "") }))
+        .finally(() => setBusy(null));
+    } else {
+      generateVideo({ productid: product.productid, prompt: videoPrompt, image_ids })
+        .then((r) => setMsg({ kind: "info", text: r.detail }))
+        .catch((e: Error) => setMsg({ kind: "error", text: e.message.replace(/^\d+:\s*/, "") }))
+        .finally(() => setBusy(null));
+    }
+  };
+
+  const publish = (blob: Blob, src: "generated" | "corrected") => {
+    setPublishing(true);
+    setMsg(null);
+    const fd = new FormData();
+    fd.append("productid", product.productid);
+    if (color) fd.append("color", color);
+    if (promptText) fd.append("prompt_text", promptText);
+    fd.append("source", src);
+    fd.append("image", blob, "mockup.png");
+    approveMockup(fd)
+      .then((r) => { setPublishedUrl(r.image_url); setMsg({ kind: "info", text: r.detail }); })
       .catch((e: Error) => setMsg({ kind: "error", text: e.message.replace(/^\d+:\s*/, "") }))
-      .finally(() => setBusy(null));
+      .finally(() => setPublishing(false));
+  };
+
+  const approveGenerated = async () => {
+    if (!previewB64) return;
+    const blob = await (await fetch(`data:image/png;base64,${previewB64}`)).blob();
+    publish(blob, "generated");
+  };
+
+  const downloadPreview = () => {
+    if (!previewB64) return;
+    const a = document.createElement("a");
+    a.href = `data:image/png;base64,${previewB64}`;
+    a.download = `${product.productid}_${color ? color.replace(/\s+/g, "-") : "mockup"}.png`;
+    a.click();
+  };
+
+  const onCorrectedFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) publish(f, "corrected");
+    e.target.value = "";
   };
 
   const pickedCount = picked.size;
@@ -313,17 +362,29 @@ function GenerationStage({ product }: { product: Product }) {
             </label>
           </div>
         )}
+        {colors.length > 0 && (
+          <label className="field mb-0! mt-4">
+            <span className="text-xs font-semibold text-subtle">Variant color</span>
+            <select aria-label="Variant color" value={color} onChange={(e) => setColor(e.target.value)}>
+              <option value="">— no color —</option>
+              {colors.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+        )}
         <button
           className="btn-primary mt-4 w-full text-[15px] shadow-card"
           style={{ minHeight: 52 }}
           onClick={() => run("image")}
-          disabled={busy !== null || !promptText.trim()}
+          disabled={busy !== null || !promptText.trim() || pickedCount === 0}
         >
           {busy === "image" && <span className="spinner" aria-hidden />}
           {busy === "image"
             ? "Generating…"
             : `Generate Image${pickedCount > 0 ? ` · ${pickedCount} source${pickedCount > 1 ? "s" : ""}` : ""}`}
         </button>
+        {pickedCount === 0 && (
+          <p className="mt-2 text-xs text-subtle">Select at least one source image to generate.</p>
+        )}
       </section>
 
       {msg && (
@@ -336,20 +397,34 @@ function GenerationStage({ product }: { product: Product }) {
         </p>
       )}
 
-      {/* Generated mockup */}
-      {resultUrl && (
+      {/* Preview — review before publishing */}
+      {previewB64 && (
         <section className="mt-5">
-          <div className="flex items-center justify-between">
-            <p className="section-label mt-0!">Generated mockup</p>
-            <a href={resultUrl} download className="text-sm">Download ↓</a>
+          <p className="section-label mt-0!">Preview — review before publishing</p>
+          <img
+            src={`data:image/png;base64,${previewB64}`}
+            alt="Generated preview"
+            className="mt-2 w-full rounded-lg border border-line"
+          />
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button className="btn-primary" onClick={approveGenerated} disabled={publishing}>
+              {publishing && <span className="spinner" aria-hidden />}
+              {publishing ? "Publishing…" : "Approve & publish"}
+            </button>
+            <button onClick={() => { setPreviewB64(null); setMsg(null); }} disabled={publishing}>
+              Disapprove
+            </button>
+            <button onClick={downloadPreview} disabled={publishing}>Download</button>
+            <label className="btn cursor-pointer">
+              Upload corrected
+              <input type="file" accept="image/*" className="hidden" onChange={onCorrectedFile} />
+            </label>
           </div>
-          <a href={resultUrl} target="_blank" rel="noreferrer">
-            <img
-              src={resultUrl}
-              alt="Generated mockup"
-              className="mt-2 w-full rounded-lg border border-line"
-            />
-          </a>
+          {publishedUrl && (
+            <p className="alert alert-info mt-3" role="status">
+              Published: <a href={publishedUrl} target="_blank" rel="noreferrer">{publishedUrl}</a>
+            </p>
+          )}
         </section>
       )}
 
