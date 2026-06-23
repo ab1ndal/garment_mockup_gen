@@ -2,7 +2,9 @@ import { supabase } from "./supabaseClient";
 
 // Empty = same origin (single-server deploy, e.g. HF Spaces). For split local
 // dev, set VITE_API_URL=http://localhost:8000 in frontend/.env.
-const API_URL = (import.meta.env.VITE_API_URL as string) ?? "";
+// Strip any trailing slash so `${API_URL}${path}` can't produce a double slash
+// (e.g. host//api/me), which FastAPI serves a 404 for.
+const API_URL = ((import.meta.env.VITE_API_URL as string) ?? "").replace(/\/+$/, "");
 
 /** Call the backend with the current Supabase access token attached. */
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
