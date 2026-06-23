@@ -1,112 +1,133 @@
-# Design — Phase 3 partial close: variant-aware generate + download/upload
+# Design — Phase 3 close: variant-aware generate → human approve/publish
 
 **Date:** 2026-06-23
 **Branch:** `feat/phase3-image-generation`
 **Status:** Approved — ready for implementation plan
-**Companion to:** `docs/plans/2026-06-21-implementation-plan.md` (Phase 3)
+**Companion to:** `docs/plans/2026-06-21-implementation-plan.md` (Phase 3 + part of Phase 4 publish)
 
 ## Goal
 
-Tighten the existing image-generation flow and partially close Phase 3:
-
 1. Require at least one source image selected before generating.
-2. Surface a product's **colors** (the visual variation) from `productsizecolors`; let the user pick one per generation.
-3. Give the generated image a **meaningful name**: `{productid}_{color-slug}_{shorthex}.png`.
-4. **Attach** productid + color to the `mockup_variations` row.
-5. Allow **reliable download** of the generated image.
-6. Allow **uploading a corrected image** back, stored as a new variation and shown in place.
+2. Surface a product's **colors** (the visual variation) from `productsizecolors`; user picks one per generation.
+3. Generate → **display only** (no persistence). Human reviews.
+4. **Approve** publishes; **disapprove** discards. No regeneration in this spec.
+5. Approve accepts either the generated image **or** a manually-corrected upload.
+6. Meaningful name for the published image: `{productid}_{color-slug}_{shorthex}.png`.
+7. On approve: upload to Supabase Storage, flip `mockups.base_mockup = true`, insert `productimages(productid, imageurl, caption=color)`, and record a `mockup_variations` audit row.
 
 ## Out of scope (deferred)
 
-- Correction note / auto-regenerate loop.
-- All Phase-4 publish behavior: no `mockups` flag flip (`base_mockup`/`mockup`/etc.), no `productimages` write, no approve-to-official pipeline.
+- Regeneration / correction-note → re-generate loop.
+- Side-by-side review screen, feedback history (rest of Phase 4).
+- Video generation.
+
+## Flow
+
+```
+generate (preview)            approve (publish)                 disapprove
+─────────────────             ─────────────────                 ──────────
+≥1 source + color?            client POSTs final bytes          client discards
+  → Gemini → PNG              (generated echo OR corrected)      preview.
+  → return base64             → upload public bucket             no request,
+  (NO storage, NO DB)         → mockup_variations (audit)        no writes.
+                              → mockups.base_mockup = true
+                              → productimages insert
+                              → return public URL
+```
+
+- **Generate is stateless**: returns base64, writes nothing. Avoids persisting unverified mockups.
+- **Approve is the only writer.** Two entry points (approve-generated, approve-corrected) share one publish routine; both send image bytes via multipart.
+- **Download** of the preview is client-side (from the base64 already in the browser) — no backend proxy. Published images are downloadable via their public URL.
 
 ## Context — current state
 
-- `POST /api/generate/image` already: resolves product → Drive folder → downloads selected refs (`image_ids`, falls back to all) → generates with Gemini → uploads PNG to Supabase Storage (`mockups` bucket, key `{productid}/{uuid}.png`) → inserts a `mockup_variations` row → returns a 7-day signed URL + `variation_id`.
-- Frontend `ProductsTab.tsx` already has source-image multi-select (`picked` → `image_ids`) and shows the result with a `<a download>` link.
-- `mockup_variations` columns: `variation_id, productid, prompt_id, prompt_text, image_url, kind, created_by, created_at`. **No `color` column.**
-- `productsizecolors`: `productid, size, color, stock, variantid(uuid PK)`. ~10395 rows / 3594 products. Size does not change mockup appearance; color does. Data has dupes/typos (`Grey ` vs `Grey`, `Parrot_green` vs `Parrot Green`).
+- `POST /api/generate/image` currently uploads to Storage + inserts a `mockup_variations` row inline. **This changes**: generate becomes preview-only; persistence moves to approve.
+- Frontend `ProductsTab.tsx` has source-image multi-select (`picked` → `image_ids`) and shows the result.
+- `mockup_variations`: `variation_id, productid, prompt_id, prompt_text, image_url, kind, created_by, created_at`. **No `color` column** (add it).
+- `productimages`: `imageid(PK serial), productid, imageurl(text NOT NULL), caption(text), displayorder(int default 0)`. 0 rows.
+- `mockups`: PK `productid`, one row per product (3594 rows). Flip `base_mockup`.
+- `productsizecolors`: `productid, size, color, stock, variantid`. Color is the visual variant; size is invisible in a mockup. Data has dupes/typos (`Grey `/`Grey`, `Parrot_green`).
+- Storage bucket `mockups` exists and is **private**.
 
 ## Decisions
 
-- **Variant granularity = color only.** Size is invisible in a mockup; one mockup per color. `variantid` is per size×color combo, so it would produce visually identical duplicates — not used.
-- **Color is optional** on generate. Products without `productsizecolors` rows still generate (name omits color).
-- **Source-image selection is required** (≥1) for image generation; the silent fallback-to-all is removed for `/image`.
-- **Additive migration only.** Add nullable `color text` to `mockup_variations`. No existing table altered; no inventory data rewritten (color dedup/trim is read-side only).
-- **Download via backend proxy.** The Supabase signed URL is cross-origin, so the browser ignores `<a download>`. A proxy endpoint streams bytes with `Content-Disposition: attachment`.
-- **Uploaded corrected image** is a new `mockup_variations` row marked by `prompt_text = "(manual upload)"` (no schema change, stays out of Phase-4 status modeling).
-
-## Data
-
-Migration (via MCP `apply_migration`):
-
-```sql
-alter table mockup_variations add column color text;
-```
-
-Color list query (read-only):
-
-```sql
-select distinct color from productsizecolors where productid = :pid;
-```
-
-Post-process in `variants_repo`: trim, drop empties, case-insensitive dedup (keep first canonical spelling), sort.
+- **Variant granularity = color only.** Color optional on generate (products without `productsizecolors` rows still work; name omits color).
+- **Source-image selection required** (≥1) for `/image`; the silent fallback-to-all is removed.
+- **Bucket goes public, view-only for anon.** Setup step flips `mockups` bucket to public so the shop page renders images via a permanent public URL. Public bucket = anonymous **read by URL only**; insert/update/delete remain service-role only (backend uses the service client), so shoppers cannot delete or browse/list the bucket — view only. No anon write/list policy added.
+- **`productimages.imageurl` = permanent public URL** (`get_public_url`). Directly usable by the shop page.
+- **Additive DB migration only**: `alter table mockup_variations add column color text;`. No existing table altered. Inventory color data is read-only (trim/dedup happens read-side).
+- **Corrected upload is not regeneration** — a human-edited replacement image, published the same way.
 
 ## Components
 
+### Setup (infra, one-time, via MCP)
+- Flip `mockups` Storage bucket to **public** (`update storage.buckets set public = true where id = 'mockups'`). Confirm no anon insert/update/delete policy exists on `storage.objects` for the bucket.
+- Migration: `alter table mockup_variations add column color text;`.
+
 ### `mockup_generator/db/variants_repo.py` (new)
-- `list_colors(client, productid) -> list[str]` — distinct colors, trimmed, deduped (case-insensitive), empties dropped, sorted.
+- `list_colors(client, productid) -> list[str]` — distinct colors, trimmed, case-insensitive deduped (keep first canonical spelling), empties dropped, sorted.
 
 ### `mockup_generator/db/mockup_variations_repo.py`
 - `insert(...)` gains `color: str | None = None` (omitted from payload when `None`).
-- `get(client, variation_id) -> dict | None` — returns the row (needs `productid`, `image_url`, `color`).
+
+### `mockup_generator/db/mockups_repo.py`
+- `set_base_mockup(client, productid, value=True)` — update the product's row (`base_mockup = value`). Row exists per product; plain update.
+
+### `mockup_generator/db/productimages_repo.py` (new)
+- `insert(client, *, productid, imageurl, caption=None, displayorder=None)` — when `displayorder` is `None`, compute next = current count for the product (avoids all-zeros).
 
 ### `mockup_generator/integrations/storage_client.py`
-- `upload_mockup(productid, data, key, ...)` unchanged signature; callers pass a meaningful `key` (`{color-slug}_{shorthex}`), so the stored path is `{productid}/{color-slug}_{shorthex}.png`.
-- `download_mockup(object_path, *, bucket=_BUCKET) -> bytes` (new) — service client `store.download(path)`.
-- Slug helper (lowercase, trim, non-alphanumeric → `-`, collapse repeats) — in `storage_client` or a small util; `shorthex` = first 8 chars of a uuid4 hex (uniqueness so re-gens don't overwrite).
+- `upload_mockup(productid, data, key, ...)` returns `(object_path, public_url)` via `get_public_url` (bucket now public) instead of a signed URL. Path: `{productid}/{key}.png`, key = `{color-slug}_{shorthex}`.
+- Slug helper (lowercase, trim, non-alphanumeric → `-`, collapse repeats); `shorthex` = first 8 chars of a uuid4 hex (uniqueness, no overwrite on re-approve).
+- `download_mockup` not needed (no proxy).
 
-### Backend endpoints
+### Backend endpoints (in `routers/generate.py`)
 - `GET /api/products/{productid}/colors` → `{ "colors": [...] }`.
-- `POST /api/generate/image`:
+- `POST /api/generate/image` — preview only:
   - `GenerateRequest += color: str | None = None`.
-  - **400** if `image_ids` is empty (`"Select at least one source image."`).
-  - `color` → name key + stored on the row.
-- `POST /api/generate/upload` — multipart: `productid`, optional `color`, file `image`.
-  - Read bytes → `PIL.Image.open` (rejects non-images) → re-encode PNG → `storage_client.upload_mockup` → `mockup_variations_repo.insert(prompt_text="(manual upload)", color=color, created_by=user.id)`.
-  - Returns `{ status, detail, image_url(signed), variation_id }`.
-  - Reasonable size guard (reject oversized uploads).
-- `GET /api/generate/variations/{variation_id}/download`:
-  - `mockup_variations_repo.get` → `image_url` (object path) → `storage_client.download_mockup` → stream `image/png` with `Content-Disposition: attachment; filename="{productid}_{color}_{variation_id}.png"`.
-  - 404 if no row; 503 if storage not configured.
+  - **400** if `image_ids` empty (`"Select at least one source image."`).
+  - Generate PNG → respond `{ status, detail, image_b64 }` (base64/data URI). No storage, no DB.
+- `POST /api/generate/approve` — multipart: `productid`, optional `color`, optional `prompt_text`, `source` (`"generated"|"corrected"`), file `image`.
+  - PIL-validate (rejects non-images) → re-encode PNG → `upload_mockup` (public URL) → `mockup_variations_repo.insert(prompt_text, color, image_url=public_url, created_by)` → `mockups_repo.set_base_mockup(productid, True)` → `productimages_repo.insert(productid, imageurl=public_url, caption=color)`.
+  - Returns `{ status, detail, image_url(public), variation_id }`.
+  - Size guard on the upload.
+- Disapprove: no endpoint — client discards the preview.
 
 ### Frontend — `ProductsTab.tsx` + `api.ts`
-- `api.ts`: `getProductColors(productid)`, `color` field on `generateImage`, `uploadCorrectedImage(form)` (→ `POST /api/generate/upload`), `downloadVariation(variationId)` (authed `fetch` to `GET /api/generate/variations/{id}/download` → blob → object URL → click).
+- `api.ts`: `getProductColors(productid)`; `generateImage` gains `color`, returns `{ image_b64 }`; `approveMockup(form)` → `POST /api/generate/approve`.
 - `GenerationStage`:
   - Fetch colors on product load; **color dropdown** (optional, `— no color —` default).
-  - **Generate button disabled until `pickedCount > 0`**; helper text already says "Select one or more images".
-  - `generateImage` sends `color`.
-  - Result section: Download triggers authed blob download (not raw signed URL); add **"Upload corrected image"** file input → `uploadCorrectedImage` → swap `resultUrl` + `variation_id` to the uploaded one; show the generated filename.
+  - **Generate button disabled until `pickedCount > 0`**.
+  - Generate → show preview from base64 (held in state).
+  - Result section actions: **Approve** (data-URI → Blob → `approveMockup`, `source=generated`), **Disapprove** (clear preview), **Download** (client-side from base64), **Upload corrected** (file input → `approveMockup`, `source=corrected`).
+  - On approve success: show published public URL + confirmation; mark product done.
 
 ## Error handling
 
 - Empty `image_ids` on `/image` → 400.
-- Upload of a non-image / corrupt file → 400 (PIL raises).
+- Non-image / corrupt approve upload → 400 (PIL raises).
 - Oversized upload → 413/400.
-- Missing variation on download → 404.
+- Product not found → 404.
 - Storage/Drive not configured → 503 (existing pattern).
+
+## Security
+
+- Public bucket: anonymous GET by object URL only. No anon `insert`/`update`/`delete`/`list` policy on `storage.objects` → shoppers cannot delete, replace, or enumerate bucket contents. All writes go through the backend service-role client.
+- Generate/approve endpoints require an active profile (existing `get_current_user`).
 
 ## Testing
 
-- `tests/test_generate_api.py`: empty `image_ids` → 400; `color` flows into storage key + row.
-- New `tests/test_variations_upload_download.py`: upload endpoint (mock storage + repo), download endpoint (mock `download_mockup`, assert attachment header + bytes).
-- New `tests/test_variants_repo.py`: `list_colors` trims, dedups case-insensitively, drops empties, sorts.
-- Frontend build stays clean.
+- `tests/test_generate_api.py`: empty `image_ids` → 400; generate returns base64 and writes nothing (mock storage/DB asserted not called).
+- `tests/test_approve_publish.py` (new): approve uploads (public URL), inserts `mockup_variations` with color, flips `mockups.base_mockup`, inserts `productimages(imageurl, caption=color)`; corrected vs generated `source` both publish.
+- `tests/test_variants_repo.py` (new): `list_colors` trims, dedups case-insensitively, drops empties, sorts.
+- `tests/test_productimages_repo.py` (new): insert with computed `displayorder`.
+- Frontend build clean.
 
 ## Verification
 
-- Select a pending product → colors load → pick a color → pick ≥1 source image → Generate → result named `{productid}_{color}_{hex}.png`, row has `color`.
-- Generate blocked with 0 source images selected.
-- Download saves the file locally (not just opens a tab).
-- Upload a corrected PNG → new variation row, result swaps to the uploaded image.
+- Pending product → colors load → pick color → pick ≥1 source → Generate → preview shows, nothing persisted.
+- Generate blocked with 0 source images.
+- Disapprove → preview cleared, no DB/storage change.
+- Approve generated → public URL returned; `mockup_variations` row has color; `mockups.base_mockup = true`; `productimages` row with `imageurl` + `caption = color`; shop page can render the public URL.
+- Approve a corrected upload → same publish result with the edited image.
+- Download saves the previewed image locally.
