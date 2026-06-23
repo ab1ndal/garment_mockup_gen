@@ -108,3 +108,19 @@ def test_insert_omits_none_optional_fields():
     # nullable cols not sent when unset, so DB defaults/nulls apply cleanly
     assert "prompt_id" not in sink["payload"]
     assert "created_by" not in sink["payload"]
+
+
+def test_insert_includes_color_when_set():
+    sink = {}
+    mockup_variations_repo.insert(
+        _FakeDb(sink), productid="BC1", prompt_text="p", image_url="u", color="Red"
+    )
+    assert sink["payload"]["color"] == "Red"
+
+
+def test_insert_omits_color_when_none():
+    sink = {}
+    mockup_variations_repo.insert(
+        _FakeDb(sink), productid="BC1", prompt_text="p", image_url="u"
+    )
+    assert "color" not in sink["payload"]

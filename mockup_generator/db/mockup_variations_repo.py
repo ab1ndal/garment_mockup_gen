@@ -14,6 +14,7 @@ def insert(
     kind: str = "image",
     prompt_id: int | None = None,
     created_by: str | None = None,
+    color: str | None = None,
 ) -> dict:
     """Insert one variation row and return it. Omits unset nullable columns."""
     payload: dict = {
@@ -26,6 +27,8 @@ def insert(
         payload["prompt_id"] = prompt_id
     if created_by is not None:
         payload["created_by"] = created_by
+    if color is not None:
+        payload["color"] = color
 
     resp = client.table("mockup_variations").insert(payload).execute()
     return (resp.data or [{}])[0]
