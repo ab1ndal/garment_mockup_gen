@@ -23,6 +23,13 @@
 
 ### Task 1: Supabase migration — `prompts` table + `product_browse` view
 
+> ⛔ **STOP — LIVE DB WRITE. Do NOT run without explicit user confirmation.**
+> This is the first write to the shared production database (`epotsxdugwfhyeiudjox`,
+> shared with Inventory-Management). It is **additive only** (creates a new table
+> + read-only view; no ALTER/DROP/DELETE/UPDATE on existing tables), but the
+> executor MUST present the exact SQL and wait for the user's go-ahead before
+> calling `apply_migration`.
+
 **Files:**
 - Migration applied via Supabase MCP `apply_migration` (project `epotsxdugwfhyeiudjox`). No repo file.
 
@@ -560,6 +567,10 @@ Run: `poetry run pytest tests/test_prompts_repo.py -v`
 Expected: PASS (2 tests)
 
 - [ ] **Step 5: Seed the live table + verify** (one-time, via a throwaway script using the service or anon client)
+
+> ⛔ **STOP — LIVE DB WRITE. Do NOT run without explicit user confirmation.**
+> This inserts 11 rows into the new `prompts` table. Additive only (no existing
+> table touched), but present the command and wait for the user's go-ahead first.
 
 Run:
 ```bash
