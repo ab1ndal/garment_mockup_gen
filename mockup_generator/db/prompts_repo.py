@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from supabase import Client
 
@@ -60,7 +61,7 @@ def update(client: Client, prompt_id: int, *, label: str | None = None,
         cur = client.table("prompts").select("categoryid").eq("prompt_id", prompt_id).limit(1).execute()
         if cur.data:
             _clear_defaults(client, cur.data[0]["categoryid"])
-    payload: dict = {"updated_at": "now()"}
+    payload: dict = {"updated_at": datetime.now(timezone.utc).isoformat()}
     if label is not None:
         payload["label"] = label
     if body is not None:

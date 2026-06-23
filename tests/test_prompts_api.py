@@ -37,3 +37,15 @@ def test_delete_prompt(client, monkeypatch):
     monkeypatch.setattr(prompts_repo, "delete", lambda c, pid: called.setdefault("pid", pid))
     r = client.delete("/api/prompts/7")
     assert r.status_code == 204 and called["pid"] == 7
+
+
+def test_update_prompt(client, monkeypatch):
+    monkeypatch.setattr(prompts_repo, "update",
+                        lambda *a, **k: prompts_repo.Prompt(5, "SA", "X", "Y", True))
+    r = client.patch("/api/prompts/5", json={"label": "X", "body": "Y", "is_default": True})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["prompt_id"] == 5
+    assert body["label"] == "X"
+    assert body["body"] == "Y"
+    assert body["is_default"] is True

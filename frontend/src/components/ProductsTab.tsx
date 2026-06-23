@@ -78,10 +78,10 @@ function ProductDetail({ product }: { product: Product }) {
 
   const genImage = () =>
     generateImage({ productid: product.productid, prompt: promptText })
-      .then((r) => setMsg(r.detail)).catch((e) => setMsg(e.message));
+      .then((r) => setMsg(r.detail)).catch((e: Error) => setMsg(e.message.replace(/^\d+:\s*/, "")));
   const genVideo = () =>
     generateVideo({ productid: product.productid, prompt: videoPrompt })
-      .then((r) => setMsg(r.detail)).catch((e) => setMsg(e.message));
+      .then((r) => setMsg(r.detail)).catch((e: Error) => setMsg(e.message.replace(/^\d+:\s*/, "")));
 
   return (
     <div style={{ flex: 1, borderLeft: "1px solid #ddd", paddingLeft: 16 }}>
