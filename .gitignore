@@ -30,5 +30,5 @@ frontend/.env
 # python
 *.pyc
 .pytest_cache/
-
+.agents/
 frontend/tsconfig.tsbuildinfo
