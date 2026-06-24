@@ -267,6 +267,7 @@ export const generateImage = (b: {
   resolution?: string;
   aspect_ratio?: string;
   color?: string;
+  refine_image_b64?: string;
 }) =>
   apiFetch<GenPreview>("/api/generate/image", {
     method: "POST",
