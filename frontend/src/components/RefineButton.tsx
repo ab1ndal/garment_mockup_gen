@@ -80,8 +80,8 @@ export default function RefineButton({
 
   return (
     <div className="toolbar" style={{ alignItems: "center", gap: "var(--sp-2)" }}>
-      <button className="btn-primary" onClick={run} disabled={busy || empty}>
-        {busy ? <span className="spinner" aria-hidden /> : <SparklesIcon />}
+      <button className="btn-refine" onClick={run} disabled={busy || empty}>
+        {busy ? <span className="spinner" aria-hidden /> : <SparklesIcon className="sparkle" />}
         {busy ? "Refining…" : "Refine"}
       </button>
       <InfoTooltip kind={kind} />
