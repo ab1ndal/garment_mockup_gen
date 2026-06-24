@@ -25,18 +25,18 @@ storefront that also reads `productimages`.
 A published mockup is uniquely identified by:
 
 ```
-(productid, color, variant_name, aspect_ratio)
+(productid, color, theme_name, aspect_ratio)
 ```
 
-- **variant_name** is the **label of the prompt** used to generate the image.
+- **theme_name** is the **label of the prompt** used to generate the image.
   The default prompt yields the literal string `"Default"`.
 - **aspect_ratio** is the generation aspect (`1:1`, `9:16`, …).
 
 Re-publishing with the same four values **overwrites** that row (idempotent
-re-publish). Any difference in `variant_name` or `aspect_ratio` produces a
+re-publish). Any difference in `theme_name` or `aspect_ratio` produces a
 **new coexisting row**.
 
-Existing rows backfill to `variant_name = "Default"`, `aspect_ratio = 1:1`,
+Existing rows backfill to `theme_name = "Default"`, `aspect_ratio = 1:1`,
 which matches what the default-prompt 1:1 publish path will produce going
 forward.
 
@@ -45,30 +45,30 @@ forward.
 `productimages` is shared with the existing Inventory-Management system, so the
 change must be additive and ignorable by that system.
 
-- Add **one column**: `variant text not null default 'Default'`.
+- Add **one column**: `phototheme text not null default 'Default'`.
   - Existing reads are unaffected (storefront ignores unknown columns; new
     column has a safe default).
   - `caption` continues to hold the **color** (unchanged contract).
-- Aspect ratio: store in `variant` as a suffix when not `1:1` (e.g.
+- Aspect ratio: store in `phototheme` as a suffix when not `1:1` (e.g.
   `Studio·9:16`), OR add a second nullable column `aspect text`. **Decision:**
-  fold aspect into the `variant` string to keep the shared table to a single
+  fold aspect into the `phototheme` string to keep the shared table to a single
   added column. Format:
-  - `1:1` → `variant = "<prompt-label>"` (e.g. `Default`, `Studio`).
-  - other → `variant = "<prompt-label>·<aspect>"` (e.g. `Studio·9:16`).
+  - `1:1` → `phototheme = "<prompt-label>"` (e.g. `Default`, `Studio`).
+  - other → `phototheme = "<prompt-label>·<aspect>"` (e.g. `Studio·9:16`).
 - Dedup key in `productimages_repo` changes from `(productid, caption)` to
-  `(productid, caption, variant)`:
-  - `list_for(productid, color, variant)` — find prior row for cleanup.
-  - `delete_for(productid, color, variant)` — replace just that variant.
-  - `insert(...)` — carries `variant`.
-  - No NULL-aware filtering needed (`variant` is always concrete).
+  `(productid, caption, phototheme)`:
+  - `list_for(productid, color, theme)` — find prior row for cleanup.
+  - `delete_for(productid, color, theme)` — replace just that theme.
+  - `insert(...)` — carries `phototheme`.
+  - No NULL-aware filtering needed (`phototheme` is always concrete).
 
 ### Backfill
 
 ```sql
 alter table public.productimages
-  add column if not exists variant text not null default 'Default';
+  add column if not exists phototheme text not null default 'Default';
 -- existing rows already get 'Default' via the column default; explicit no-op:
--- update public.productimages set variant = 'Default' where variant is null;
+-- update public.productimages set phototheme = 'Default' where phototheme is null;
 ```
 
 ## Section 2 — API (`/approve`)
@@ -77,27 +77,28 @@ Current form fields: `productid, color, prompt_text, source, image`.
 
 Add:
 
-- `variant_name: str | None` — the selected prompt's label (frontend sends it).
+- `theme_name: str | None` — the selected prompt's label (frontend sends it).
 - `aspect_ratio: str | None` — the generation aspect (frontend sends it).
 
-Server computes the stored `variant` string:
+Server computes the stored `phototheme` string:
 
 ```
-label  = variant_name or "Default"
-variant = label if aspect_ratio in (None, "1:1") else f"{label}·{aspect_ratio}"
+label     = theme_name or "Default"
+phototheme = label if aspect_ratio in (None, "1:1") else f"{label}·{aspect_ratio}"
 ```
 
-Then dedup against `(productid, color, variant)` — replace prior row +
+Then dedup against `(productid, color, phototheme)` — replace prior row +
 best-effort delete its orphaned Storage object (same pattern as today), insert
-the new `productimages` row, and append a `mockup_variations` audit row
-(carrying `variant`/aspect for the gallery).
+the new `productimages` row, and append the `mockup_variations` audit row as
+today. (The audit row does not yet carry `phototheme`; that's deferred with the
+gallery — see Out of Scope.)
 
 The Storage object key (`slug(color)_short_hex`) is already unique per upload,
 so no overwrite risk in the bucket.
 
 ## Section 3 — Frontend (`ProductsTab`)
 
-- On publish, append `variant_name` (selected prompt label) and `aspect`
+- On publish, append `theme_name` (selected prompt label) and `aspect`
   (already in component state) to the `/approve` form data.
 - Download filename gains variant + aspect:
   `productid_color_promptlabel_9x16.png` (sanitize separators).
@@ -107,11 +108,10 @@ so no overwrite risk in the bucket.
 ## Section 4 — Testing
 
 - `tests/test_productimages_repo.py` — composite dedup: same
-  `(productid, color, variant)` overwrites; differing `variant` coexists;
+  `(productid, color, phototheme)` overwrites; differing `phototheme` coexists;
   `list_for`/`delete_for` filter on the triple.
-- `tests/test_approve_publish.py` — new form fields parsed; `variant` string
-  computation (default vs labelled, 1:1 vs other aspect); audit row carries
-  variant.
+- `tests/test_approve_publish.py` — new form fields parsed; `phototheme` string
+  computation (default vs labelled, 1:1 vs other aspect).
 
 ## Out of Scope
 

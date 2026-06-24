@@ -210,6 +210,8 @@ type Variation = {
 function GenerationStage({ product, onPublished }: { product: Product; onPublished?: (productid: string) => void }) {
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [promptText, setPromptText] = useState("");
+  // Label of the selected prompt — published as the photo-theme key.
+  const [promptLabel, setPromptLabel] = useState("");
   const [videoPrompt, setVideoPrompt] = useState("");
   const [busy, setBusy] = useState<null | "image" | "video">(null);
   const [msg, setMsg] = useState<{ kind: "info" | "error"; text: string } | null>(null);
@@ -265,11 +267,12 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
 
   useEffect(() => {
     setMsg(null);
-    if (!product.categoryid) { setPrompts([]); setPromptText(""); return; }
+    if (!product.categoryid) { setPrompts([]); setPromptText(""); setPromptLabel(""); return; }
     listPrompts(product.categoryid).then((ps) => {
       setPrompts(ps);
       const def = ps.find((p) => p.is_default) ?? ps[0];
       setPromptText(def?.body ?? "");
+      setPromptLabel(def?.label ?? "");
     }).catch((e) => setMsg({ kind: "error", text: e.message }));
   }, [product.productid, product.categoryid]);
 
@@ -298,6 +301,17 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
 
   const composePrompt = () =>
     feedback.trim() ? `${promptText}\n\nRevision note: ${feedback.trim()}` : promptText;
+
+  // Download filename stem: productid_color_theme_aspect (omit empty parts).
+  const fileStem = () => {
+    const slug = (s: string) => s.trim().replace(/\s+/g, "-").replace(/[^\w-]/g, "");
+    return [
+      product.productid,
+      color ? slug(color) : "mockup",
+      promptLabel ? slug(promptLabel) : "",
+      aspect ? aspect.replace(":", "x") : "",
+    ].filter(Boolean).join("_");
+  };
 
   const pushVariation = (b64: string, promptUsed: string, mode: "fresh" | "refine", note: string) => {
     setVariations((prev) => {
@@ -335,7 +349,7 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${product.productid}_${color ? color.replace(/\s+/g, "-") : "mockup"}.mp4`;
+        a.download = `${fileStem()}.mp4`;
         a.click();
         URL.revokeObjectURL(url);
         setVmsg({ kind: "info", text: "Video downloaded." });
@@ -394,6 +408,8 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
     fd.append("productid", product.productid);
     if (color) fd.append("color", color);
     if (promptText) fd.append("prompt_text", promptText);
+    if (promptLabel) fd.append("theme_name", promptLabel);
+    if (aspect) fd.append("aspect_ratio", aspect);
     fd.append("source", src);
     fd.append("image", blob, "mockup.png");
     approveMockup(fd)
@@ -412,7 +428,7 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
     if (!active) return;
     const a = document.createElement("a");
     a.href = `data:image/png;base64,${active.b64}`;
-    a.download = `${product.productid}_${color ? color.replace(/\s+/g, "-") : "mockup"}.png`;
+    a.download = `${fileStem()}.png`;
     a.click();
   };
 
@@ -489,7 +505,7 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
             <select
               onChange={(e) => {
                 const p = prompts.find((x) => String(x.prompt_id) === e.target.value);
-                if (p) setPromptText(p.body);
+                if (p) { setPromptText(p.body); setPromptLabel(p.label); }
               }}
             >
               {prompts.length === 0 && <option>No templates for this category</option>}

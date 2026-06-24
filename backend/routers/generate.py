@@ -68,6 +68,19 @@ _VIDEO_DEFAULTS = {"model": "veo-3.1-generate-preview", "resolution": "720p",
                    "aspect_ratio": "9:16", "duration": 4}
 
 
+def _photo_theme(theme_name: str | None, aspect_ratio: str | None) -> str:
+    """Build the dedup photo-theme string from the prompt label + aspect ratio.
+
+    Default prompt at 1:1 → ``"Default"`` (canonical row, matches backfill).
+    Non-1:1 appends the aspect (e.g. ``"Studio·9:16"``) so aspects coexist.
+    """
+    label = (theme_name or productimages_repo.DEFAULT_THEME).strip() \
+        or productimages_repo.DEFAULT_THEME
+    if aspect_ratio and aspect_ratio != "1:1":
+        return f"{label}·{aspect_ratio}"
+    return label
+
+
 # ── In-memory video jobs ──────────────────────────────────────────────────────
 # VEO renders take minutes — longer than a reverse proxy (HF Space) will hold a
 # request open. So /video enqueues a background thread and returns a job_id; the
@@ -211,6 +224,8 @@ async def approve_mockup(
     productid: str = Form(...),
     color: str | None = Form(None),
     prompt_text: str | None = Form(None),
+    theme_name: str | None = Form(None),
+    aspect_ratio: str | None = Form(None),
     source: str = Form("generated"),
     image: UploadFile = File(...),
     user: CurrentUser = Depends(get_current_user),
@@ -238,17 +253,20 @@ async def approve_mockup(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Could not store the mockup: {exc}") from exc
 
-    # No redundancy: one productimages row per (productid, color). Replace any
-    # prior row and clean up its orphaned Storage object (best-effort — a
-    # cleanup failure must not fail an otherwise-successful publish).
-    for prior in productimages_repo.list_for(db, productid, color):
+    theme = _photo_theme(theme_name, aspect_ratio)
+
+    # No redundancy: one productimages row per (productid, color, phototheme).
+    # Replace any prior row for that triple and clean up its orphaned Storage
+    # object (best-effort — a cleanup failure must not fail an otherwise-
+    # successful publish). Differing theme/aspect coexist as separate rows.
+    for prior in productimages_repo.list_for(db, productid, color, theme):
         old_path = storage_client.path_from_public_url(prior.get("imageurl") or "")
         if old_path:
             try:
                 storage_client.delete_object(old_path)
             except Exception:  # noqa: BLE001 - orphan cleanup is non-fatal
                 pass
-    productimages_repo.delete_for(db, productid, color)
+    productimages_repo.delete_for(db, productid, color, theme)
 
     text = prompt_text or ("(manual upload)" if source == "corrected" else "")
     row = mockup_variations_repo.insert(
@@ -256,7 +274,8 @@ async def approve_mockup(
         color=color, created_by=user.id,
     )
     mockups_repo.set_base_mockup(db, productid, True)
-    productimages_repo.insert(db, productid=productid, imageurl=public_url, caption=color)
+    productimages_repo.insert(db, productid=productid, imageurl=public_url,
+                              caption=color, theme=theme)
 
     return ApproveResponse(
         status="ok", detail="Published.",

@@ -42,9 +42,9 @@ def _wire(monkeypatch, calls):
                         lambda db, **kw: (calls.__setitem__("image", kw) or {"imageid": 1}))
     # no-redundancy seam: prior rows (default none), delete row, delete object
     monkeypatch.setattr(gen.productimages_repo, "list_for",
-                        lambda db, pid, cap: calls.get("existing", []))
+                        lambda db, pid, cap, theme="Default": calls.get("existing", []))
     monkeypatch.setattr(gen.productimages_repo, "delete_for",
-                        lambda db, pid, cap: calls.__setitem__("deleted_for", (pid, cap)))
+                        lambda db, pid, cap, theme="Default": calls.__setitem__("deleted_for", (pid, cap, theme)))
     monkeypatch.setattr(gen.storage_client, "delete_object",
                         lambda path, **kw: calls.setdefault("removed", []).append(path))
     # path_from_public_url is the real pure function (not mocked)
@@ -71,7 +71,8 @@ def test_approve_generated_publishes(client, monkeypatch):
     assert calls["flag"] == ("BC25001", True)
     assert calls["image"]["imageurl"] == "https://public/BC25001/parrot-green_deadbeef.png"
     assert calls["image"]["caption"] == "Parrot Green"
-    assert calls["deleted_for"] == ("BC25001", "Parrot Green")
+    assert calls["image"]["theme"] == "Default"  # no theme/aspect sent -> Default
+    assert calls["deleted_for"] == ("BC25001", "Parrot Green", "Default")
     assert "removed" not in calls  # no prior row -> nothing deleted from storage
 
 
@@ -86,8 +87,31 @@ def test_approve_replaces_existing_row_and_deletes_old_object(client, monkeypatc
                     data={"productid": "BC25001", "color": "Red", "source": "generated"},
                     files={"image": ("m.png", _png_bytes(), "image/png")})
     assert r.status_code == 200
-    assert calls["removed"] == ["BC25001/old_cafef00d.png"]   # old object cleaned up
-    assert calls["deleted_for"] == ("BC25001", "Red")          # old row replaced
+    assert calls["removed"] == ["BC25001/old_cafef00d.png"]      # old object cleaned up
+    assert calls["deleted_for"] == ("BC25001", "Red", "Default")  # old row replaced
+
+
+def test_approve_builds_phototheme_from_label_and_aspect(client, monkeypatch):
+    calls = {}
+    _wire(monkeypatch, calls)
+    r = client.post("/api/generate/approve",
+                    data={"productid": "BC1", "color": "Red", "source": "generated",
+                          "theme_name": "Studio", "aspect_ratio": "9:16"},
+                    files={"image": ("m.png", _png_bytes(), "image/png")})
+    assert r.status_code == 200
+    assert calls["image"]["theme"] == "Studio·9:16"      # non-1:1 -> aspect suffix
+    assert calls["deleted_for"] == ("BC1", "Red", "Studio·9:16")
+
+
+def test_approve_theme_label_without_aspect_suffix_at_1to1(client, monkeypatch):
+    calls = {}
+    _wire(monkeypatch, calls)
+    r = client.post("/api/generate/approve",
+                    data={"productid": "BC1", "color": "Red", "source": "generated",
+                          "theme_name": "Studio", "aspect_ratio": "1:1"},
+                    files={"image": ("m.png", _png_bytes(), "image/png")})
+    assert r.status_code == 200
+    assert calls["image"]["theme"] == "Studio"           # 1:1 -> no suffix
 
 
 def test_approve_corrected_defaults_prompt_text(client, monkeypatch):
