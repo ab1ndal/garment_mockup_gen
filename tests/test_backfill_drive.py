@@ -88,6 +88,11 @@ def test_move_file_swaps_parents(monkeypatch):
     assert update["addParents"] == "REJECTED"
     assert update["removeParents"] == "OLD_PARENT"
     assert update["supportsAllDrives"] is True
+    # Verify fetch-before-update: get() was called with correct params
+    get = next(kw for name, kw in files.calls if name == "get")
+    assert get["fileId"] == "F1"
+    assert get["fields"] == "parents"
+    assert get["supportsAllDrives"] is True
 
 
 def test_ensure_subfolder_returns_existing(monkeypatch):
@@ -101,3 +106,22 @@ def test_ensure_subfolder_creates_when_absent(monkeypatch):
     files = _patch_files(monkeypatch, _RecordingFiles(list_result={"files": []}))
     assert drive_client.ensure_subfolder("ROOT", "rejected") == "NEW_FOLDER"
     assert any(name == "create" for name, _ in files.calls)
+
+
+def test_move_file_joins_multiple_old_parents(monkeypatch):
+    """Verify move_file correctly joins multiple parent IDs with commas."""
+    files_recorder = _RecordingFiles()
+
+    # Override execute to return two parents for get calls
+    original_execute = files_recorder.execute
+    def execute_with_multi_parents():
+        kind = files_recorder._last[0] if hasattr(files_recorder, "_last") else None
+        if kind == "get":
+            return {"parents": ["P1", "P2"]}
+        return original_execute()
+    files_recorder.execute = execute_with_multi_parents
+
+    _patch_files(monkeypatch, files_recorder)
+    drive_client.move_file("F1", "NEW")
+    update = next(kw for name, kw in files_recorder.calls if name == "update")
+    assert update["removeParents"] == "P1,P2"
