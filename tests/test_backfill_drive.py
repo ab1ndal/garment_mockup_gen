@@ -125,3 +125,65 @@ def test_move_file_joins_multiple_old_parents(monkeypatch):
     drive_client.move_file("F1", "NEW")
     update = next(kw for name, kw in files_recorder.calls if name == "update")
     assert update["removeParents"] == "P1,P2"
+
+
+_FOLDER = drive_client._FOLDER_MIME
+
+
+def _named(fid, name, *, folder=False):
+    return {"id": fid, "name": name,
+            "mimeType": _FOLDER if folder else "image/png",
+            "thumbnailLink": None if folder else f"link-{fid}"}
+
+
+class _ScanFiles:
+    def __init__(self, responses):
+        self.responses = responses
+        self._q = ""
+
+    def list(self, *, q, **kw):
+        self._q = q
+        return self
+
+    def execute(self):
+        for folder_id, files in self.responses.items():
+            if f"'{folder_id}' in parents" in self._q:
+                return {"files": files}
+        return {"files": []}
+
+
+def _patch_scan(monkeypatch, responses):
+    svc = type("Svc", (), {"files": lambda self: _ScanFiles(responses)})()
+    monkeypatch.setattr(drive_client, "_clients", lambda: (svc, object()))
+
+
+def test_scan_folder_of_folders_flattens(monkeypatch):
+    responses = {
+        "ROOT": [_named("a", "BC25001.png"),
+                 _named("S1", "group1", folder=True),
+                 _named("S2", "group2", folder=True)],
+        "S1": [_named("b", "BC25002.png"), _named("c", "BC25002_A.png")],
+        "S2": [_named("d", "weird-name.png")],
+    }
+    _patch_scan(monkeypatch, responses)
+
+    out = drive_client.scan_folder_of_folders("ROOT")
+    by_id = {i["file_id"]: i for i in out}
+
+    assert by_id["a"]["productid"] == "BC25001" and by_id["a"]["subfolder_name"] is None
+    assert by_id["b"]["productid"] == "BC25002" and by_id["b"]["subfolder_name"] == "group1"
+    assert by_id["c"]["alpha"] == "A"
+    assert by_id["d"]["productid"] is None          # malformed name still listed
+    assert by_id["a"]["thumbnail_link"] == "link-a"
+    assert len(out) == 4
+
+
+def test_thumbnails_for_uses_attach(monkeypatch):
+    monkeypatch.setattr(drive_client, "_clients", lambda: (object(), object()))
+    monkeypatch.setattr(drive_client, "_attach_thumbnails",
+                        lambda session, files: {f["id"]: {"thumbnail_url": f"data:{f['id']}"} for f in files})
+    out = drive_client.thumbnails_for([
+        {"file_id": "a", "thumbnail_link": "link-a"},
+        {"file_id": "b", "thumbnail_link": "link-b"},
+    ])
+    assert out == {"a": "data:a", "b": "data:b"}

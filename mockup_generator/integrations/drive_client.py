@@ -270,3 +270,67 @@ def list_folder_image_groups(folder_id: str) -> dict:
             groups.append({"id": sf["id"], "name": sf.get("name", sf["id"]), "images": imgs})
 
     return {"loose": [items[f["id"]] for f in loose_files], "groups": groups}
+
+
+def _paged_files(svc, q: str, fields: str) -> list[dict]:
+    """List all files matching ``q``, following nextPageToken (bounds large folders)."""
+    out: list[dict] = []
+    token = None
+    while True:
+        resp = (
+            svc.files()
+            .list(q=q, fields=f"nextPageToken,{fields}", pageSize=_MAX_FILES,
+                  pageToken=token, orderBy="folder,name_natural",
+                  supportsAllDrives=True, includeItemsFromAllDrives=True)
+            .execute()
+        )
+        out.extend(resp.get("files", []))
+        token = resp.get("nextPageToken")
+        if not token:
+            return out
+
+
+def _scan_item(f: dict, subfolder_id: str | None, subfolder_name: str | None) -> dict:
+    productid, alpha = parse_generated_name(f.get("name", ""))
+    return {
+        "productid": productid, "alpha": alpha, "file_id": f["id"],
+        "name": f.get("name", f["id"]),
+        "subfolder_id": subfolder_id, "subfolder_name": subfolder_name,
+        "thumbnail_link": f.get("thumbnailLink"),
+    }
+
+
+def scan_folder_of_folders(root_id: str) -> list[dict]:
+    """Flat list of every generated image under ``root_id`` (loose + one level of
+    subfolders). Malformed filenames are included with ``productid=None`` so the
+    UI can surface them. No thumbnails fetched here (cheap metadata only)."""
+    svc, _ = _clients()
+    top = _paged_files(
+        svc, f"'{root_id}' in parents and trashed = false",
+        "files(id,name,mimeType,thumbnailLink)",
+    )
+    items: list[dict] = []
+    subfolders: list[dict] = []
+    for f in top:
+        if f.get("mimeType") == _FOLDER_MIME:
+            subfolders.append(f)
+        elif (f.get("mimeType") or "").startswith("image/"):
+            items.append(_scan_item(f, None, None))
+    for sf in subfolders:
+        sub = _paged_files(
+            svc, f"'{sf['id']}' in parents and mimeType contains 'image/' and trashed = false",
+            "files(id,name,mimeType,thumbnailLink)",
+        )
+        for f in sub:
+            items.append(_scan_item(f, sf["id"], sf.get("name", sf["id"])))
+    return items
+
+
+def thumbnails_for(items: list[dict]) -> dict[str, str]:
+    """Return ``{file_id: data_uri}`` for a page of scan items, fetched in parallel."""
+    if not items:
+        return {}
+    _, session = _clients()
+    files = [{"id": i["file_id"], "thumbnailLink": i.get("thumbnail_link")} for i in items]
+    got = _attach_thumbnails(session, files)
+    return {fid: v["thumbnail_url"] for fid, v in got.items()}
