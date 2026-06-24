@@ -17,13 +17,23 @@ def _png_image() -> Image.Image:
     return Image.new("RGB", (8, 8), (10, 20, 30))
 
 
-class _FakePart:
-    def __init__(self, image=None):
-        self._image = image
-        self.inline_data = object() if image is not None else None
+class _FakeBlob:
+    def __init__(self, data, mime_type="image/png"):
+        self.data = data
+        self.mime_type = mime_type
 
-    def as_image(self):
-        return self._image
+
+class _FakePart:
+    """Mirrors a real google-genai part: image data lives in ``inline_data``
+    as raw bytes, not behind ``as_image()`` (which returns a non-PIL type)."""
+
+    def __init__(self, image=None):
+        if image is not None:
+            buf = BytesIO()
+            image.save(buf, "PNG")
+            self.inline_data = _FakeBlob(buf.getvalue())
+        else:
+            self.inline_data = None
 
 
 class _FakeResponse:
@@ -85,6 +95,22 @@ def test_first_image_bytes_skips_non_image_parts():
 def test_first_image_bytes_returns_none_when_no_image():
     resp = _FakeResponse([_FakePart(None)])
     assert common.first_image_bytes(resp) is None
+
+
+def test_first_image_bytes_handles_real_genai_image_part():
+    """Regression: google-genai 2.x ``Part.as_image()`` returns a
+    ``types.Image`` (which has no ``.convert``), not a PIL image. The helper
+    must read the raw ``inline_data`` bytes through PIL instead."""
+    from google.genai import types
+
+    buf = BytesIO()
+    _png_image().save(buf, "PNG")
+    img_part = types.Part(inline_data=types.Blob(data=buf.getvalue(), mime_type="image/png"))
+    resp = _FakeResponse([types.Part(text="thinking…"), img_part])
+
+    data = common.first_image_bytes(resp)
+    assert data is not None
+    assert Image.open(BytesIO(data)).format == "PNG"
 
 
 # --- service orchestration ---

@@ -89,15 +89,21 @@ def first_image_bytes(response) -> bytes | None:
     """Return PNG bytes of the first image part, or None if there is none.
 
     Gemini 3 image models are *thinking* models: a response can interleave
-    ``thought`` / ``text`` parts with the image. Scan for the first part whose
-    ``as_image()`` is non-None rather than assuming ``parts[0]``.
+    ``thought`` / ``text`` parts with the image. Scan for the first part that
+    carries image ``inline_data`` rather than assuming ``parts[0]``.
     """
     for part in response.candidates[0].content.parts:
-        if getattr(part, "inline_data", None) is None:
+        blob = getattr(part, "inline_data", None)
+        data = getattr(blob, "data", None)
+        if not data:
             continue
-        img = part.as_image()
-        if img is None:
+        mime = getattr(blob, "mime_type", "") or ""
+        if mime and not mime.startswith("image/"):
             continue
+        # Read the raw bytes through PIL. Do NOT use ``part.as_image()``: in
+        # google-genai 2.x it returns a ``types.Image`` (no ``.convert``), not
+        # a PIL image, despite its stale docstring.
+        img = Image.open(BytesIO(data))
         buf = BytesIO()
         img.convert("RGB").save(buf, format="PNG")
         return buf.getvalue()
