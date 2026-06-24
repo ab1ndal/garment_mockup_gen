@@ -75,11 +75,14 @@
   --text-muted: oklch(44.19% 0.0146 285.79);
   --text-subtle: oklch(50% 0.0138 285.94);
 
-  /* Brand accent (indigo → violet, matches HF Space) */
-  --accent: oklch(51.06% 0.2301 276.97);
-  --accent-hover: oklch(45.68% 0.2146 277.02);
-  --accent-soft: oklch(96.19% 0.0179 272.31);
+  /* Brand accent (deep maroon/burgundy — luxury Indian ethnic wear) */
+  --accent: oklch(44% 0.155 18);
+  --accent-hover: oklch(38% 0.142 18);
+  --accent-soft: oklch(96.5% 0.018 25);
   --accent-on: oklch(100% 0 0);
+
+  /* Gold — subtle luxe hint on the Refine (AI) sparkle icon */
+  --gold-2: oklch(70% 0.145 72);
 
   /* Semantic */
   --danger: oklch(57.71% 0.2152 27.33);
@@ -263,59 +266,18 @@ button:disabled {
   background: var(--surface-2);
 }
 
-/* Refine: AI action — gradient fill, soft glow, sparkle twinkle + shimmer */
+/* Refine: AI action — quiet outline; gold sparkle is the only hint */
 .btn-refine {
-  position: relative;
-  overflow: hidden;
-  border: 0;
-  color: #fff;
-  background: linear-gradient(135deg,
-    oklch(54% 0.23 277) 0%,
-    oklch(56% 0.25 312) 100%);
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.12),
-    0 6px 16px oklch(51% 0.23 292 / 0.30);
-}
-.btn-refine > * {
-  position: relative;
-  z-index: 1;
-}
-.btn-refine::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg,
-    transparent 30%, rgba(255, 255, 255, 0.38) 50%, transparent 70%);
-  transform: translateX(-130%);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
 }
 .btn-refine:hover:not(:disabled) {
-  background: linear-gradient(135deg,
-    oklch(49% 0.23 277) 0%,
-    oklch(51% 0.25 312) 100%);
-  box-shadow: 0 2px 4px rgba(16, 24, 40, 0.14),
-    0 10px 26px oklch(51% 0.23 292 / 0.44);
-}
-.btn-refine:active:not(:disabled) {
-  transform: scale(0.98);
+  background: var(--surface-2);
+  border-color: var(--border-strong);
 }
 .btn-refine .sparkle {
-  transition: transform 300ms ease;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .btn-refine {
-    transition: background 150ms ease, box-shadow 150ms ease, transform 80ms ease;
-  }
-  .btn-refine::after {
-    transition: transform 650ms ease;
-  }
-  .btn-refine:hover:not(:disabled) {
-    transform: translateY(-1px);
-  }
-  .btn-refine:hover:not(:disabled)::after {
-    transform: translateX(130%);
-  }
-  .btn-refine:hover:not(:disabled) .sparkle {
-    transform: rotate(18deg) scale(1.14);
-  }
+  color: var(--gold-2);
 }
 
 /* Add-variant button: dashed affordance, secondary weight */
@@ -325,9 +287,9 @@ button:disabled {
 }
 .btn-add:hover:not(:disabled) {
   border-style: solid;
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--surface-2);
 }
 
 /* Delete: subordinate ghost, turns danger only on hover/focus */
