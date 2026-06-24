@@ -69,6 +69,23 @@ class GenerateRequest(BaseModel):
     color: str | None = None
 
 
+class VideoGenerateRequest(BaseModel):
+    productid: str
+    prompt: str
+    image_url: str | None = None   # supabase mockup URL to animate; else resolved by color
+    color: str | None = None
+    model: str | None = None
+    resolution: str | None = None
+    aspect_ratio: str | None = None
+    duration: int | None = None
+
+
+class VideoJobResponse(BaseModel):
+    job_id: str
+    status: str               # pending | running | done | error
+    detail: str | None = None
+
+
 class GeneratePreview(BaseModel):
     status: str
     detail: str

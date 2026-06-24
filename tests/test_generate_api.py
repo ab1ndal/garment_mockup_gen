@@ -152,8 +152,114 @@ def test_generation_options_lists_choices_and_defaults(client):
     assert "4:5" not in body["aspect_ratios"]  # not supported by the model
     assert body["defaults"]["resolution"] in body["resolutions"]
     assert body["defaults"]["aspect_ratio"] in body["aspect_ratios"]
+    # video options
+    assert "veo-3.1-generate-preview" in body["video_models"]
+    assert body["video_resolutions"] == ["720p", "1080p"]
+    assert body["video_aspect_ratios"] == ["9:16", "16:9"]
+    assert body["video_durations"] == [4, 6, 8]
+    assert body["video_defaults"]["resolution"] in body["video_resolutions"]
 
 
-def test_generate_video_still_stub_501(client):
-    r = client.post("/api/generate/video", json={"productid": "BC25001", "prompt": "x"})
-    assert r.status_code == 501
+_PUB_URL = "https://x.supabase.co/storage/v1/object/public/mockups/BC25001/blue_abcd1234.png"
+
+
+def _wire_video(monkeypatch, *, calls, url=_PUB_URL):
+    # run the background job inline so polling is deterministic in tests
+    monkeypatch.setattr(gen, "_spawn", lambda fn, *a: fn(*a))
+    monkeypatch.setattr(gen.productimages_repo, "list_for",
+                        lambda db, pid, color: [{"imageid": "1", "imageurl": url}] if url else [])
+    monkeypatch.setattr(gen.storage_client, "download_mockup",
+                        lambda path: (calls.setdefault("path", path), _png_bytes())[1])
+
+    def fake_video(image_bytes, prompt, **kw):
+        calls["video"] = {"len": len(image_bytes), "prompt": prompt, "kw": kw}
+        return b"MP4BYTES"
+
+    monkeypatch.setattr(gen.video_service, "generate_video_bytes", fake_video)
+
+
+def _start_video(client, payload):
+    r = client.post("/api/generate/video", json=payload)
+    return r
+
+
+def test_generate_video_enqueues_then_streams_mp4(client, monkeypatch):
+    calls = {}
+    _wire_video(monkeypatch, calls=calls)
+    started = _start_video(client, {"productid": "BC25001", "prompt": "slow pan", "color": "blue"})
+    assert started.status_code == 200
+    job_id = started.json()["job_id"]
+    assert started.json()["status"] in ("pending", "running", "done")
+    assert calls["path"] == "BC25001/blue_abcd1234.png"
+    assert calls["video"]["prompt"] == "slow pan"
+
+    r = client.get(f"/api/generate/video/{job_id}")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "video/mp4"
+    assert "attachment" in r.headers["content-disposition"]
+    assert r.content == b"MP4BYTES"
+
+    # job evicted after download
+    assert client.get(f"/api/generate/video/{job_id}").status_code == 404
+
+
+def test_generate_video_uses_explicit_image_url(client, monkeypatch):
+    calls = {}
+    _wire_video(monkeypatch, calls=calls, url=None)  # no productimages fallback
+    r = _start_video(client, {"productid": "BC25001", "prompt": "p", "image_url": _PUB_URL})
+    assert r.status_code == 200
+    assert calls["path"] == "BC25001/blue_abcd1234.png"
+
+
+def test_generate_video_threads_options(client, monkeypatch):
+    calls = {}
+    _wire_video(monkeypatch, calls=calls)
+    r = _start_video(client, {
+        "productid": "BC25001", "prompt": "p",
+        "model": "veo-3.1-fast-generate-preview", "resolution": "720p",
+        "aspect_ratio": "16:9", "duration": 6,
+    })
+    assert r.status_code == 200
+    kw = calls["video"]["kw"]
+    assert kw["model"] == "veo-3.1-fast-generate-preview"
+    assert kw["aspect_ratio"] == "16:9"
+    assert kw["duration"] == 6
+
+
+def test_generate_video_no_published_mockup_400(client, monkeypatch):
+    calls = {}
+    _wire_video(monkeypatch, calls=calls, url=None)
+    r = _start_video(client, {"productid": "BC25001", "prompt": "p"})
+    assert r.status_code == 400
+
+
+def test_generate_video_rejects_bad_model(client):
+    r = _start_video(client, {"productid": "BC25001", "prompt": "p", "model": "sora"})
+    assert r.status_code == 400
+
+
+def test_generate_video_1080p_requires_8s(client, monkeypatch):
+    calls = {}
+    _wire_video(monkeypatch, calls=calls)
+    r = _start_video(client, {
+        "productid": "BC25001", "prompt": "p", "resolution": "1080p", "duration": 4})
+    assert r.status_code == 400
+
+
+def test_generate_video_job_error_surfaced_on_poll(client, monkeypatch):
+    calls = {}
+    _wire_video(monkeypatch, calls=calls)
+    monkeypatch.setattr(gen.video_service, "generate_video_bytes",
+                        lambda *a, **k: (_ for _ in ()).throw(gen.video_service.VideoTimeout("slow")))
+    started = _start_video(client, {"productid": "BC25001", "prompt": "p"})
+    assert started.status_code == 200
+    job_id = started.json()["job_id"]
+    r = client.get(f"/api/generate/video/{job_id}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "error"
+    assert "timed out" in body["detail"].lower()
+
+
+def test_video_job_unknown_404(client):
+    assert client.get("/api/generate/video/nope").status_code == 404
