@@ -23,9 +23,16 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from io import BytesIO
 
+import pillow_heif
 from googleapiclient.http import MediaIoBaseDownload
 
 from mockup_generator.config import settings
+
+# Drive lists any `image/*` file, including iPhone HEIC/HEIF, but stock Pillow
+# can't decode those and raises UnidentifiedImageError on Image.open. Register
+# the HEIF opener so such source images decode like any other format. The call
+# patches Pillow's global registry, so once here covers every Image.open.
+pillow_heif.register_heif_opener()
 
 # Matches the folder id in the common Drive URL shapes:
 #   .../drive/folders/<id>           .../folders/<id>?usp=sharing

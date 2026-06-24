@@ -17,7 +17,8 @@ dependencies = [
   "supabase (>=2.31.0,<3.0.0)",
   "google-api-python-client (>=2,<3)",
   "google-auth (>=2,<3)",
-  "python-multipart (>=0.0.32,<0.0.33)"
+  "python-multipart (>=0.0.32,<0.0.33)",
+  "pillow-heif (>=1.4.0,<2.0.0)"
 ]
 
 [project.scripts]
