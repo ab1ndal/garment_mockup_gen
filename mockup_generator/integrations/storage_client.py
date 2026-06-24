@@ -41,6 +41,18 @@ def upload_mockup(
     return path, store.get_public_url(path)
 
 
+def download_mockup(object_path: str, *, bucket: str = _BUCKET) -> bytes:
+    """Download one object's bytes from the bucket (service-role).
+
+    Used as the VEO first-frame source: the video animates an already-published
+    mockup that lives in Supabase Storage.
+    """
+    client = service_client()
+    if client is None:
+        raise StorageNotConfigured("SUPABASE_SECRET_KEY is required to download mockups")
+    return client.storage.from_(bucket).download(object_path)
+
+
 def slugify(text: str | None) -> str:
     """Filesystem/URL-safe slug: lowercase, non-alphanumeric runs -> single '-'."""
     if not text:

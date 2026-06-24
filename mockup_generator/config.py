@@ -82,6 +82,22 @@ class Settings:
         return _get("GEMINI_IMAGE_MODEL", default="gemini-3-pro-image")  # type: ignore[return-value]
 
     @property
+    def veo_model(self) -> str:
+        """VEO video-generation model. Override for fast/lite variants."""
+        return _get("VEO_MODEL", default="veo-3.1-generate-preview")  # type: ignore[return-value]
+
+    @property
+    def veo_poll_timeout_sec(self) -> int:
+        """Max seconds to wait for a VEO job before giving up. VEO is slow
+        (minutes); raise this on deploys with long-lived request timeouts."""
+        return int(_get("VEO_POLL_TIMEOUT_SEC", default="900"))  # type: ignore[arg-type]
+
+    @property
+    def veo_poll_interval_sec(self) -> int:
+        """Seconds between VEO operation polls."""
+        return int(_get("VEO_POLL_INTERVAL_SEC", default="10"))  # type: ignore[arg-type]
+
+    @property
     def google_drive_sa_json(self) -> str | None:
         """Service-account credentials for Drive read access. Either a path to
         a JSON key file or the JSON content itself. Optional — only needed for

@@ -93,12 +93,14 @@ def first_image_bytes(response) -> bytes | None:
     ``as_image()`` is non-None rather than assuming ``parts[0]``.
     """
     for part in response.candidates[0].content.parts:
-        inline = getattr(part, "inline_data", None)
-        if inline and inline.data:
-            img = Image.open(BytesIO(inline.data)).convert("RGB")
-            buf = BytesIO()
-            img.save(buf, format="PNG")
-            return buf.getvalue()
+        if getattr(part, "inline_data", None) is None:
+            continue
+        img = part.as_image()
+        if img is None:
+            continue
+        buf = BytesIO()
+        img.convert("RGB").save(buf, format="PNG")
+        return buf.getvalue()
     return None
 
 

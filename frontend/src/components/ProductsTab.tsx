@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   getCategories, listProducts, listPrompts, listProductImages, getProductColors,
-  generateImage, generateVideo, approveMockup, getGenerationOptions,
+  generateImage, startVideo, getVideoResult, approveMockup, getGenerationOptions,
   type Category, type Product, type Prompt, type ProductImage, type ProductImages,
   type GenOptions,
 } from "../api";
@@ -14,6 +14,7 @@ const ASPECT_LABEL: Record<string, string> = {
   "1:1": "1:1 · square", "3:4": "3:4 · portrait", "4:3": "4:3 · landscape",
   "9:16": "9:16 · story/reel", "16:9": "16:9 · wide", "2:3": "2:3", "3:2": "3:2", "21:9": "21:9",
 };
+const VRES_LABEL: Record<string, string> = { "720p": "720p", "1080p": "1080p · 8s only" };
 
 export default function ProductsTab() {
   const [cats, setCats] = useState<Category[]>([]);
@@ -153,6 +154,11 @@ function GenerationStage({ product }: { product: Product }) {
   const [model, setModel] = useState("");
   const [resolution, setResolution] = useState("");
   const [aspect, setAspect] = useState("");
+  // Video options + current selection.
+  const [vModel, setVModel] = useState("");
+  const [vRes, setVRes] = useState("");
+  const [vAspect, setVAspect] = useState("");
+  const [vDuration, setVDuration] = useState(4);
 
   useEffect(() => {
     getGenerationOptions().then((o) => {
@@ -160,8 +166,22 @@ function GenerationStage({ product }: { product: Product }) {
       setModel(o.defaults.model);
       setResolution(o.defaults.resolution);
       setAspect(o.defaults.aspect_ratio);
+      setVModel(o.video_defaults.model);
+      setVRes(o.video_defaults.resolution);
+      setVAspect(o.video_defaults.aspect_ratio);
+      setVDuration(o.video_defaults.duration);
     }).catch(() => {/* options optional; generation still works with server defaults */});
   }, []);
+
+  // VEO: 1080p only renders at 8s — keep the selection valid.
+  useEffect(() => {
+    if (vRes === "1080p" && vDuration !== 8) setVDuration(8);
+  }, [vRes, vDuration]);
+
+  // Stop polling a video job if the user navigates away (component is keyed by
+  // product, so it remounts per product).
+  const polling = useRef(true);
+  useEffect(() => () => { polling.current = false; }, []);
 
   // Source images from Drive: loose (top-level) + per-subfolder variant groups
   const [imgs, setImgs] = useState<ProductImages>({ loose: [], groups: [] });
@@ -218,10 +238,44 @@ function GenerationStage({ product }: { product: Product }) {
         .catch((e: Error) => setMsg({ kind: "error", text: e.message.replace(/^\d+:\s*/, "") }))
         .finally(() => setBusy(null));
     } else {
-      generateVideo({ productid: product.productid, prompt: videoPrompt, image_ids })
-        .then((r) => setMsg({ kind: "info", text: r.detail }))
-        .catch((e: Error) => setMsg({ kind: "error", text: e.message.replace(/^\d+:\s*/, "") }))
-        .finally(() => setBusy(null));
+      const fail = (e: Error) => {
+        setMsg({ kind: "error", text: e.message.replace(/^\d+:\s*/, "") });
+        setBusy(null);
+      };
+      const download = (blob: Blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${product.productid}_${color ? color.replace(/\s+/g, "-") : "mockup"}.mp4`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setMsg({ kind: "info", text: "Video downloaded." });
+        setBusy(null);
+      };
+      const poll = (jobId: string) => {
+        if (!polling.current) return;
+        getVideoResult(jobId)
+          .then((r) => {
+            if (!polling.current) return;
+            if (r instanceof Blob) return download(r);
+            if (r.status === "error") return fail(new Error(r.detail || "Video generation failed."));
+            setMsg({ kind: "info", text: "Rendering video… this can take a few minutes." });
+            setTimeout(() => poll(jobId), 5000);
+          })
+          .catch((e: Error) => fail(e));
+      };
+      startVideo({
+        productid: product.productid, prompt: videoPrompt,
+        image_url: publishedUrl || undefined,
+        color: color || undefined,
+        model: vModel || undefined, resolution: vRes || undefined,
+        aspect_ratio: vAspect || undefined, duration: vDuration || undefined,
+      })
+        .then((job) => {
+          setMsg({ kind: "info", text: "Rendering video… this can take a few minutes." });
+          poll(job.job_id);
+        })
+        .catch((e: Error) => fail(e));
     }
   };
 
@@ -428,7 +482,7 @@ function GenerationStage({ product }: { product: Product }) {
         </section>
       )}
 
-      {/* Video — secondary */}
+      {/* Video — secondary. Animates the published Supabase mockup; downloads the mp4. */}
       <section className="mt-7 border-t border-line pt-6">
         <div className="field">
           <p className="section-label mt-0!">Video (custom prompt)</p>
@@ -440,14 +494,53 @@ function GenerationStage({ product }: { product: Product }) {
             placeholder="Describe the video for this product…"
           />
         </div>
+        {opts && (
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <label className="field mb-0!">
+              <span className="text-xs font-semibold text-subtle">Model</span>
+              <select aria-label="Video model" value={vModel} onChange={(e) => setVModel(e.target.value)}>
+                {opts.video_models.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </label>
+            <label className="field mb-0!">
+              <span className="text-xs font-semibold text-subtle">Quality</span>
+              <select aria-label="Video quality" value={vRes} onChange={(e) => setVRes(e.target.value)}>
+                {opts.video_resolutions.map((r) => <option key={r} value={r}>{VRES_LABEL[r] ?? r}</option>)}
+              </select>
+            </label>
+            <label className="field mb-0!">
+              <span className="text-xs font-semibold text-subtle">Aspect ratio</span>
+              <select aria-label="Video aspect ratio" value={vAspect} onChange={(e) => setVAspect(e.target.value)}>
+                {opts.video_aspect_ratios.map((a) => <option key={a} value={a}>{ASPECT_LABEL[a] ?? a}</option>)}
+              </select>
+            </label>
+            <label className="field mb-0!">
+              <span className="text-xs font-semibold text-subtle">Duration</span>
+              <select
+                aria-label="Video duration"
+                value={vDuration}
+                onChange={(e) => setVDuration(Number(e.target.value))}
+              >
+                {opts.video_durations
+                  .filter((d) => vRes !== "1080p" || d === 8)
+                  .map((d) => <option key={d} value={d}>{d}s</option>)}
+              </select>
+            </label>
+          </div>
+        )}
         <button
           className="mt-3 w-full"
           onClick={() => run("video")}
-          disabled={busy !== null || !videoPrompt.trim()}
+          disabled={busy !== null || !videoPrompt.trim() || !(publishedUrl || product.base_mockup)}
         >
           {busy === "video" && <span className="spinner" aria-hidden />}
-          {busy === "video" ? "Generating…" : "Generate Video"}
+          {busy === "video" ? "Generating…" : "Generate & Download Video"}
         </button>
+        {!(publishedUrl || product.base_mockup) && (
+          <p className="mt-2 text-xs text-subtle">
+            Approve &amp; publish a mockup first — the video animates the published image.
+          </p>
+        )}
       </section>
     </div>
   );

@@ -240,6 +240,11 @@ export interface GenOptions {
   resolutions: string[];
   aspect_ratios: string[];
   defaults: { model: string; resolution: string; aspect_ratio: string };
+  video_models: string[];
+  video_resolutions: string[];
+  video_aspect_ratios: string[];
+  video_durations: number[];
+  video_defaults: { model: string; resolution: string; aspect_ratio: string; duration: number };
 }
 
 // Static, near-constant; fetched once and shared.
@@ -271,8 +276,50 @@ export const generateImage = (b: {
 export const approveMockup = (form: FormData) =>
   apiUpload<ApproveResult>("/api/generate/approve", form);
 
-export const generateVideo = (b: { productid: string; prompt: string; image_ids?: string[] }) =>
-  apiFetch<GenResult>("/api/generate/video", {
-    method: "POST",
-    body: JSON.stringify(b),
-  });
+export interface VideoJob {
+  job_id: string;
+  status: string; // pending | running | done | error
+  detail?: string;
+}
+
+/** Enqueue a VEO render. Returns a job_id to poll with getVideoResult(). */
+export const startVideo = (b: {
+  productid: string;
+  prompt: string;
+  image_url?: string;
+  color?: string;
+  model?: string;
+  resolution?: string;
+  aspect_ratio?: string;
+  duration?: number;
+}) => apiFetch<VideoJob>("/api/generate/video", { method: "POST", body: JSON.stringify(b) });
+
+/** Poll one job. Resolves to a Blob (mp4) when done, else the JSON status. */
+export async function getVideoResult(jobId: string): Promise<Blob | VideoJob> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const token = session?.access_token;
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/generate/video/${encodeURIComponent(jobId)}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+  } catch {
+    throw new ApiError(0, STATUS_HINTS[0]);
+  }
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const j = await res.json();
+      if (typeof j?.detail === "string") detail = j.detail;
+    } catch {
+      /* empty body */
+    }
+    throw new ApiError(res.status, detail || STATUS_HINTS[res.status] || res.statusText);
+  }
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("application/json")) return (await res.json()) as VideoJob;
+  return res.blob();
+}
