@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Use **caveman mode (full)** for all responses in this repo (`caveman:caveman` skill). Drop articles, filler, pleasantries, and hedging; fragments are fine; prefer short synonyms. Keep code, commit messages, PR bodies, and security/destructive-action warnings in normal prose. Stays active across the whole session unless the user says "stop caveman" / "normal mode". Requires the `caveman` plugin installed (user-level: `/plugin`); this directive scopes it to the project.
 
+## Frontend design
+
+Always use the `ui-ux-pro-max:ui-ux-pro-max` skill for any frontend design work — new UI, component changes, styling, layout, color/typography decisions, interaction patterns, or UI bug fixes. Invoke it before writing or changing frontend code, and apply its accessibility/interaction rules (touch targets, focus states, hover-vs-tap, contrast).
+
 ## Project Overview
 
 AI-powered luxury garment mockup generator for Bindal's Creation (Indian ethnic wear brand). Generates photorealistic fashion mockups using Google Gemini and OpenAI APIs, plus short product videos using Google VEO.
