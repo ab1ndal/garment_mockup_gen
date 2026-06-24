@@ -630,6 +630,57 @@ td.mono,
 }
 
 /* ============================================================
+   Modal overlay (backfill review)
+   ============================================================ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--sp-5);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: oklch(21.03% 0.0059 285.89 / 0.55);
+}
+.modal {
+  /* margin:auto centers when space allows, collapses to top when taller
+     than the viewport so the whole dialog stays scrollable (no clipping). */
+  margin: auto;
+  width: 100%;
+  max-width: 880px;
+  padding: var(--sp-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-md);
+}
+
+/* Backfill review grid: inset card content so image/label/button
+   don't sit flush against the card border. */
+.bf-card {
+  padding: var(--sp-3);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .modal-overlay {
+    animation: overlay-fade 160ms ease-out;
+  }
+  .modal {
+    animation: modal-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  @keyframes overlay-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes modal-in {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+}
+
+/* ============================================================
    Motion preference
    ============================================================ */
 @media (prefers-reduced-motion: reduce) {

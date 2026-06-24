@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   listBackfill, getBackfillSources, approveBackfill, flagBackfill,
   type BackfillItem, type BackfillSources, ApiError,
@@ -61,7 +61,7 @@ export default function BackfillTab() {
       ) : (
         <div style={gridStyle}>
           {items.map((it) => (
-            <div key={it.file_id} className="card stack-sm">
+            <div key={it.file_id} className="card bf-card stack-sm">
               {it.thumbnail_url ? (
                 <img
                   src={it.thumbnail_url}
@@ -87,6 +87,70 @@ export default function BackfillTab() {
       {active && (
         <ReviewPanel item={active} onClose={() => setActive(null)} onResolved={onResolved} />
       )}
+    </div>
+  );
+}
+
+function Modal({
+  title, onClose, children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const prevFocus = document.activeElement as HTMLElement | null;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    ref.current?.focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab" || !ref.current) return;
+      const f = ref.current.querySelectorAll<HTMLElement>(
+        'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+      );
+      if (f.length === 0) return;
+      const first = f[0];
+      const last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+      prevFocus?.focus?.();
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="modal-overlay"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="modal stack"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        ref={ref}
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -140,7 +204,7 @@ function ReviewPanel({
   };
 
   return (
-    <div className="card stack" role="dialog" aria-label={`Review ${item.productid ?? item.filename}`}>
+    <Modal title={`Review ${item.productid ?? item.filename}`} onClose={onClose}>
       <div className="toolbar" style={{ justifyContent: "space-between", alignItems: "center" }}>
         <strong>{item.productid ?? item.filename}{item.product_name ? ` — ${item.product_name}` : ""}</strong>
         <button onClick={onClose}>Close</button>
@@ -206,6 +270,6 @@ function ReviewPanel({
       {item.unknown_product && (
         <p className="muted">Unknown product — approve disabled; flag will move the image to rejected/.</p>
       )}
-    </div>
+    </Modal>
   );
 }
