@@ -1,6 +1,8 @@
 # backend/schemas.py
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -57,6 +59,16 @@ class PromptUpdate(BaseModel):
     label: str | None = None
     body: str | None = None
     is_default: bool | None = None
+
+
+class RefineRequest(BaseModel):
+    instruction: str
+    categoryid: str | None = None
+    kind: Literal["image", "video"] = "image"
+
+
+class RefineResponse(BaseModel):
+    refined: str
 
 
 class GenerateRequest(BaseModel):

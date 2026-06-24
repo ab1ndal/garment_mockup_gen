@@ -235,6 +235,16 @@ export const updatePrompt = (
 export const deletePrompt = (id: number) =>
   apiFetch<void>(`/api/prompts/${id}`, { method: "DELETE" });
 
+export const refinePrompt = (
+  instruction: string,
+  categoryid?: string,
+  kind: "image" | "video" = "image",
+) =>
+  apiFetch<{ refined: string }>("/api/prompts/refine", {
+    method: "POST",
+    body: JSON.stringify({ instruction, categoryid, kind }),
+  });
+
 export interface GenOptions {
   models: string[];
   resolutions: string[];

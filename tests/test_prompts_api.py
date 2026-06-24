@@ -49,3 +49,45 @@ def test_update_prompt(client, monkeypatch):
     assert body["label"] == "X"
     assert body["body"] == "Y"
     assert body["is_default"] is True
+
+
+def test_refine_returns_text(client, monkeypatch):
+    from mockup_generator.prompts import refine as refine_mod
+    from backend.routers import prompts as prompts_router
+
+    seen = {}
+
+    def fake_refine(instruction, category_name=None, *, kind="image"):
+        seen.update(instruction=instruction, category_name=category_name, kind=kind)
+        return "EXPANDED PROMPT"
+
+    monkeypatch.setattr(refine_mod, "refine_prompt", fake_refine)
+    # category name resolution: SA -> "Saree"
+    monkeypatch.setattr(prompts_router.products_repo, "list_categories",
+                        lambda db: [("SA", "Saree"), ("CRD", "Cord Set")])
+
+    r = client.post("/api/prompts/refine",
+                    json={"instruction": "red saree", "categoryid": "SA", "kind": "image"})
+    assert r.status_code == 200
+    assert r.json()["refined"] == "EXPANDED PROMPT"
+    assert seen == {"instruction": "red saree", "category_name": "Saree", "kind": "image"}
+
+
+def test_refine_video_kind(client, monkeypatch):
+    from mockup_generator.prompts import refine as refine_mod
+    from backend.routers import prompts as prompts_router
+    monkeypatch.setattr(refine_mod, "refine_prompt",
+                        lambda instruction, category_name=None, *, kind="image": f"V:{kind}")
+    monkeypatch.setattr(prompts_router.products_repo, "list_categories", lambda db: [])
+    r = client.post("/api/prompts/refine", json={"instruction": "twirl", "kind": "video"})
+    assert r.status_code == 200 and r.json()["refined"] == "V:video"
+
+
+def test_refine_empty_instruction_is_400(client):
+    r = client.post("/api/prompts/refine", json={"instruction": "   ", "kind": "image"})
+    assert r.status_code == 400
+
+
+def test_refine_bad_kind_is_422(client):
+    r = client.post("/api/prompts/refine", json={"instruction": "x", "kind": "audio"})
+    assert r.status_code == 422

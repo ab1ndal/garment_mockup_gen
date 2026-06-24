@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
 from backend.auth import CurrentUser, get_current_user
 from backend.deps import get_db
-from backend.schemas import PromptCreate, PromptOut, PromptUpdate
-from mockup_generator.db import prompts_repo
+from backend.schemas import PromptCreate, PromptOut, PromptUpdate, RefineRequest, RefineResponse
+from mockup_generator.db import products_repo, prompts_repo
+from mockup_generator.prompts import refine as refine_engine
+from mockup_generator.prompts.refine import RefineFailed
 
 router = APIRouter(prefix="/api", tags=["prompts"])
 
@@ -21,6 +23,26 @@ def create_prompt(payload: PromptCreate, user: CurrentUser = Depends(get_current
     p = prompts_repo.create(db, categoryid=payload.categoryid, label=payload.label,
                             body=payload.body, is_default=payload.is_default, updated_by=user.id)
     return PromptOut(**vars(p))
+
+
+@router.post("/prompts/refine", response_model=RefineResponse)
+def refine(payload: RefineRequest,
+           user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
+    if not payload.instruction or not payload.instruction.strip():
+        raise HTTPException(status_code=400, detail="Instruction is empty.")
+    category_name = None
+    if payload.categoryid:
+        category_name = next(
+            (name for cid, name in products_repo.list_categories(db) if cid == payload.categoryid),
+            None,
+        )
+    try:
+        refined = refine_engine.refine_prompt(payload.instruction, category_name, kind=payload.kind)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RefineFailed as exc:
+        raise HTTPException(status_code=502, detail="Refine produced no text.") from exc
+    return RefineResponse(refined=refined)
 
 
 @router.patch("/prompts/{prompt_id}", response_model=PromptOut)
