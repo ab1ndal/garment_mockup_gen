@@ -82,6 +82,12 @@ class Settings:
         return _get("GEMINI_IMAGE_MODEL", default="gemini-3-pro-image")  # type: ignore[return-value]
 
     @property
+    def gemini_text_model(self) -> str:
+        """Advanced Gemini text model used to refine/expand prompts.
+        Text sibling of the image model (not Flash); override per deploy."""
+        return _get("GEMINI_TEXT_MODEL", default="gemini-3-pro")  # type: ignore[return-value]
+
+    @property
     def veo_model(self) -> str:
         """VEO video-generation model. Override for fast/lite variants."""
         return _get("VEO_MODEL", default="veo-3.1-generate-preview")  # type: ignore[return-value]
