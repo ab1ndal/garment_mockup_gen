@@ -5,6 +5,7 @@ import {
   type Category, type Product, type Prompt, type ProductImage, type ProductImages,
   type GenOptions,
 } from "../api";
+import RefineButton from "./RefineButton";
 
 // Human labels for the resolution / aspect choices.
 const RES_LABEL: Record<string, string> = {
@@ -430,6 +431,13 @@ function GenerationStage({ product }: { product: Product }) {
               </option>
             ))}
           </select>
+          <RefineButton
+            kind="image"
+            instruction={promptText}
+            categoryid={product.categoryid ?? undefined}
+            onRefined={setPromptText}
+            onError={(m) => setMsg({ kind: "error", text: m })}
+          />
           <textarea
             aria-label="Image prompt text"
             value={promptText}
@@ -604,6 +612,13 @@ function GenerationStage({ product }: { product: Product }) {
       <section className="mt-7 border-t border-line pt-6">
         <div className="field">
           <p className="section-label mt-0!">Video (custom prompt)</p>
+          <RefineButton
+            kind="video"
+            instruction={videoPrompt}
+            categoryid={product.categoryid ?? undefined}
+            onRefined={setVideoPrompt}
+            onError={(m) => setMsg({ kind: "error", text: m })}
+          />
           <textarea
             aria-label="Video prompt text"
             value={videoPrompt}

@@ -3,6 +3,7 @@ import {
   getCategories, listPrompts, createPrompt, updatePrompt, deletePrompt,
   type Category, type Prompt,
 } from "../api";
+import RefineButton from "./RefineButton";
 
 export default function PromptsTab() {
   const [cats, setCats] = useState<Category[]>([]);
@@ -116,7 +117,16 @@ function PromptEditor({ prompt, onSaved, onDeleted, onError }: {
         </button>
       </div>
       <div className="field">
-        <label htmlFor={`body-${prompt.prompt_id}`}>Prompt body</label>
+        <div className="toolbar" style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <label htmlFor={`body-${prompt.prompt_id}`}>Prompt body</label>
+          <RefineButton
+            kind="image"
+            instruction={body}
+            categoryid={prompt.categoryid}
+            onRefined={setBody}
+            onError={onError}
+          />
+        </div>
         <textarea id={`body-${prompt.prompt_id}`} value={body}
                   onChange={(e) => setBody(e.target.value)} rows={6} />
       </div>
