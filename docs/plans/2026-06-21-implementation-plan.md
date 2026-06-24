@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-21 (revised: React + FastAPI stack)
 **Companion to:** `2026-06-21-design.md`
-**Status:** In progress — Phases 0–3 ✅ shipped (Phase 3 = generate-preview → approve/publish + variant color); Phase 4 review UI next. Last synced to code: 2026-06-23.
+**Status:** In progress — Phases 0–4 ✅ shipped (Phase 4 = in-session feedback→regenerate loop). Video generation (a Phase 5 item) also shipped. Remaining Phase 5: backfill, more prompts, docs (README/.env.example/deploy), Supabase-branch tests. Last synced to code: 2026-06-23.
 
 Each phase ships independently and leaves the repo working.
 
@@ -64,18 +64,27 @@ Each phase ships independently and leaves the repo working.
 
 ---
 
-## Phase 4 — Review UI (input vs output, feedback / approve)
-- [ ] Backend `/review`: submit feedback (saved + optional re-generate with note → new variation); approve (status approved, copy to Supabase Storage, flip `mockups` flag, write `productimages`).
-- [ ] React review screen: side-by-side input images vs generated variations; feedback box; approve button; show approved storage URL.
+## Phase 4 — Review UI (input vs output, feedback / approve)  ← ✅ DONE (merged 2026-06-23; 90 tests green, frontend build clean)
+**Companion plan:** `docs/superpowers/plans/2026-06-23-phase4-feedback-regenerate.md`. Original `/review` endpoint sketch was **superseded** by an in-session feedback→regenerate loop (no new endpoint, nothing extra persisted) — the Phase 3 `/approve` flow already covers publish-to-Storage + flip flag + write `productimages`.
+- [x] Backend: optional `refine_image_b64` on `POST /api/generate/image` — decoded image appended as an extra Gemini reference (14-ref cap, sources keep priority, refine-only valid). Feedback-agnostic: frontend folds the note into `prompt`.
+- [x] React review screen: side-by-side picked sources vs active variation; in-session variation history filmstrip; feedback box; Refine-this / Try-again regenerate; Approve & publish / Download / Upload-corrected on the active variation.
 
-**Verify:** Feedback saved/re-gens new variation; approve publishes to Storage + flips flag.
+**Verify:** ✅ Feedback regenerates new variation in-session; approve publishes to Storage + flips flag (Phase 3 path, unchanged).
 
 ---
 
-## Phase 5 — Polish (optional)
-- [ ] Video generation surfaced.
-- [ ] Backfill `mockups`/variations from existing generated Drive folder.
-- [ ] More category prompts. README + `.env.example` + deploy notes. Tests against a Supabase branch; mocked Drive/storage.
+## Phase 5 — Category prompts + docs  ← specced 2026-06-23
+**Design:** `docs/superpowers/specs/2026-06-23-phase5-prompts-and-docs-design.md`. Scope narrowed from the original grab-bag (video already shipped; backfill → Phase 7; Supabase-branch tests deferred).
+- [x] Video generation surfaced. ✅ DONE (PR #6, merged 2026-06-23): async VEO job model on `/api/generate/video` (enqueue → poll `/video/{job_id}` → download mp4; bounded by `VEO_POLL_TIMEOUT_SEC`/`VEO_POLL_INTERVAL_SEC`), `video_service.generate_video_bytes`, frontend video controls.
+- [ ] Category prompts for the 19 uncovered categories with ≥10 products: 15 shared Gemini-optimized constants (based on existing prompt style + `categories.description`), wired into `CATEGORY_PROMPTS`, seeded idempotently. No schema change.
+- [ ] Docs: `README.md` + `.env.example` + deploy notes.
+
+## Phase 6 — Auto-refine prompt button
+- [ ] On-demand button that turns a thin/short prompt into a detailed Gemini-optimized prompt (only when the user asks).
+
+## Phase 7 — Backfill
+- [ ] Backfill `mockups`/variations from the existing generated Drive folder (idempotent ingest into DB + Supabase Storage).
+- [ ] (Deferred) Integration tests against a Supabase branch; mocked Drive/storage.
 
 ---
 
