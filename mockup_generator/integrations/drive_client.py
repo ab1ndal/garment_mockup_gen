@@ -43,6 +43,13 @@ _MAX_SUBFOLDERS = 30  # variant subfolders scanned per product (bounds Drive lis
 _FOLDER_MIME = "application/vnd.google-apps.folder"
 _THUMB_WORKERS = 8  # parallel thumbnail fetches (each is a serial HTTP GET otherwise)
 
+# Reserved worklist subfolders the backfill flow writes into. Approved originals
+# are archived to ``published/`` and flagged ones moved to ``rejected/``; both are
+# excluded from the scan so handled images never re-surface as review cards.
+ARCHIVE_FOLDER = "published"
+REJECTED_FOLDER = "rejected"
+_RESERVED_SUBFOLDERS = {ARCHIVE_FOLDER, REJECTED_FOLDER}
+
 
 class DriveNotConfigured(RuntimeError):
     """Raised when GOOGLE_DRIVE_SA_JSON is not set."""
@@ -178,7 +185,9 @@ def download_file(file_id: str) -> bytes:
 
 
 def delete_file(file_id: str) -> None:
-    """Permanently delete a Drive file (used after a backfill image is published)."""
+    """Permanently delete a Drive file. Requires ownership/organizer rights — the
+    backfill flow archives via ``move_file`` instead because its service account is
+    only an Editor. Kept as a generic helper for when ownership permits deletion."""
     svc, _ = _clients()
     svc.files().delete(fileId=file_id, supportsAllDrives=True).execute()
 
@@ -313,6 +322,8 @@ def scan_folder_of_folders(root_id: str) -> list[dict]:
     subfolders: list[dict] = []
     for f in top:
         if f.get("mimeType") == _FOLDER_MIME:
+            if (f.get("name") or "").strip().lower() in _RESERVED_SUBFOLDERS:
+                continue                       # published/ + rejected/ are not worklist
             subfolders.append(f)
         elif (f.get("mimeType") or "").startswith("image/"):
             items.append(_scan_item(f, None, None))

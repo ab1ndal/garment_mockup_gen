@@ -119,12 +119,17 @@ def approve(req: BackfillApproveRequest,
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Could not publish the mockup: {exc}") from exc
 
+    # Archive the original out of the worklist instead of deleting it: the service
+    # account is an Editor (not owner) of the generated folder, so it can move but
+    # cannot delete/trash files it doesn't own. published/ is excluded from the scan.
     warning = None
     try:
-        drive_client.delete_file(req.file_id)
-    except Exception as exc:  # noqa: BLE001 - published already; Drive cleanup is non-fatal
-        log.warning("published %s but Drive delete failed: %s", req.file_id, exc)
-        warning = "Published, but the Drive original could not be removed (will reappear on refresh)."
+        archive = drive_client.ensure_subfolder(
+            settings.generated_mockups_folder_id, drive_client.ARCHIVE_FOLDER)
+        drive_client.move_file(req.file_id, archive)
+    except Exception as exc:  # noqa: BLE001 - published already; Drive archive is non-fatal
+        log.warning("published %s but Drive archive failed: %s", req.file_id, exc)
+        warning = "Published, but the Drive original could not be archived (will reappear on refresh)."
     backfill_service.evict(req.file_id)
 
     return {"status": "ok", "image_url": result["image_url"],
@@ -136,7 +141,8 @@ def flag(req: BackfillFlagRequest,
          user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
     if req.productid:
         mockups_repo.set_base_mockup(db, req.productid, False)
-    rejected = drive_client.ensure_subfolder(settings.generated_mockups_folder_id, "rejected")
+    rejected = drive_client.ensure_subfolder(
+        settings.generated_mockups_folder_id, drive_client.REJECTED_FOLDER)
     try:
         drive_client.move_file(req.file_id, rejected)
     except DriveNotConfigured as exc:

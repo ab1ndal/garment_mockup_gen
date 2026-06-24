@@ -178,6 +178,24 @@ def test_scan_folder_of_folders_flattens(monkeypatch):
     assert len(out) == 4
 
 
+def test_scan_skips_reserved_subfolders(monkeypatch):
+    # published/ (archived approvals) and rejected/ (flagged) live under root but
+    # must not re-enter the worklist on rescan.
+    responses = {
+        "ROOT": [_named("a", "BC25001.png"),
+                 _named("R", "rejected", folder=True),
+                 _named("P", "published", folder=True),
+                 _named("S1", "group1", folder=True)],
+        "R": [_named("x", "BC25099.png")],
+        "P": [_named("y", "BC25098.png")],
+        "S1": [_named("b", "BC25002.png")],
+    }
+    _patch_scan(monkeypatch, responses)
+
+    out = drive_client.scan_folder_of_folders("ROOT")
+    assert {i["file_id"] for i in out} == {"a", "b"}   # reserved folders excluded
+
+
 def test_thumbnails_for_uses_attach(monkeypatch):
     monkeypatch.setattr(drive_client, "_clients", lambda: (object(), object()))
     monkeypatch.setattr(drive_client, "_attach_thumbnails",

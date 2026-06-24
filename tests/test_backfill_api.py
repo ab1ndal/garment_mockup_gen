@@ -57,12 +57,15 @@ def test_items_paginates_and_enriches(client, monkeypatch):
     assert bad["unknown_product"] is True and bad["colors"] == []
 
 
-def test_approve_publishes_then_deletes_drive(client, monkeypatch):
+def test_approve_publishes_then_archives_drive(client, monkeypatch):
     calls = {}
     monkeypatch.setattr(bf.drive_client, "download_file", lambda fid: _png())
     monkeypatch.setattr(bf.publish, "publish_image",
                         lambda db, **kw: (calls.update(kw) or {"image_url": "https://pub/x.png", "variation_id": 9}))
-    monkeypatch.setattr(bf.drive_client, "delete_file", lambda fid: calls.__setitem__("deleted", fid))
+    monkeypatch.setattr(bf.drive_client, "ensure_subfolder",
+                        lambda root, name: calls.__setitem__("archive_into", name) or "ARCHIVE")
+    monkeypatch.setattr(bf.drive_client, "move_file",
+                        lambda fid, parent: calls.__setitem__("moved", (fid, parent)))
     monkeypatch.setattr(bf.backfill_service, "evict", lambda fid, **kw: calls.__setitem__("evicted", fid))
 
     r = client.post("/api/backfill/approve",
@@ -72,21 +75,23 @@ def test_approve_publishes_then_deletes_drive(client, monkeypatch):
     assert body["image_url"] == "https://pub/x.png" and body["variation_id"] == 9
     assert calls["productid"] == "BC25001" and calls["color"] == "Red"
     assert calls["prompt_text"] is None
-    assert calls["deleted"] == "a" and calls["evicted"] == "a"
+    assert calls["archive_into"] == "published"          # SA can't delete → archive instead
+    assert calls["moved"] == ("a", "ARCHIVE") and calls["evicted"] == "a"
 
 
-def test_approve_warns_when_drive_delete_fails(client, monkeypatch):
+def test_approve_warns_when_drive_archive_fails(client, monkeypatch):
     monkeypatch.setattr(bf.drive_client, "download_file", lambda fid: _png())
     monkeypatch.setattr(bf.publish, "publish_image",
                         lambda db, **kw: {"image_url": "https://pub/x.png", "variation_id": 1})
-    monkeypatch.setattr(bf.drive_client, "delete_file",
-                        lambda fid: (_ for _ in ()).throw(RuntimeError("drive boom")))
+    monkeypatch.setattr(bf.drive_client, "ensure_subfolder", lambda root, name: "ARCHIVE")
+    monkeypatch.setattr(bf.drive_client, "move_file",
+                        lambda fid, parent: (_ for _ in ()).throw(RuntimeError("drive boom")))
     monkeypatch.setattr(bf.backfill_service, "evict", lambda fid, **kw: None)
 
     r = client.post("/api/backfill/approve",
                     json={"file_id": "a", "productid": "BC25001", "color": "Red"})
     assert r.status_code == 200
-    assert r.json()["warning"]                    # published, but Drive cleanup failed
+    assert r.json()["warning"]                    # published, but Drive archive failed
 
 
 def test_flag_sets_pending_and_moves(client, monkeypatch):
