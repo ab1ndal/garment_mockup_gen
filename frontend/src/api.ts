@@ -389,3 +389,13 @@ export const flagBackfill = (b: { file_id: string; productid: string | null }) =
     method: "POST",
     body: JSON.stringify(b),
   });
+
+export const flagEditBackfill = (b: {
+  file_id: string;
+  productid: string | null;
+  comment?: string;
+}) =>
+  apiFetch<{ status: string; warning?: string | null }>("/api/backfill/flag-edit", {
+    method: "POST",
+    body: JSON.stringify(b),
+  });

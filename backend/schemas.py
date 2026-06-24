@@ -147,3 +147,9 @@ class BackfillApproveRequest(BaseModel):
 class BackfillFlagRequest(BaseModel):
     file_id: str
     productid: str | None = None
+
+
+class BackfillEditRequest(BaseModel):
+    file_id: str
+    productid: str | None = None
+    comment: str | None = None

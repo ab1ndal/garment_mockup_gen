@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  listBackfill, getBackfillSources, approveBackfill, flagBackfill,
+  listBackfill, getBackfillSources, approveBackfill, flagBackfill, flagEditBackfill,
   type BackfillItem, type BackfillSources, ApiError,
 } from "../api";
 
@@ -166,6 +166,7 @@ function ReviewPanel({
   const [color, setColor] = useState<string>(item.colors.length === 1 ? item.colors[0] : "");
   const [theme, setTheme] = useState("Default");
   const [aspect, setAspect] = useState("1:1");
+  const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -199,6 +200,21 @@ function ReviewPanel({
     setMsg(null);
     flagBackfill({ file_id: item.file_id, productid: item.productid })
       .then(() => onResolved(item.file_id))
+      .catch((e: ApiError) => setMsg(e.message))
+      .finally(() => setBusy(false));
+  };
+
+  const doFlagEdit = () => {
+    setBusy(true);
+    setMsg(null);
+    flagEditBackfill({
+      file_id: item.file_id, productid: item.productid,
+      comment: comment.trim() || undefined,
+    })
+      .then((r) => {
+        if (r.warning) setMsg(r.warning);
+        onResolved(item.file_id);
+      })
       .catch((e: ApiError) => setMsg(e.message))
       .finally(() => setBusy(false));
   };
@@ -259,16 +275,31 @@ function ReviewPanel({
         </div>
       </div>
 
+      <div className="field">
+        <label htmlFor="bf-comment">Edit notes</label>
+        <textarea
+          id="bf-comment"
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          placeholder="What to fix… (optional)"
+          rows={2}
+        />
+      </div>
+
       {msg && <p className="alert" role="alert">{msg}</p>}
 
       <div className="toolbar">
         <button className="btn-primary" disabled={busy || item.unknown_product || !color} onClick={doApprove}>
           Approve &amp; publish
         </button>
+        <button disabled={busy} onClick={doFlagEdit}>Flag for edits</button>
         <button className="btn-danger" disabled={busy} onClick={doFlag}>Flag for regeneration</button>
       </div>
       {item.unknown_product && (
-        <p className="muted">Unknown product — approve disabled; flag will move the image to rejected/.</p>
+        <p className="muted">
+          Unknown product — approve disabled. Flag for edits moves the image to edit/ (record saved);
+          flag for regeneration moves it to rejected/.
+        </p>
       )}
     </Modal>
   );

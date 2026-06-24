@@ -53,11 +53,13 @@ _FOLDER_MIME = "application/vnd.google-apps.folder"
 _THUMB_WORKERS = 8  # parallel thumbnail fetches (each is a serial HTTP GET otherwise)
 
 # Reserved worklist subfolders the backfill flow writes into. Approved originals
-# are archived to ``published/`` and flagged ones moved to ``rejected/``; both are
-# excluded from the scan so handled images never re-surface as review cards.
+# are archived to ``published/``, flagged ones moved to ``rejected/``, and ones
+# sent back for manual editing moved to ``edit/``; all are excluded from the scan
+# so handled images never re-surface as review cards.
 ARCHIVE_FOLDER = "published"
 REJECTED_FOLDER = "rejected"
-_RESERVED_SUBFOLDERS = {ARCHIVE_FOLDER, REJECTED_FOLDER}
+EDIT_FOLDER = "edit"
+_RESERVED_SUBFOLDERS = {ARCHIVE_FOLDER, REJECTED_FOLDER, EDIT_FOLDER}
 
 
 class DriveNotConfigured(RuntimeError):

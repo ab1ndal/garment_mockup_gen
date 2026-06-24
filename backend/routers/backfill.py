@@ -2,8 +2,10 @@
 
 Walk the previously-generated Drive mockups: list paginated review cards
 (``items``), load a card's originals + preview (``sources``), then publish
-(``approve`` → Supabase + delete the Drive original) or send back for
-regeneration (``flag`` → base_mockup=false + move to ``rejected/``).
+(``approve`` → Supabase + archive the Drive original), send back for
+regeneration (``flag`` → base_mockup=false + move to ``rejected/``), or send
+back for manual editing (``flag-edit`` → move to ``edit/`` + record a pending
+``backfill_edits`` row for future pickup).
 """
 
 from __future__ import annotations
@@ -19,10 +21,11 @@ from supabase import Client
 from backend.auth import CurrentUser, get_current_user
 from backend.deps import get_db
 from backend.schemas import (
-    BackfillApproveRequest, BackfillFlagRequest, BackfillItem, BackfillItemsResponse,
+    BackfillApproveRequest, BackfillEditRequest, BackfillFlagRequest,
+    BackfillItem, BackfillItemsResponse,
 )
 from mockup_generator.config import settings
-from mockup_generator.db import mockups_repo, products_repo, variants_repo
+from mockup_generator.db import backfill_edits_repo, mockups_repo, products_repo, variants_repo
 from mockup_generator.generation import publish
 from mockup_generator.integrations import drive_client
 from mockup_generator.integrations.drive_client import DriveNotConfigured
@@ -151,3 +154,32 @@ def flag(req: BackfillFlagRequest,
         raise HTTPException(status_code=502, detail=f"Could not move the image to rejected/: {exc}") from exc
     backfill_service.evict(req.file_id)
     return {"status": "ok"}
+
+
+@router.post("/flag-edit")
+def flag_edit(req: BackfillEditRequest,
+              user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
+    # Move first (clears the worklist), then record the pending edit. Mirrors
+    # /approve: if the record insert fails after the move, the image is already
+    # in edit/, so surface a non-fatal warning rather than failing the request.
+    edit = drive_client.ensure_subfolder(
+        settings.generated_mockups_folder_id, drive_client.EDIT_FOLDER)
+    try:
+        drive_client.move_file(req.file_id, edit)
+    except DriveNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Drive access is not configured on the server") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not move the image to edit/: {exc}") from exc
+
+    comment = (req.comment or "").strip() or None
+    warning = None
+    try:
+        backfill_edits_repo.insert(
+            db, file_id=req.file_id, productid=req.productid,
+            comment=comment, created_by=user.id,
+        )
+    except Exception as exc:  # noqa: BLE001 - moved already; the record is non-fatal
+        log.warning("moved %s to edit/ but the edit record failed: %s", req.file_id, exc)
+        warning = "Moved to edit/, but the edit record could not be saved."
+    backfill_service.evict(req.file_id)
+    return {"status": "ok", "warning": warning}
