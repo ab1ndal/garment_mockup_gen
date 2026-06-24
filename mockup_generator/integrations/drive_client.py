@@ -177,6 +177,48 @@ def download_file(file_id: str) -> bytes:
     return buf.getvalue()
 
 
+def delete_file(file_id: str) -> None:
+    """Permanently delete a Drive file (used after a backfill image is published)."""
+    svc, _ = _clients()
+    svc.files().delete(fileId=file_id, supportsAllDrives=True).execute()
+
+
+def move_file(file_id: str, new_parent_id: str) -> None:
+    """Move a file by swapping its parent to ``new_parent_id`` (flag → rejected/)."""
+    svc, _ = _clients()
+    meta = svc.files().get(fileId=file_id, fields="parents",
+                           supportsAllDrives=True).execute()
+    old_parents = ",".join(meta.get("parents", []))
+    svc.files().update(
+        fileId=file_id, addParents=new_parent_id, removeParents=old_parents,
+        fields="id,parents", supportsAllDrives=True,
+    ).execute()
+
+
+def ensure_subfolder(parent_id: str, name: str) -> str:
+    """Return the id of the child folder ``name`` under ``parent_id``, creating it
+    if absent. Used once to resolve the root-level ``rejected/`` folder."""
+    svc, _ = _clients()
+    resp = (
+        svc.files()
+        .list(
+            q=(f"'{parent_id}' in parents and name = '{name}' and "
+               f"mimeType = '{_FOLDER_MIME}' and trashed = false"),
+            fields="files(id,name)", pageSize=1,
+            supportsAllDrives=True, includeItemsFromAllDrives=True,
+        )
+        .execute()
+    )
+    existing = resp.get("files", [])
+    if existing:
+        return existing[0]["id"]
+    created = svc.files().create(
+        body={"name": name, "mimeType": _FOLDER_MIME, "parents": [parent_id]},
+        fields="id", supportsAllDrives=True,
+    ).execute()
+    return created["id"]
+
+
 def list_folder_image_groups(folder_id: str) -> dict:
     """Return the folder's images grouped by immediate subfolder (variants).
 
