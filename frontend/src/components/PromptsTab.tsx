@@ -4,6 +4,7 @@ import {
   type Category, type Prompt,
 } from "../api";
 import RefineButton from "./RefineButton";
+import { PlusIcon } from "./icons";
 
 export default function PromptsTab() {
   const [cats, setCats] = useState<Category[]>([]);
@@ -43,8 +44,8 @@ export default function PromptsTab() {
         </div>
         {category && (
           <button className="btn-primary" onClick={addNew} disabled={adding}>
-            {adding && <span className="spinner" aria-hidden />}
-            {adding ? "Adding…" : "+ Add prompt"}
+            {adding ? <span className="spinner" aria-hidden /> : <PlusIcon />}
+            {adding ? "Adding…" : "Add prompt"}
           </button>
         )}
       </div>

@@ -6,6 +6,7 @@ import {
   type GenOptions,
 } from "../api";
 import RefineButton from "./RefineButton";
+import { ArrowUpRightIcon, CheckIcon } from "./icons";
 
 const PAGE_SIZE = 50;
 
@@ -130,7 +131,12 @@ export default function ProductsTab() {
 
         {err && <p className="alert alert-error" role="alert">{err}</p>}
 
-        {rows.length > 0 ? (
+        {searching && rows.length === 0 ? (
+          <>
+            <span className="sr-only" role="status">Searching products…</span>
+            <ProductListSkeleton />
+          </>
+        ) : rows.length > 0 ? (
           <>
             <ul className="card max-h-[70vh] divide-y divide-line overflow-auto p-0">
             {rows.map((p) => {
@@ -162,9 +168,10 @@ export default function ProductsTab() {
             </ul>
             {hasMore && <div ref={sentinelRef} aria-hidden style={{ height: 1 }} />}
             {loadingMore && (
-              <p className="empty flex items-center justify-center gap-2 py-3">
-                <span className="spinner" aria-hidden /> Loading more…
-              </p>
+              <>
+                <span className="sr-only" role="status">Loading more products…</span>
+                <ProductListSkeleton rows={3} />
+              </>
             )}
           </>
         ) : (
@@ -203,6 +210,7 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
   const [videoPrompt, setVideoPrompt] = useState("");
   const [busy, setBusy] = useState<null | "image" | "video">(null);
   const [msg, setMsg] = useState<{ kind: "info" | "error"; text: string } | null>(null);
+  const [vmsg, setVmsg] = useState<{ kind: "info" | "error"; text: string } | null>(null);
   const [variations, setVariations] = useState<Variation[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [feedback, setFeedback] = useState("");
@@ -299,7 +307,8 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
 
   const run = (kind: "image" | "video") => {
     setBusy(kind);
-    setMsg(null);
+    if (kind === "video") setVmsg(null);
+    else setMsg(null);
     const image_ids = [...picked];
     if (kind === "image") {
       setPublishedUrl(null);
@@ -316,7 +325,7 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
         .finally(() => setBusy(null));
     } else {
       const fail = (e: Error) => {
-        setMsg({ kind: "error", text: e.message.replace(/^\d+:\s*/, "") });
+        setVmsg({ kind: "error", text: e.message.replace(/^\d+:\s*/, "") });
         setBusy(null);
       };
       const download = (blob: Blob) => {
@@ -326,7 +335,7 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
         a.download = `${product.productid}_${color ? color.replace(/\s+/g, "-") : "mockup"}.mp4`;
         a.click();
         URL.revokeObjectURL(url);
-        setMsg({ kind: "info", text: "Video downloaded." });
+        setVmsg({ kind: "info", text: "Video downloaded." });
         setBusy(null);
       };
       const poll = (jobId: string) => {
@@ -336,7 +345,7 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
             if (!polling.current) return;
             if (r instanceof Blob) return download(r);
             if (r.status === "error") return fail(new Error(r.detail || "Video generation failed."));
-            setMsg({ kind: "info", text: "Rendering video… this can take a few minutes." });
+            setVmsg({ kind: "info", text: "Rendering video… this can take a few minutes." });
             setTimeout(() => poll(jobId), 5000);
           })
           .catch((e: Error) => fail(e));
@@ -349,7 +358,7 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
         aspect_ratio: vAspect || undefined, duration: vDuration || undefined,
       })
         .then((job) => {
-          setMsg({ kind: "info", text: "Rendering video… this can take a few minutes." });
+          setVmsg({ kind: "info", text: "Rendering video… this can take a few minutes." });
           poll(job.job_id);
         })
         .catch((e: Error) => fail(e));
@@ -423,7 +432,9 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
         </div>
         {product.producturl
           ? <a href={product.producturl} target="_blank" rel="noreferrer"
-               className="text-sm">Open Drive folder ↗</a>
+               className="inline-flex items-center gap-1 text-sm">
+               Open Drive folder <ArrowUpRightIcon size={14} />
+             </a>
           : <span className="subtle">No Drive folder linked</span>}
       </div>
 
@@ -440,9 +451,10 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
         </p>
 
         {imgState === "loading" && (
-          <div className="flex items-center gap-2 text-sm text-subtle">
-            <span className="spinner" style={{ color: "var(--accent)" }} aria-hidden /> Loading from Drive…
-          </div>
+          <>
+            <span className="sr-only" role="status">Loading images from Drive…</span>
+            <ImageGridSkeleton />
+          </>
         )}
         {imgState === "error" && <p className="alert alert-error">{imgErr}</p>}
         {imgState === "ready" && totalImages === 0 && (
@@ -469,29 +481,36 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
       <section className="mt-7">
         <div className="field">
           <p className="section-label mt-0!">Image prompt</p>
-          <select
-            aria-label="Prompt template"
-            onChange={(e) => {
-              const p = prompts.find((x) => String(x.prompt_id) === e.target.value);
-              if (p) setPromptText(p.body);
-            }}
-          >
-            {prompts.length === 0 && <option>No templates for this category</option>}
-            {prompts.map((p) => (
-              <option key={p.prompt_id} value={p.prompt_id}>
-                {p.label}{p.is_default ? " (default)" : ""}
-              </option>
-            ))}
-          </select>
-          <RefineButton
-            kind="image"
-            instruction={promptText}
-            categoryid={product.categoryid ?? undefined}
-            onRefined={setPromptText}
-            onError={(m) => setMsg({ kind: "error", text: m })}
-          />
+          <label className="field mb-0!">
+            <span className="text-xs font-semibold text-subtle">Template</span>
+            <select
+              onChange={(e) => {
+                const p = prompts.find((x) => String(x.prompt_id) === e.target.value);
+                if (p) setPromptText(p.body);
+              }}
+            >
+              {prompts.length === 0 && <option>No templates for this category</option>}
+              {prompts.map((p) => (
+                <option key={p.prompt_id} value={p.prompt_id}>
+                  {p.label}{p.is_default ? " (default)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <label htmlFor="img-prompt-text" className="text-xs font-semibold text-subtle">
+              Prompt text
+            </label>
+            <RefineButton
+              kind="image"
+              instruction={promptText}
+              categoryid={product.categoryid ?? undefined}
+              onRefined={setPromptText}
+              onError={(m) => setMsg({ kind: "error", text: m })}
+            />
+          </div>
           <textarea
-            aria-label="Image prompt text"
+            id="img-prompt-text"
             value={promptText}
             onChange={(e) => setPromptText(e.target.value)}
             rows={7}
@@ -593,7 +612,6 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
                   onClick={() => setActiveIdx(i)}
                   aria-pressed={i === activeIdx}
                   aria-label={`View variation ${i + 1}${v.feedback ? ` — note: ${v.feedback}` : ""}`}
-                  title={v.feedback || (v.mode === "refine" ? "refined" : "fresh")}
                   className={`relative aspect-square h-16 w-16 shrink-0 overflow-hidden rounded-md! p-0! transition
                     ${i === activeIdx ? "border-accent! ring-2 ring-accent/30" : "border-line! hover:border-line-strong!"}`}
                 >
@@ -664,15 +682,20 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
       <section className="mt-7 border-t border-line pt-6">
         <div className="field">
           <p className="section-label mt-0!">Video (custom prompt)</p>
-          <RefineButton
-            kind="video"
-            instruction={videoPrompt}
-            categoryid={product.categoryid ?? undefined}
-            onRefined={setVideoPrompt}
-            onError={(m) => setMsg({ kind: "error", text: m })}
-          />
+          <div className="flex items-center justify-between gap-3">
+            <label htmlFor="video-prompt-text" className="text-xs font-semibold text-subtle">
+              Prompt text
+            </label>
+            <RefineButton
+              kind="video"
+              instruction={videoPrompt}
+              categoryid={product.categoryid ?? undefined}
+              onRefined={setVideoPrompt}
+              onError={(m) => setVmsg({ kind: "error", text: m })}
+            />
+          </div>
           <textarea
-            aria-label="Video prompt text"
+            id="video-prompt-text"
             value={videoPrompt}
             onChange={(e) => setVideoPrompt(e.target.value)}
             rows={3}
@@ -726,7 +749,42 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
             Approve &amp; publish a mockup first — the video animates the published image.
           </p>
         )}
+        {vmsg && (
+          <p
+            className={`mt-3 ${vmsg.kind === "error" ? "alert alert-error" : "alert alert-info"}`}
+            role={vmsg.kind === "error" ? "alert" : "status"}
+            aria-live="polite"
+          >
+            {vmsg.text}
+          </p>
+        )}
       </section>
+    </div>
+  );
+}
+
+function ProductListSkeleton({ rows = 6 }: { rows?: number }) {
+  return (
+    <ul className="card divide-y divide-line p-0" aria-hidden>
+      {Array.from({ length: rows }).map((_, i) => (
+        <li key={i} className="flex items-center gap-3 px-4 py-3">
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <div className="h-4 w-2/3 animate-pulse rounded bg-line" />
+            <div className="h-3 w-1/3 animate-pulse rounded bg-line" />
+          </div>
+          <div className="h-5 w-16 animate-pulse rounded-full bg-line" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ImageGridSkeleton({ tiles = 10 }: { tiles?: number }) {
+  return (
+    <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5" aria-hidden>
+      {Array.from({ length: tiles }).map((_, i) => (
+        <div key={i} className="aspect-square animate-pulse rounded-lg bg-line" />
+      ))}
     </div>
   );
 }
@@ -744,15 +802,15 @@ function ImageGrid({ images, picked, onToggle }: {
             type="button"
             onClick={() => onToggle(img.id)}
             aria-pressed={sel}
-            title={img.name}
+            aria-label={`${sel ? "Deselect" : "Select"} source image ${img.name}`}
             className={`relative aspect-square min-h-0! overflow-hidden rounded-lg! p-0! transition
               ${sel ? "border-accent! ring-2 ring-accent/30" : "border-line! hover:border-line-strong!"}`}
           >
             <img src={img.thumbnail_url} alt={img.name}
                  className="h-full w-full object-cover" loading="lazy" />
             {sel && (
-              <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-accent text-[11px] font-bold text-white">
-                ✓
+              <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-accent text-white">
+                <CheckIcon size={13} strokeWidth={2.5} />
               </span>
             )}
           </button>

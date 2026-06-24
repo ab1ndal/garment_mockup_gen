@@ -15,7 +15,7 @@
   --color-line-strong: oklch(86.89% 0.0096 286.2);
   --color-ink: oklch(21.03% 0.0059 285.89);
   --color-muted: oklch(44.19% 0.0146 285.79);
-  --color-subtle: oklch(55.17% 0.0138 285.94);
+  --color-subtle: oklch(50% 0.0138 285.94);
 
   --color-accent: oklch(51.06% 0.2301 276.97);
   --color-accent-hover: oklch(45.68% 0.2146 277.02);
@@ -73,7 +73,7 @@
   --border-strong: oklch(86.89% 0.0096 286.2);
   --text: oklch(21.03% 0.0059 285.89);
   --text-muted: oklch(44.19% 0.0146 285.79);
-  --text-subtle: oklch(55.17% 0.0138 285.94);
+  --text-subtle: oklch(50% 0.0138 285.94);
 
   /* Brand accent (indigo → violet, matches HF Space) */
   --accent: oklch(51.06% 0.2301 276.97);
@@ -213,7 +213,7 @@ button {
   align-items: center;
   justify-content: center;
   gap: var(--sp-2);
-  min-height: 40px;
+  min-height: 44px;
   padding: 9px 16px;
   border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
@@ -326,8 +326,8 @@ button:disabled {
 .tab {
   border: none;
   background: none;
-  min-height: auto;
-  padding: var(--sp-3) var(--sp-3);
+  min-height: 44px;
+  padding: var(--sp-3) var(--sp-4);
   margin-bottom: -1px;
   color: var(--text-muted);
   border-bottom: 2px solid transparent;
@@ -564,7 +564,7 @@ td.mono,
   right: 0;
   z-index: 50;
   width: max-content;
-  max-width: 260px;
+  max-width: min(260px, calc(100vw - 2 * var(--sp-5)));
   padding: var(--sp-2) var(--sp-3);
   background: var(--surface);
   color: var(--ink);

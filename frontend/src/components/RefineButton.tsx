@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { refinePrompt } from "../api";
+import { InfoIcon, SparklesIcon } from "./icons";
 
 const HINTS: Record<"image" | "video", string> = {
   image:
@@ -46,7 +47,7 @@ function InfoTooltip({ kind }: { kind: "image" | "video" }) {
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
       >
-        ⓘ
+        <InfoIcon size={18} />
       </button>
       {open && (
         <div id={tipId} role="tooltip" className="tt-bubble">
@@ -80,8 +81,8 @@ export default function RefineButton({
   return (
     <div className="toolbar" style={{ alignItems: "center", gap: "var(--sp-2)" }}>
       <button className="btn-primary" onClick={run} disabled={busy || empty}>
-        {busy && <span className="spinner" aria-hidden />}
-        {busy ? "Refining…" : "✨ Refine"}
+        {busy ? <span className="spinner" aria-hidden /> : <SparklesIcon />}
+        {busy ? "Refining…" : "Refine"}
       </button>
       <InfoTooltip kind={kind} />
     </div>
