@@ -34,7 +34,9 @@ _FOLDER_ID_RE = re.compile(r"(?:/folders/|[?&]id=)([A-Za-z0-9_-]+)")
 
 # Generated mockup filenames: "<productid>", "<productid><alpha>", "<productid>_<alpha>".
 # productid is "BC" + digits; the greedy \d+ stops at the first letter.
-_GEN_NAME_RE = re.compile(r"^(BC\d+)_?([A-Za-z]+)?$")
+# An optional trailing duplicate marker is tolerated and discarded: a copy made
+# by Drive/the OS appends " 2" or " (2)" (e.g. "BC25012 2", "BC25012A (3)").
+_GEN_NAME_RE = re.compile(r"^(BC\d+)_?([A-Za-z]+)?(?: (?:\d+|\(\d+\)))?$")
 _IMG_EXT_RE = re.compile(r"\.(png|jpe?g|webp)$", re.IGNORECASE)
 
 _SCOPES = ["https://www.googleapis.com/auth/drive"]  # read + write: backfill deletes/moves files
@@ -67,7 +69,8 @@ def parse_generated_name(name: str) -> tuple[str | None, str | None]:
 
     Returns (None, None) for any stem that isn't a bare ``BC<digits>`` optionally
     followed by an attached or underscore-separated alpha suffix. The alpha is
-    upper-cased. An image extension is stripped first; any other dot makes the
+    upper-cased. A trailing duplicate marker (" 2" or " (2)") left by Drive/the OS
+    is discarded. An image extension is stripped first; any other dot makes the
     name malformed.
     """
     stem = _IMG_EXT_RE.sub("", (name or "").strip())

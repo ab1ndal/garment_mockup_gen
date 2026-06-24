@@ -19,6 +19,10 @@ def test_drive_scope_is_read_write():
     ("BC25123_a.png", ("BC25123", "A")),      # alpha upper-cased
     ("BC25123AB.png", ("BC25123", "AB")),
     ("BC1234.jpg", ("BC1234", None)),
+    ("BC25012 2.png", ("BC25012", None)),      # space + N duplicate marker
+    ("BC25012 (2).png", ("BC25012", None)),    # space + (N) duplicate marker
+    ("BC25012A 2.png", ("BC25012", "A")),      # alpha + duplicate marker
+    ("BC25012_A (3).png", ("BC25012", "A")),   # underscore alpha + (N)
     ("BC25123.v2.png", (None, None)),          # extra dots -> malformed
     ("IMG_001.png", (None, None)),             # non-BC -> malformed
     ("notes.txt", (None, None)),
