@@ -48,7 +48,7 @@ def test_insert_computes_displayorder_from_count_and_sets_caption():
     assert sink["table"] == "productimages"
     p = sink["payload"]
     assert p == {"productid": "BC1", "imageurl": "https://public/x.png",
-                 "displayorder": 2, "caption": "Red"}
+                 "displayorder": 2, "caption": "Red", "phototheme": "Default"}
     assert row["imageid"] == 1
 
 
@@ -57,7 +57,18 @@ def test_insert_omits_caption_when_none_and_honors_explicit_displayorder():
     productimages_repo.insert(
         _InsertDb(sink, count=99), productid="BC1", imageurl="u", displayorder=5
     )
-    assert sink["payload"] == {"productid": "BC1", "imageurl": "u", "displayorder": 5}
+    assert sink["payload"] == {"productid": "BC1", "imageurl": "u",
+                               "displayorder": 5, "phototheme": "Default"}
+
+
+def test_insert_carries_explicit_theme():
+    sink = {}
+    productimages_repo.insert(
+        _InsertDb(sink, count=0), productid="BC1", imageurl="u",
+        caption="Red", theme="Studio·9:16",
+    )
+    assert sink["payload"]["phototheme"] == "Studio·9:16"
+    assert sink["payload"]["caption"] == "Red"
 
 
 # ---- list_for / delete_for: capture the query chain (eq vs is_ for NULL) ----
@@ -107,6 +118,7 @@ def test_list_for_filters_by_productid_and_color():
     assert sink["table"] == "productimages"
     assert ("eq", "productid", "BC1") in sink["filters"]
     assert ("eq", "caption", "Red") in sink["filters"]
+    assert ("eq", "phototheme", "Default") in sink["filters"]  # default theme
     assert rows[0]["imageurl"] == "https://public/old.png"
 
 
@@ -115,6 +127,14 @@ def test_list_for_uses_is_null_when_caption_none():
     productimages_repo.list_for(_ChainDb(sink), "BC1", None)
     assert ("eq", "productid", "BC1") in sink["filters"]
     assert ("is_", "caption", "null") in sink["filters"]
+    assert ("eq", "phototheme", "Default") in sink["filters"]
+
+
+def test_list_for_filters_by_explicit_theme():
+    sink = {}
+    productimages_repo.list_for(_ChainDb(sink), "BC1", "Red", "Studio·9:16")
+    assert ("eq", "caption", "Red") in sink["filters"]
+    assert ("eq", "phototheme", "Studio·9:16") in sink["filters"]
 
 
 def test_delete_for_filters_by_productid_and_color():
@@ -123,6 +143,7 @@ def test_delete_for_filters_by_productid_and_color():
     assert ("delete",) in sink["ops"]
     assert ("eq", "productid", "BC1") in sink["filters"]
     assert ("eq", "caption", "Red") in sink["filters"]
+    assert ("eq", "phototheme", "Default") in sink["filters"]
 
 
 def test_delete_for_uses_is_null_when_caption_none():
@@ -130,3 +151,10 @@ def test_delete_for_uses_is_null_when_caption_none():
     productimages_repo.delete_for(_ChainDb(sink), "BC1", None)
     assert ("delete",) in sink["ops"]
     assert ("is_", "caption", "null") in sink["filters"]
+    assert ("eq", "phototheme", "Default") in sink["filters"]
+
+
+def test_delete_for_filters_by_explicit_theme():
+    sink = {}
+    productimages_repo.delete_for(_ChainDb(sink), "BC1", "Red", "Studio")
+    assert ("eq", "phototheme", "Studio") in sink["filters"]
