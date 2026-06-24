@@ -4,7 +4,7 @@ import {
   type Category, type Prompt,
 } from "../api";
 import RefineButton from "./RefineButton";
-import { PlusIcon } from "./icons";
+import { PlusIcon, TrashIcon, CheckIcon } from "./icons";
 
 export default function PromptsTab() {
   const [cats, setCats] = useState<Category[]>([]);
@@ -42,27 +42,37 @@ export default function PromptsTab() {
             {cats.map((c) => <option key={c.categoryid} value={c.categoryid}>{c.name}</option>)}
           </select>
         </div>
-        {category && (
-          <button className="btn-primary" onClick={addNew} disabled={adding}>
-            {adding ? <span className="spinner" aria-hidden /> : <PlusIcon />}
-            {adding ? "Adding…" : "Add prompt"}
-          </button>
-        )}
       </div>
 
-      {category && prompts.length === 0 && (
-        <p className="empty">No prompts for this category yet — add one to get started.</p>
-      )}
       {!category && (
         <p className="empty">Choose a category to view and edit its prompts.</p>
       )}
 
-      <div className="stack">
-        {prompts.map((p) => (
-          <PromptEditor key={p.prompt_id} prompt={p}
-            onSaved={() => reload(category)} onDeleted={() => reload(category)} onError={setErr} />
-        ))}
-      </div>
+      {category && (
+        <>
+          <div className="list-header">
+            <h2 className="list-title">
+              Prompt variants
+              {prompts.length > 0 && <span className="count">{prompts.length}</span>}
+            </h2>
+            <button className="btn-ghost btn-add" onClick={addNew} disabled={adding}>
+              {adding ? <span className="spinner" aria-hidden /> : <PlusIcon />}
+              {adding ? "Adding…" : "Add prompt"}
+            </button>
+          </div>
+
+          {prompts.length === 0 && (
+            <p className="empty">No prompts for this category yet — add one to get started.</p>
+          )}
+
+          <div className="stack">
+            {prompts.map((p) => (
+              <PromptEditor key={p.prompt_id} prompt={p}
+                onSaved={() => reload(category)} onDeleted={() => reload(category)} onError={setErr} />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -97,25 +107,34 @@ function PromptEditor({ prompt, onSaved, onDeleted, onError }: {
 
   return (
     <div className="card stack-sm" style={{ padding: "var(--sp-4)" }}>
-      <div className="toolbar" style={{ alignItems: "center" }}>
-        <div className="field" style={{ flex: 1, minWidth: 180 }}>
-          <label htmlFor={`lbl-${prompt.prompt_id}`}>Label</label>
-          <input id={`lbl-${prompt.prompt_id}`} value={label}
-                 onChange={(e) => setLabel(e.target.value)} placeholder="Label" />
-        </div>
+      <div className="field">
+        <label htmlFor={`lbl-${prompt.prompt_id}`}>Label</label>
+        <input id={`lbl-${prompt.prompt_id}`} value={label}
+               onChange={(e) => setLabel(e.target.value)} placeholder="Label" />
+      </div>
+      <div className="editor-actions">
         <label className="check">
           <input type="checkbox" checked={isDefault}
                  onChange={(e) => setIsDefault(e.target.checked)} />
           Default
         </label>
-        <button className="btn-primary" onClick={save} disabled={busy !== null || !dirty}>
-          {busy === "save" && <span className="spinner" aria-hidden />}
-          {busy === "save" ? "Saving…" : dirty ? "Save" : "Saved"}
-        </button>
-        <button className="btn-danger" onClick={remove} disabled={busy !== null}>
-          {busy === "delete" && <span className="spinner" aria-hidden />}
-          Delete
-        </button>
+        <div className="editor-actions-end">
+          {dirty || busy === "save" ? (
+            <button className="btn-primary" onClick={save} disabled={busy !== null}>
+              {busy === "save" && <span className="spinner" aria-hidden />}
+              {busy === "save" ? "Saving…" : "Save"}
+            </button>
+          ) : (
+            <span className="saved-status" role="status">
+              <CheckIcon size={14} /> Saved
+            </span>
+          )}
+          <button className="btn-delete" onClick={remove} disabled={busy !== null}
+                  aria-label={`Delete prompt ${prompt.label}`}>
+            {busy === "delete" ? <span className="spinner" aria-hidden /> : <TrashIcon size={16} />}
+            Delete
+          </button>
+        </div>
       </div>
       <div className="field">
         <div className="toolbar" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -129,7 +148,8 @@ function PromptEditor({ prompt, onSaved, onDeleted, onError }: {
           />
         </div>
         <textarea id={`body-${prompt.prompt_id}`} value={body}
-                  onChange={(e) => setBody(e.target.value)} rows={6} />
+                  onChange={(e) => setBody(e.target.value)} rows={12} />
+        <p className="field-hint">Drag the bottom-right corner to resize.</p>
       </div>
     </div>
   );

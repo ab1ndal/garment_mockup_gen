@@ -263,6 +263,31 @@ button:disabled {
   background: var(--surface-2);
 }
 
+/* Add-variant button: dashed affordance, secondary weight */
+.btn-add {
+  border: 1px dashed var(--border-strong);
+  color: var(--text-muted);
+}
+.btn-add:hover:not(:disabled) {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Delete: subordinate ghost, turns danger only on hover/focus */
+.btn-delete {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-muted);
+}
+.btn-delete:hover:not(:disabled),
+.btn-delete:focus-visible:not(:disabled) {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger-border);
+}
+
 /* Spinner shown inside busy buttons */
 .spinner {
   width: 15px;
@@ -433,6 +458,67 @@ td.mono,
   color: var(--warn);
   background: var(--warn-soft);
   border-color: var(--warn-border);
+}
+
+/* ============================================================
+   Prompt list header + editor actions
+   ============================================================ */
+.list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+.list-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+.list-title .count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--r-full);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  letter-spacing: 0;
+}
+
+.editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.editor-actions-end {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.saved-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--success);
+}
+.field-hint {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-subtle);
 }
 
 /* ============================================================
