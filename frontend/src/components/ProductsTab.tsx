@@ -31,6 +31,11 @@ export default function ProductsTab() {
 
   useEffect(() => { getCategories().then(setCats).catch((e) => setErr(e.message)); }, []);
 
+  const markPublished = (id: string) => {
+    setRows((rs) => rs.map((r) => (r.productid === id && !r.base_mockup ? { ...r, base_mockup: true } : r)));
+    setSelected((s) => (s && s.productid === id && !s.base_mockup ? { ...s, base_mockup: true } : s));
+  };
+
   const search = () => {
     setErr(null);
     setSearching(true);
@@ -108,7 +113,7 @@ export default function ProductsTab() {
                       </span>
                     </span>
                     <span className={p.base_mockup ? "pill pill-done" : "pill pill-pending"}>
-                      {p.base_mockup ? "Done" : "Pending"}
+                      {p.base_mockup ? "Generated" : "Pending"}
                     </span>
                   </button>
                 </li>
@@ -124,7 +129,7 @@ export default function ProductsTab() {
 
       {/* ── Stage: generate the mockup (the main event) ── */}
       {selected
-        ? <GenerationStage key={selected.productid} product={selected} />
+        ? <GenerationStage key={selected.productid} product={selected} onPublished={markPublished} />
         : (
           <div className="card flex min-h-[60vh] flex-col items-center justify-center gap-3 p-8 text-center">
             <CanvasIcon />
@@ -145,7 +150,7 @@ type Variation = {
   mode: "fresh" | "refine";
 };
 
-function GenerationStage({ product }: { product: Product }) {
+function GenerationStage({ product, onPublished }: { product: Product; onPublished?: (productid: string) => void }) {
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [promptText, setPromptText] = useState("");
   const [videoPrompt, setVideoPrompt] = useState("");
@@ -333,7 +338,7 @@ function GenerationStage({ product }: { product: Product }) {
     fd.append("source", src);
     fd.append("image", blob, "mockup.png");
     approveMockup(fd)
-      .then((r) => { setPublishedUrl(r.image_url); setMsg({ kind: "info", text: r.detail }); })
+      .then((r) => { setPublishedUrl(r.image_url); setMsg({ kind: "info", text: r.detail }); onPublished?.(product.productid); })
       .catch((e: Error) => setMsg({ kind: "error", text: e.message.replace(/^\d+:\s*/, "") }))
       .finally(() => setPublishing(false));
   };
