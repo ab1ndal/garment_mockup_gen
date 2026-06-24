@@ -67,6 +67,7 @@ class GenerateRequest(BaseModel):
     resolution: str | None = None
     aspect_ratio: str | None = None
     color: str | None = None
+    refine_image_b64: str | None = None   # prior output, included as an extra reference on refine
 
 
 class VideoGenerateRequest(BaseModel):

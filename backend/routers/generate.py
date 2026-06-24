@@ -11,6 +11,7 @@ row (cleaning up the prior Storage object). ``/video`` is still a stub.
 from __future__ import annotations
 
 import base64
+import logging
 import threading
 import time
 import uuid
@@ -34,6 +35,18 @@ from mockup_generator.integrations import drive_client, storage_client
 from mockup_generator.integrations.drive_client import DriveNotConfigured
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
+
+log = logging.getLogger(__name__)
+
+
+def _decode_b64_image(b64: str) -> Image.Image:
+    """Decode a base64 PNG/JPEG into a PIL image, or raise 400 on bad input."""
+    try:
+        raw = base64.b64decode(b64, validate=True)
+        return Image.open(BytesIO(raw)).convert("RGB")
+    except Exception as exc:  # noqa: BLE001 - any decode/parse failure is a bad request
+        raise HTTPException(status_code=400, detail="Invalid refine image.") from exc
+
 
 _MAX_REFS = 14
 _MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
@@ -146,24 +159,36 @@ def generate_image(req: GenerateRequest, user: CurrentUser = Depends(get_current
     if req.aspect_ratio is not None and req.aspect_ratio not in ALLOWED_ASPECTS:
         raise HTTPException(status_code=400, detail=f"Unsupported aspect ratio: {req.aspect_ratio}")
 
-    if not req.image_ids:
+    if not req.image_ids and not req.refine_image_b64:
         raise HTTPException(status_code=400, detail="Select at least one source image.")
+
+    # Decode the refine reference first so bad input fails fast as a 400.
+    refine_img = _decode_b64_image(req.refine_image_b64) if req.refine_image_b64 else None
 
     product = products_repo.get_product(db, req.productid)
     if product is None:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    folder_id = drive_client.extract_folder_id(product.producturl)
-    if not folder_id:
-        raise HTTPException(status_code=400, detail="Product has no linked Drive folder")
-
+    images: list[Image.Image] = []
     ref_ids = req.image_ids[:_MAX_REFS]
-    try:
-        images = [Image.open(BytesIO(drive_client.download_file(fid))) for fid in ref_ids]
-    except DriveNotConfigured as exc:
-        raise HTTPException(status_code=503, detail="Drive access is not configured on the server") from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Could not download Drive images: {exc}") from exc
+    if ref_ids:
+        folder_id = drive_client.extract_folder_id(product.producturl)
+        if not folder_id:
+            raise HTTPException(status_code=400, detail="Product has no linked Drive folder")
+        try:
+            images = [Image.open(BytesIO(drive_client.download_file(fid))) for fid in ref_ids]
+        except DriveNotConfigured as exc:
+            raise HTTPException(status_code=503, detail="Drive access is not configured on the server") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Could not download Drive images: {exc}") from exc
+
+    # Sources own the reference budget; the refine image is appended only if room.
+    if refine_img is not None:
+        if len(images) < _MAX_REFS:
+            images.append(refine_img)
+        else:
+            log.warning("refine image dropped: %d source refs already at cap %d",
+                        len(images), _MAX_REFS)
 
     try:
         png = service.generate_mockup_bytes(
