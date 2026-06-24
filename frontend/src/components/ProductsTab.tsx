@@ -7,6 +7,8 @@ import {
 } from "../api";
 import RefineButton from "./RefineButton";
 
+const PAGE_SIZE = 50;
+
 // Human labels for the resolution / aspect choices.
 const RES_LABEL: Record<string, string> = {
   "1K": "1K", "2K": "2K · web", "4K": "4K · print",
@@ -28,6 +30,11 @@ export default function ProductsTab() {
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const activeParams = useRef<Parameters<typeof listProducts>[0]>({ pending: true });
 
   useEffect(() => { getCategories().then(setCats).catch((e) => setErr(e.message)); }, []);
 
@@ -36,18 +43,50 @@ export default function ProductsTab() {
     setSelected((s) => (s && s.productid === id && !s.base_mockup ? { ...s, base_mockup: true } : s));
   };
 
-  const search = () => {
-    setErr(null);
-    setSearching(true);
-    const params: Parameters<typeof listProducts>[0] = { pending };
+  const buildParams = (extra: { limit: number; offset: number }) => {
+    const params: Parameters<typeof listProducts>[0] = { pending, ...extra };
     if (category) params.category = category;
     if (idSingle && idEnd) { params.id_start = idSingle; params.id_end = idEnd; }
     else if (idSingle) params.id = idSingle;
+    return params;
+  };
+
+  const search = () => {
+    setErr(null);
+    setSearching(true);
+    setOffset(0);
+    const params = buildParams({ limit: PAGE_SIZE, offset: 0 });
+    activeParams.current = params;
     listProducts(params)
-      .then((r) => { setRows(r); setSearched(true); })
+      .then((r) => { setRows(r); setSearched(true); setHasMore(r.length === PAGE_SIZE); })
       .catch((e) => setErr(e.message))
       .finally(() => setSearching(false));
   };
+
+  const loadMore = () => {
+    if (!hasMore || loadingMore || searching) return;
+    setLoadingMore(true);
+    const nextOffset = offset + PAGE_SIZE;
+    listProducts({ ...activeParams.current, limit: PAGE_SIZE, offset: nextOffset })
+      .then((r) => {
+        setRows((prev) => [...prev, ...r]);
+        setOffset(nextOffset);
+        setHasMore(r.length === PAGE_SIZE);
+      })
+      .catch((e) => setErr(e.message))
+      .finally(() => setLoadingMore(false));
+  };
+
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node || !hasMore) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) loadMore();
+    });
+    io.observe(node);
+    return () => io.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMore, loadingMore, offset]);
 
   // Show the category line per row only when the list spans categories.
   const showRowCategory = category === "";
@@ -92,7 +131,8 @@ export default function ProductsTab() {
         {err && <p className="alert alert-error" role="alert">{err}</p>}
 
         {rows.length > 0 ? (
-          <ul className="card max-h-[70vh] divide-y divide-line overflow-auto p-0">
+          <>
+            <ul className="card max-h-[70vh] divide-y divide-line overflow-auto p-0">
             {rows.map((p) => {
               const isSel = selected?.productid === p.productid;
               return (
@@ -119,7 +159,14 @@ export default function ProductsTab() {
                 </li>
               );
             })}
-          </ul>
+            </ul>
+            {hasMore && <div ref={sentinelRef} aria-hidden style={{ height: 1 }} />}
+            {loadingMore && (
+              <p className="empty flex items-center justify-center gap-2 py-3">
+                <span className="spinner" aria-hidden /> Loading more…
+              </p>
+            )}
+          </>
         ) : (
           <p className="empty">
             {searched ? "No products match these filters." : "Run a search to list products."}
