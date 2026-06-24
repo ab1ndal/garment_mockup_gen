@@ -32,6 +32,11 @@ from mockup_generator.config import settings
 #   ...open?id=<id>                  ...?id=<id>
 _FOLDER_ID_RE = re.compile(r"(?:/folders/|[?&]id=)([A-Za-z0-9_-]+)")
 
+# Generated mockup filenames: "<productid>", "<productid><alpha>", "<productid>_<alpha>".
+# productid is "BC" + digits; the greedy \d+ stops at the first letter.
+_GEN_NAME_RE = re.compile(r"^(BC\d+)_?([A-Za-z]+)?$")
+_IMG_EXT_RE = re.compile(r"\.(png|jpe?g|webp)$", re.IGNORECASE)
+
 _SCOPES = ["https://www.googleapis.com/auth/drive"]  # read + write: backfill deletes/moves files
 _MAX_FILES = 100
 _MAX_SUBFOLDERS = 30  # variant subfolders scanned per product (bounds Drive list calls)
@@ -48,6 +53,22 @@ def extract_folder_id(url: str | None) -> str | None:
         return None
     m = _FOLDER_ID_RE.search(url)
     return m.group(1) if m else None
+
+
+def parse_generated_name(name: str) -> tuple[str | None, str | None]:
+    """Split a generated filename into (productid, alpha).
+
+    Returns (None, None) for any stem that isn't a bare ``BC<digits>`` optionally
+    followed by an attached or underscore-separated alpha suffix. The alpha is
+    upper-cased. An image extension is stripped first; any other dot makes the
+    name malformed.
+    """
+    stem = _IMG_EXT_RE.sub("", (name or "").strip())
+    m = _GEN_NAME_RE.match(stem)
+    if not m:
+        return None, None
+    alpha = m.group(2)
+    return m.group(1), (alpha.upper() if alpha else None)
 
 
 @lru_cache(maxsize=1)
