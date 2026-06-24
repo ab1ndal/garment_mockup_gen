@@ -29,8 +29,8 @@ from backend.schemas import (
     ApproveResponse, GeneratePreview, GenerateRequest, VideoGenerateRequest, VideoJobResponse,
 )
 from mockup_generator.config import settings
-from mockup_generator.db import mockup_variations_repo, mockups_repo, productimages_repo, products_repo
-from mockup_generator.generation import service, video_service
+from mockup_generator.db import productimages_repo, products_repo
+from mockup_generator.generation import publish, service, video_service
 from mockup_generator.integrations import drive_client, storage_client
 from mockup_generator.integrations.drive_client import DriveNotConfigured
 
@@ -66,19 +66,6 @@ ALLOWED_VIDEO_ASPECTS = ["9:16", "16:9"]
 ALLOWED_VIDEO_DURATIONS = [4, 6, 8]
 _VIDEO_DEFAULTS = {"model": "veo-3.1-generate-preview", "resolution": "720p",
                    "aspect_ratio": "9:16", "duration": 4}
-
-
-def _photo_theme(theme_name: str | None, aspect_ratio: str | None) -> str:
-    """Build the dedup photo-theme string from the prompt label + aspect ratio.
-
-    Default prompt at 1:1 → ``"Default"`` (canonical row, matches backfill).
-    Non-1:1 appends the aspect (e.g. ``"Studio·9:16"``) so aspects coexist.
-    """
-    label = (theme_name or productimages_repo.DEFAULT_THEME).strip() \
-        or productimages_repo.DEFAULT_THEME
-    if aspect_ratio and aspect_ratio != "1:1":
-        return f"{label}·{aspect_ratio}"
-    return label
 
 
 # ── In-memory video jobs ──────────────────────────────────────────────────────
@@ -244,42 +231,21 @@ async def approve_mockup(
     png_img.save(buf, format="PNG")
     png = buf.getvalue()
 
-    slug = storage_client.slugify(color)
-    key = f"{slug}_{storage_client.short_hex()}" if slug else storage_client.short_hex()
+    text = prompt_text or ("(manual upload)" if source == "corrected" else "")
     try:
-        _path, public_url = storage_client.upload_mockup(productid, png, key)
+        result = publish.publish_image(
+            db, productid=productid, png=png, color=color,
+            theme_name=theme_name, aspect_ratio=aspect_ratio,
+            created_by=user.id, prompt_text=text,
+        )
     except storage_client.StorageNotConfigured as exc:
         raise HTTPException(status_code=503, detail="Storage is not configured on the server") from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Could not store the mockup: {exc}") from exc
 
-    theme = _photo_theme(theme_name, aspect_ratio)
-
-    # No redundancy: one productimages row per (productid, color, phototheme).
-    # Replace any prior row for that triple and clean up its orphaned Storage
-    # object (best-effort — a cleanup failure must not fail an otherwise-
-    # successful publish). Differing theme/aspect coexist as separate rows.
-    for prior in productimages_repo.list_for(db, productid, color, theme):
-        old_path = storage_client.path_from_public_url(prior.get("imageurl") or "")
-        if old_path:
-            try:
-                storage_client.delete_object(old_path)
-            except Exception:  # noqa: BLE001 - orphan cleanup is non-fatal
-                pass
-    productimages_repo.delete_for(db, productid, color, theme)
-
-    text = prompt_text or ("(manual upload)" if source == "corrected" else "")
-    row = mockup_variations_repo.insert(
-        db, productid=productid, prompt_text=text, image_url=public_url,
-        color=color, created_by=user.id,
-    )
-    mockups_repo.set_base_mockup(db, productid, True)
-    productimages_repo.insert(db, productid=productid, imageurl=public_url,
-                              caption=color, theme=theme)
-
     return ApproveResponse(
         status="ok", detail="Published.",
-        image_url=public_url, variation_id=row.get("variation_id"),
+        image_url=result["image_url"], variation_id=result["variation_id"],
     )
 
 

@@ -117,3 +117,33 @@ class ApproveResponse(BaseModel):
     detail: str
     image_url: str
     variation_id: int | None = None
+
+
+class BackfillItem(BaseModel):
+    productid: str | None
+    product_name: str | None
+    alpha: str | None
+    file_id: str
+    filename: str
+    thumbnail_url: str | None
+    colors: list[str]
+    unknown_product: bool
+
+
+class BackfillItemsResponse(BaseModel):
+    total: int
+    remaining: int
+    items: list[BackfillItem]
+
+
+class BackfillApproveRequest(BaseModel):
+    file_id: str
+    productid: str
+    color: str | None = None
+    theme_name: str | None = None
+    aspect_ratio: str | None = None
+
+
+class BackfillFlagRequest(BaseModel):
+    file_id: str
+    productid: str | None = None

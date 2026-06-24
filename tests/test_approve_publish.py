@@ -30,22 +30,22 @@ def client():
 
 
 def _wire(monkeypatch, calls):
-    monkeypatch.setattr(gen.storage_client, "short_hex", lambda: "deadbeef")
-    monkeypatch.setattr(gen.storage_client, "upload_mockup",
+    monkeypatch.setattr(gen.publish.storage_client, "short_hex", lambda: "deadbeef")
+    monkeypatch.setattr(gen.publish.storage_client, "upload_mockup",
                         lambda pid, data, key, **kw: (calls.__setitem__("key", key)
                                                       or (f"{pid}/{key}.png", f"https://public/{pid}/{key}.png")))
-    monkeypatch.setattr(gen.mockup_variations_repo, "insert",
+    monkeypatch.setattr(gen.publish.mockup_variations_repo, "insert",
                         lambda db, **kw: (calls.__setitem__("variation", kw) or {"variation_id": 42}))
-    monkeypatch.setattr(gen.mockups_repo, "set_base_mockup",
+    monkeypatch.setattr(gen.publish.mockups_repo, "set_base_mockup",
                         lambda db, pid, value=True: calls.__setitem__("flag", (pid, value)))
-    monkeypatch.setattr(gen.productimages_repo, "insert",
+    monkeypatch.setattr(gen.publish.productimages_repo, "insert",
                         lambda db, **kw: (calls.__setitem__("image", kw) or {"imageid": 1}))
     # no-redundancy seam: prior rows (default none), delete row, delete object
-    monkeypatch.setattr(gen.productimages_repo, "list_for",
+    monkeypatch.setattr(gen.publish.productimages_repo, "list_for",
                         lambda db, pid, cap, theme="Default": calls.get("existing", []))
-    monkeypatch.setattr(gen.productimages_repo, "delete_for",
+    monkeypatch.setattr(gen.publish.productimages_repo, "delete_for",
                         lambda db, pid, cap, theme="Default": calls.__setitem__("deleted_for", (pid, cap, theme)))
-    monkeypatch.setattr(gen.storage_client, "delete_object",
+    monkeypatch.setattr(gen.publish.storage_client, "delete_object",
                         lambda path, **kw: calls.setdefault("removed", []).append(path))
     # path_from_public_url is the real pure function (not mocked)
 
@@ -137,7 +137,7 @@ def test_approve_rejects_non_image_400(client, monkeypatch):
 def test_approve_storage_not_configured_503(client, monkeypatch):
     calls = {}
     _wire(monkeypatch, calls)
-    monkeypatch.setattr(gen.storage_client, "upload_mockup",
+    monkeypatch.setattr(gen.publish.storage_client, "upload_mockup",
                         lambda *a, **k: (_ for _ in ()).throw(StorageNotConfigured("no key")))
     r = client.post("/api/generate/approve",
                     data={"productid": "BC1", "source": "generated"},

@@ -32,11 +32,23 @@ from mockup_generator.config import settings
 #   ...open?id=<id>                  ...?id=<id>
 _FOLDER_ID_RE = re.compile(r"(?:/folders/|[?&]id=)([A-Za-z0-9_-]+)")
 
-_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+# Generated mockup filenames: "<productid>", "<productid><alpha>", "<productid>_<alpha>".
+# productid is "BC" + digits; the greedy \d+ stops at the first letter.
+_GEN_NAME_RE = re.compile(r"^(BC\d+)_?([A-Za-z]+)?$")
+_IMG_EXT_RE = re.compile(r"\.(png|jpe?g|webp)$", re.IGNORECASE)
+
+_SCOPES = ["https://www.googleapis.com/auth/drive"]  # read + write: backfill deletes/moves files
 _MAX_FILES = 100
 _MAX_SUBFOLDERS = 30  # variant subfolders scanned per product (bounds Drive list calls)
 _FOLDER_MIME = "application/vnd.google-apps.folder"
 _THUMB_WORKERS = 8  # parallel thumbnail fetches (each is a serial HTTP GET otherwise)
+
+# Reserved worklist subfolders the backfill flow writes into. Approved originals
+# are archived to ``published/`` and flagged ones moved to ``rejected/``; both are
+# excluded from the scan so handled images never re-surface as review cards.
+ARCHIVE_FOLDER = "published"
+REJECTED_FOLDER = "rejected"
+_RESERVED_SUBFOLDERS = {ARCHIVE_FOLDER, REJECTED_FOLDER}
 
 
 class DriveNotConfigured(RuntimeError):
@@ -48,6 +60,22 @@ def extract_folder_id(url: str | None) -> str | None:
         return None
     m = _FOLDER_ID_RE.search(url)
     return m.group(1) if m else None
+
+
+def parse_generated_name(name: str) -> tuple[str | None, str | None]:
+    """Split a generated filename into (productid, alpha).
+
+    Returns (None, None) for any stem that isn't a bare ``BC<digits>`` optionally
+    followed by an attached or underscore-separated alpha suffix. The alpha is
+    upper-cased. An image extension is stripped first; any other dot makes the
+    name malformed.
+    """
+    stem = _IMG_EXT_RE.sub("", (name or "").strip())
+    m = _GEN_NAME_RE.match(stem)
+    if not m:
+        return None, None
+    alpha = m.group(2)
+    return m.group(1), (alpha.upper() if alpha else None)
 
 
 @lru_cache(maxsize=1)
@@ -156,6 +184,50 @@ def download_file(file_id: str) -> bytes:
     return buf.getvalue()
 
 
+def delete_file(file_id: str) -> None:
+    """Permanently delete a Drive file. Requires ownership/organizer rights — the
+    backfill flow archives via ``move_file`` instead because its service account is
+    only an Editor. Kept as a generic helper for when ownership permits deletion."""
+    svc, _ = _clients()
+    svc.files().delete(fileId=file_id, supportsAllDrives=True).execute()
+
+
+def move_file(file_id: str, new_parent_id: str) -> None:
+    """Move a file by swapping its parent to ``new_parent_id`` (flag → rejected/)."""
+    svc, _ = _clients()
+    meta = svc.files().get(fileId=file_id, fields="parents",
+                           supportsAllDrives=True).execute()
+    old_parents = ",".join(meta.get("parents", []))
+    svc.files().update(
+        fileId=file_id, addParents=new_parent_id, removeParents=old_parents,
+        fields="id,parents", supportsAllDrives=True,
+    ).execute()
+
+
+def ensure_subfolder(parent_id: str, name: str) -> str:
+    """Return the id of the child folder ``name`` under ``parent_id``, creating it
+    if absent. Used once to resolve the root-level ``rejected/`` folder."""
+    svc, _ = _clients()
+    resp = (
+        svc.files()
+        .list(
+            q=(f"'{parent_id}' in parents and name = '{name}' and "
+               f"mimeType = '{_FOLDER_MIME}' and trashed = false"),
+            fields="files(id,name)", pageSize=1,
+            supportsAllDrives=True, includeItemsFromAllDrives=True,
+        )
+        .execute()
+    )
+    existing = resp.get("files", [])
+    if existing:
+        return existing[0]["id"]
+    created = svc.files().create(
+        body={"name": name, "mimeType": _FOLDER_MIME, "parents": [parent_id]},
+        fields="id", supportsAllDrives=True,
+    ).execute()
+    return created["id"]
+
+
 def list_folder_image_groups(folder_id: str) -> dict:
     """Return the folder's images grouped by immediate subfolder (variants).
 
@@ -207,3 +279,69 @@ def list_folder_image_groups(folder_id: str) -> dict:
             groups.append({"id": sf["id"], "name": sf.get("name", sf["id"]), "images": imgs})
 
     return {"loose": [items[f["id"]] for f in loose_files], "groups": groups}
+
+
+def _paged_files(svc, q: str, fields: str) -> list[dict]:
+    """List all files matching ``q``, following nextPageToken (bounds large folders)."""
+    out: list[dict] = []
+    token = None
+    while True:
+        resp = (
+            svc.files()
+            .list(q=q, fields=f"nextPageToken,{fields}", pageSize=_MAX_FILES,
+                  pageToken=token, orderBy="folder,name_natural",
+                  supportsAllDrives=True, includeItemsFromAllDrives=True)
+            .execute()
+        )
+        out.extend(resp.get("files", []))
+        token = resp.get("nextPageToken")
+        if not token:
+            return out
+
+
+def _scan_item(f: dict, subfolder_id: str | None, subfolder_name: str | None) -> dict:
+    productid, alpha = parse_generated_name(f.get("name", ""))
+    return {
+        "productid": productid, "alpha": alpha, "file_id": f["id"],
+        "name": f.get("name", f["id"]),
+        "subfolder_id": subfolder_id, "subfolder_name": subfolder_name,
+        "thumbnail_link": f.get("thumbnailLink"),
+    }
+
+
+def scan_folder_of_folders(root_id: str) -> list[dict]:
+    """Flat list of every generated image under ``root_id`` (loose + one level of
+    subfolders). Malformed filenames are included with ``productid=None`` so the
+    UI can surface them. No thumbnails fetched here (cheap metadata only)."""
+    svc, _ = _clients()
+    top = _paged_files(
+        svc, f"'{root_id}' in parents and trashed = false",
+        "files(id,name,mimeType,thumbnailLink)",
+    )
+    items: list[dict] = []
+    subfolders: list[dict] = []
+    for f in top:
+        if f.get("mimeType") == _FOLDER_MIME:
+            if (f.get("name") or "").strip().lower() in _RESERVED_SUBFOLDERS:
+                continue                       # published/ + rejected/ are not worklist
+            subfolders.append(f)
+        elif (f.get("mimeType") or "").startswith("image/"):
+            items.append(_scan_item(f, None, None))
+    for sf in subfolders:
+        sub = _paged_files(
+            svc, f"'{sf['id']}' in parents and mimeType contains 'image/' and trashed = false",
+            "files(id,name,mimeType,thumbnailLink)",
+        )
+        for f in sub:
+            items.append(_scan_item(f, sf["id"], sf.get("name", sf["id"])))
+    return items
+
+
+def thumbnails_for(items: list[dict]) -> dict[str, str]:
+    """Return ``{file_id: data_uri}`` for a page of scan items, fetched in parallel."""
+    if not items:
+        return {}
+    _, session = _clients()
+    files = [{"id": i["file_id"], "thumbnailLink": i.get("thumbnail_link")} for i in items]
+    got = _attach_thumbnails(session, files)
+    return {fid: v["thumbnail_url"] for fid, v in got.items()}

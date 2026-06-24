@@ -111,6 +111,14 @@ class Settings:
         return _get("GOOGLE_DRIVE_SA_JSON")
 
     @property
+    def generated_mockups_folder_id(self) -> str:
+        """Drive folder-of-folders holding previously-generated mockups to backfill."""
+        return _get(
+            "GENERATED_MOCKUPS_FOLDER_ID",
+            default="1FBDw_F40zDt4zvp6el3Ei50Nw8cOahm4",
+        )  # type: ignore[return-value]
+
+    @property
     def supabase_project_id(self) -> str | None:
         return _get("SUPABASE_PROJECT_ID")
 

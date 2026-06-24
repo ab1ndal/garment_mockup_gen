@@ -4,6 +4,7 @@ import { supabase } from "./supabaseClient";
 import { getMe, getCategories, type Me } from "./api";
 import ProductsTab from "./components/ProductsTab";
 import PromptsTab from "./components/PromptsTab";
+import BackfillTab from "./components/BackfillTab";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -98,6 +99,7 @@ export default function App() {
 const TABS = [
   { id: "products", label: "Products" },
   { id: "prompts", label: "Prompts" },
+  { id: "backfill", label: "Backfill" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -132,7 +134,9 @@ function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         ))}
       </nav>
 
-      <div role="tabpanel">{tab === "products" ? <ProductsTab /> : <PromptsTab />}</div>
+      <div role="tabpanel">
+        {tab === "products" ? <ProductsTab /> : tab === "prompts" ? <PromptsTab /> : <BackfillTab />}
+      </div>
     </div>
   );
 }

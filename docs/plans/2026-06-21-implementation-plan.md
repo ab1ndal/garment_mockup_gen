@@ -84,7 +84,7 @@ Each phase ships independently and leaves the repo working.
 - [x] On-demand button that turns a freeform instruction into a full Gemini-optimized image or video prompt (only when the user asks). Stateless `POST /api/prompts/refine` + shared `RefineButton`; advanced `GEMINI_TEXT_MODEL`; fill-only, no auto-save.
 
 ## Phase 7 — Backfill
-- [ ] Backfill `mockups`/variations from the existing generated Drive folder (idempotent ingest into DB + Supabase Storage).
+- [x] Backfill `mockups`/variations from the existing generated Drive folder. Shipped as an interactive **Backfill review tab**: backend scans the generated folder-of-folders into a cached in-memory index, serves paginated review cards; a reviewer assigns color/theme/aspect, then Approve publishes via the shared `publish_image` path (Supabase + archive the Drive original to `published/`) or Flag sets `base_mockup=false` and moves the original to `rejected/`. The service account is an Editor (not owner) of the generated folder, so it moves rather than deletes; both `published/` and `rejected/` are excluded from the scan, so handled images never re-surface. **Plan:** `docs/superpowers/plans/2026-06-24-phase7-backfill-review.md`.
 - [ ] (Deferred) Integration tests against a Supabase branch; mocked Drive/storage.
 
 ---
