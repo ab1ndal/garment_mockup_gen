@@ -54,3 +54,19 @@ def test_update_default_clears_siblings():
     assert len(updates) == 2
     assert updates[0][1] == {"is_default": False}  # sibling clear
     assert updates[1][1].get("is_default") is True  # main payload
+
+
+def test_seed_inserts_all_categories_when_table_empty():
+    from mockup_generator.prompts.defaults import CATEGORY_PROMPTS
+    c = FakeClient([])                       # every existence-check select returns no rows
+    inserted = prompts_repo.seed_defaults(c)
+    assert inserted == len(CATEGORY_PROMPTS)  # 30
+    seeded_ids = {s[1]["categoryid"] for s in c.sink if s[0] == "insert"}
+    assert {"ST", "RMS", "SW", "DPT", "SHR"} <= seeded_ids   # new Phase 5 ids inserted
+
+
+def test_seed_is_idempotent_when_rows_exist():
+    c = FakeClient([{"prompt_id": 1}])       # existence check always finds a Default row
+    inserted = prompts_repo.seed_defaults(c)
+    assert inserted == 0
+    assert not any(s[0] == "insert" for s in c.sink)   # nothing overwritten
