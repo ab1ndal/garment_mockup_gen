@@ -8,7 +8,9 @@ import {
 import RefineButton from "./RefineButton";
 import { ArrowUpRightIcon, CheckIcon } from "./icons";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 30;
+// Prefetch the next page when this many rows remain below the scroll position.
+const PREFETCH_REMAINING = 10;
 
 // Human labels for the resolution / aspect choices.
 const RES_LABEL: Record<string, string> = {
@@ -34,7 +36,8 @@ export default function ProductsTab() {
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const sentinelRef = useRef<HTMLLIElement | null>(null);
+  const listRef = useRef<HTMLUListElement | null>(null);
   const activeParams = useRef<Parameters<typeof listProducts>[0]>({ pending: true });
 
   useEffect(() => { getCategories().then(setCats).catch((e) => setErr(e.message)); }, []);
@@ -83,11 +86,11 @@ export default function ProductsTab() {
     if (!node || !hasMore) return;
     const io = new IntersectionObserver((entries) => {
       if (entries[0].isIntersecting) loadMore();
-    });
+    }, { root: listRef.current });
     io.observe(node);
     return () => io.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMore, loadingMore, offset]);
+  }, [hasMore, loadingMore, offset, rows.length]);
 
   // Show the category line per row only when the list spans categories.
   const showRowCategory = category === "";
@@ -138,11 +141,12 @@ export default function ProductsTab() {
           </>
         ) : rows.length > 0 ? (
           <>
-            <ul className="card max-h-[70vh] divide-y divide-line overflow-auto p-0">
-            {rows.map((p) => {
+            <ul ref={listRef} className="card max-h-[70vh] divide-y divide-line overflow-auto p-0">
+            {rows.map((p, i) => {
               const isSel = selected?.productid === p.productid;
+              const isPrefetchRow = hasMore && i === Math.max(0, rows.length - PREFETCH_REMAINING);
               return (
-                <li key={p.productid}>
+                <li key={p.productid} ref={isPrefetchRow ? sentinelRef : undefined}>
                   <button
                     type="button"
                     onClick={() => setSelected(p)}
@@ -166,12 +170,11 @@ export default function ProductsTab() {
               );
             })}
             </ul>
-            {hasMore && <div ref={sentinelRef} aria-hidden style={{ height: 1 }} />}
             {loadingMore && (
-              <>
-                <span className="sr-only" role="status">Loading more products…</span>
-                <ProductListSkeleton rows={3} />
-              </>
+              <div className="flex items-center justify-center gap-2 py-3 text-sm text-subtle" role="status">
+                <span className="spinner" aria-hidden />
+                <span>Loading more…</span>
+              </div>
             )}
           </>
         ) : (
