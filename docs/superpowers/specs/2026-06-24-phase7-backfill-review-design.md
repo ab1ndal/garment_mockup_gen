@@ -16,9 +16,11 @@ so the generated folder is itself the worklist and shrinks toward empty.
 
 We have ~1,000–2,000 already-generated base mockups sitting in a Google Drive
 folder (`1FBDw_F40zDt4zvp6el3Ei50Nw8cOahm4`), organized **folder-of-folders**
-(one subfolder per grouping). Filenames are `<productid>.png` or
-`<productid>_<alpha>.png`, where the alpha suffix marks additional variants under
-the same product (a variant is, for the most part, a **color**).
+(one subfolder per grouping). Filenames take three forms — `<productid>.png`,
+`<productid><alpha>.png`, and `<productid>_<alpha>.png` (e.g. `BC25123.png`,
+`BC25123A.png`, `BC25123_A.png`) — where the alpha suffix (attached or
+underscore-separated) marks additional variants under the same product (a variant
+is, for the most part, a **color**).
 
 None of these are in the app's database or Supabase Storage yet. This tab lets a
 reviewer:
@@ -88,9 +90,13 @@ page-flip, rate-limit risk.)
   `{productid, alpha, file_id, name, subfolder_id, subfolder_name}`. Raise the
   `_MAX_SUBFOLDERS` cap / paginate `files().list` so ~2k images across many
   subfolders are fully covered. No thumbnails fetched here (cheap metadata only).
-- `parse_generated_name(name) -> (productid, alpha|None)` — strip extension, split
-  the stem on the **first** `_`: part before is `productid`, part after is `alpha`
-  (productids contain no `_`). `<productid>.png` → `(productid, None)`.
+- `parse_generated_name(name) -> (productid, alpha|None)` — strip the extension and
+  match the stem against `^(BC\d+)_?([A-Za-z]+)?$`: group 1 is the `productid`
+  (`BC` + digits; the greedy `\d+` stops at the first letter), group 2 is the
+  optional `alpha` suffix (attached or underscore-separated), upper-cased. Handles
+  `BC25123` → `(BC25123, None)`, and `BC25123A` / `BC25123_A` → `(BC25123, "A")`. A
+  non-matching name yields `(None, None)` and the item is flagged malformed
+  (treated like `unknown_product`).
 - `delete_file(file_id)` — `files().delete(supportsAllDrives=True)`. Used by approve.
 - `move_file(file_id, new_parent_id)` — `files().update(addParents=new, removeParents=old, supportsAllDrives=True)`; fetch current parents first. Used by flag.
 - `ensure_subfolder(parent_id, name) -> str` — find a child folder named `name`
@@ -206,8 +212,9 @@ states, hover-vs-tap, contrast).
 ## 6. Testing
 
 - **Unit**
-  - `parse_generated_name` — `BC25123.png`, `BC25123_a.png`, no-extension, names
-    with extra dots, productid-only.
+  - `parse_generated_name` — `BC25123.png`, `BC25123A.png`, `BC25123_A.png`
+    (attached vs underscore alpha), lowercase alpha, names with extra dots,
+    malformed/non-`BC` names → `(None, None)`.
   - `drive_client` — `delete_file`, `move_file`, `ensure_subfolder` (get vs
     create), `scan_folder_of_folders` flattening — all against a mocked Drive
     service.
