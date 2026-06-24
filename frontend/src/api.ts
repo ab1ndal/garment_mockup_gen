@@ -334,3 +334,58 @@ export async function getVideoResult(jobId: string): Promise<Blob | VideoJob> {
   if (ct.includes("application/json")) return (await res.json()) as VideoJob;
   return res.blob();
 }
+
+export interface BackfillItem {
+  productid: string | null;
+  product_name: string | null;
+  alpha: string | null;
+  file_id: string;
+  filename: string;
+  thumbnail_url: string | null;
+  colors: string[];
+  unknown_product: boolean;
+}
+
+export interface BackfillItems {
+  total: number;
+  remaining: number;
+  items: BackfillItem[];
+}
+
+export interface BackfillSources {
+  originals: ProductImages;
+  generated_preview: string;
+  suggested_aspect: string;
+}
+
+export function listBackfill(p: { offset?: number; limit?: number; refresh?: boolean }) {
+  const q = new URLSearchParams();
+  if (p.offset != null) q.set("offset", String(p.offset));
+  if (p.limit != null) q.set("limit", String(p.limit));
+  if (p.refresh) q.set("refresh", "true");
+  return apiFetch<BackfillItems>(`/api/backfill/items?${q.toString()}`);
+}
+
+export const getBackfillSources = (fileId: string, productid: string | null) =>
+  apiFetch<BackfillSources>(
+    `/api/backfill/${encodeURIComponent(fileId)}/sources` +
+      (productid ? `?productid=${encodeURIComponent(productid)}` : "")
+  );
+
+export const approveBackfill = (b: {
+  file_id: string;
+  productid: string;
+  color?: string;
+  theme_name?: string;
+  aspect_ratio?: string;
+}) =>
+  apiFetch<{ status: string; image_url: string; variation_id?: number; warning?: string | null }>(
+    "/api/backfill/approve",
+    { method: "POST", body: JSON.stringify(b) }
+  );
+
+export const flagBackfill = (b: { file_id: string; productid: string | null }) =>
+  apiFetch<{ status: string }>("/api/backfill/flag", {
+    method: "POST",
+    body: JSON.stringify(b),
+  });
