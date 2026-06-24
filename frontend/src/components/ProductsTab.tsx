@@ -137,13 +137,23 @@ export default function ProductsTab() {
   );
 }
 
+type Variation = {
+  b64: string;
+  promptUsed: string;     // full prompt sent (base + folded feedback)
+  feedback: string;       // note that produced this variation ("" for the first)
+  mode: "fresh" | "refine";
+};
+
 function GenerationStage({ product }: { product: Product }) {
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [promptText, setPromptText] = useState("");
   const [videoPrompt, setVideoPrompt] = useState("");
   const [busy, setBusy] = useState<null | "image" | "video">(null);
   const [msg, setMsg] = useState<{ kind: "info" | "error"; text: string } | null>(null);
-  const [previewB64, setPreviewB64] = useState<string | null>(null);
+  const [variations, setVariations] = useState<Variation[]>([]);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [feedback, setFeedback] = useState("");
+  const active = variations[activeIdx] ?? null;
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [colors, setColors] = useState<string[]>([]);
@@ -202,7 +212,7 @@ function GenerationStage({ product }: { product: Product }) {
   useEffect(() => {
     setImgState("loading"); setImgErr(null);
     setImgs({ loose: [], groups: [] }); setPicked(new Set());
-    setPreviewB64(null); setPublishedUrl(null);
+    setVariations([]); setActiveIdx(0); setFeedback(""); setPublishedUrl(null);
     listProductImages(product.productid)
       .then((r) => { setImgs(r); setImgState("ready"); })
       .catch((e: Error) => { setImgErr(e.message.replace(/^\d+:\s*/, "")); setImgState("error"); });
@@ -222,19 +232,33 @@ function GenerationStage({ product }: { product: Product }) {
       return next;
     });
 
+  const composePrompt = () =>
+    feedback.trim() ? `${promptText}\n\nRevision note: ${feedback.trim()}` : promptText;
+
+  const pushVariation = (b64: string, promptUsed: string, mode: "fresh" | "refine", note: string) => {
+    setVariations((prev) => {
+      const next = [...prev, { b64, promptUsed, feedback: note, mode }];
+      setActiveIdx(next.length - 1);
+      return next;
+    });
+    setFeedback("");
+  };
+
   const run = (kind: "image" | "video") => {
     setBusy(kind);
     setMsg(null);
     const image_ids = [...picked];
     if (kind === "image") {
-      setPreviewB64(null); setPublishedUrl(null);
+      setPublishedUrl(null);
+      const promptUsed = composePrompt();
+      const note = feedback.trim();
       generateImage({
-        productid: product.productid, prompt: promptText, image_ids,
+        productid: product.productid, prompt: promptUsed, image_ids,
         color: color || undefined,
         model: model || undefined, resolution: resolution || undefined,
         aspect_ratio: aspect || undefined,
       })
-        .then((r) => { setMsg({ kind: "info", text: r.detail }); setPreviewB64(r.image_b64); })
+        .then((r) => { setMsg({ kind: "info", text: r.detail }); pushVariation(r.image_b64, promptUsed, "fresh", note); })
         .catch((e: Error) => setMsg({ kind: "error", text: e.message.replace(/^\d+:\s*/, "") }))
         .finally(() => setBusy(null));
     } else {
@@ -279,6 +303,25 @@ function GenerationStage({ product }: { product: Product }) {
     }
   };
 
+  const regenerate = (refine: boolean) => {
+    if (refine && !active) return;
+    setBusy("image");
+    setMsg(null);
+    setPublishedUrl(null);
+    const promptUsed = composePrompt();
+    const note = feedback.trim();
+    generateImage({
+      productid: product.productid, prompt: promptUsed, image_ids: [...picked],
+      color: color || undefined,
+      model: model || undefined, resolution: resolution || undefined,
+      aspect_ratio: aspect || undefined,
+      refine_image_b64: refine && active ? active.b64 : undefined,
+    })
+      .then((r) => { setMsg({ kind: "info", text: r.detail }); pushVariation(r.image_b64, promptUsed, refine ? "refine" : "fresh", note); })
+      .catch((e: Error) => setMsg({ kind: "error", text: e.message.replace(/^\d+:\s*/, "") }))
+      .finally(() => setBusy(null));
+  };
+
   const publish = (blob: Blob, src: "generated" | "corrected") => {
     setPublishing(true);
     setMsg(null);
@@ -295,15 +338,15 @@ function GenerationStage({ product }: { product: Product }) {
   };
 
   const approveGenerated = async () => {
-    if (!previewB64) return;
-    const blob = await (await fetch(`data:image/png;base64,${previewB64}`)).blob();
+    if (!active) return;
+    const blob = await (await fetch(`data:image/png;base64,${active.b64}`)).blob();
     publish(blob, "generated");
   };
 
   const downloadPreview = () => {
-    if (!previewB64) return;
+    if (!active) return;
     const a = document.createElement("a");
-    a.href = `data:image/png;base64,${previewB64}`;
+    a.href = `data:image/png;base64,${active.b64}`;
     a.download = `${product.productid}_${color ? color.replace(/\s+/g, "-") : "mockup"}.png`;
     a.click();
   };
@@ -451,34 +494,109 @@ function GenerationStage({ product }: { product: Product }) {
         </p>
       )}
 
-      {/* Preview — review before publishing */}
-      {previewB64 && (
+      {/* Review & iterate — in-session variation history */}
+      {active && (
         <section className="mt-5">
-          <p className="section-label mt-0!">Preview — review before publishing</p>
-          <img
-            src={`data:image/png;base64,${previewB64}`}
-            alt="Generated preview"
-            className="mt-2 w-full rounded-lg border border-line"
-          />
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button className="btn-primary" onClick={approveGenerated} disabled={publishing}>
-              {publishing && <span className="spinner" aria-hidden />}
-              {publishing ? "Publishing…" : "Approve & publish"}
-            </button>
-            <button onClick={() => { setPreviewB64(null); setMsg(null); }} disabled={publishing}>
-              Disapprove
-            </button>
-            <button onClick={downloadPreview} disabled={publishing}>Download</button>
-            <label className="btn cursor-pointer">
-              Upload corrected
-              <input type="file" accept="image/*" className="hidden" onChange={onCorrectedFile} />
-            </label>
-          </div>
-          {publishedUrl && (
-            <p className="alert alert-info mt-3" role="status">
-              Published: <a href={publishedUrl} target="_blank" rel="noreferrer">{publishedUrl}</a>
+          <div className="flex items-center justify-between">
+            <p className="section-label mt-0!">
+              Review · <span className="tabular-nums">{activeIdx + 1} of {variations.length}</span>
             </p>
+            <span className={`pill ${active.mode === "refine" ? "pill-done" : "pill-pending"}`}>
+              {active.mode === "refine" ? "refined" : "fresh"}
+            </span>
+          </div>
+
+          {/* Side-by-side: picked sources vs the active variation */}
+          <div className="mt-2 grid gap-4 sm:grid-cols-[160px_1fr]">
+            <div className="flex flex-row gap-2 overflow-x-auto sm:flex-col">
+              {[...imgs.loose, ...imgs.groups.flatMap((g) => g.images)]
+                .filter((im) => picked.has(im.id))
+                .map((im) => (
+                  <img key={im.id} src={im.thumbnail_url} alt={`Source ${im.name}`}
+                       className="h-16 w-16 shrink-0 rounded-md border border-line object-cover sm:h-auto sm:w-full" />
+                ))}
+            </div>
+            <img
+              src={`data:image/png;base64,${active.b64}`}
+              alt={`Variation ${activeIdx + 1}`}
+              className="max-w-full rounded-lg border border-line"
+            />
+          </div>
+
+          {/* History filmstrip */}
+          {variations.length > 1 && (
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+              {variations.map((v, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setActiveIdx(i)}
+                  aria-pressed={i === activeIdx}
+                  aria-label={`View variation ${i + 1}${v.feedback ? ` — note: ${v.feedback}` : ""}`}
+                  title={v.feedback || (v.mode === "refine" ? "refined" : "fresh")}
+                  className={`relative aspect-square h-16 w-16 shrink-0 overflow-hidden rounded-md! p-0! transition
+                    ${i === activeIdx ? "border-accent! ring-2 ring-accent/30" : "border-line! hover:border-line-strong!"}`}
+                >
+                  <img src={`data:image/png;base64,${v.b64}`} alt={`Variation ${i + 1}`}
+                       className="h-full w-full object-cover" />
+                  <span className="absolute bottom-0.5 right-0.5 rounded bg-black/60 px-1 text-[10px] font-bold text-white">
+                    {i + 1}
+                  </span>
+                </button>
+              ))}
+            </div>
           )}
+
+          {/* Feedback + regenerate */}
+          <div className="field mt-4">
+            <label htmlFor="fb">Feedback for next version</label>
+            <textarea id="fb" value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={3}
+                      placeholder="e.g. make the sleeves longer, warmer background…" />
+            <p className="mt-1 text-xs text-subtle">Leave empty to regenerate unchanged.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn" onClick={() => regenerate(true)}
+                    disabled={busy !== null || publishing || !active}>
+              {busy === "image" && <span className="spinner" aria-hidden />} Refine this
+            </button>
+            <button className="btn" onClick={() => regenerate(false)}
+                    disabled={busy !== null || publishing || pickedCount === 0}>
+              Try again
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-subtle">
+            <strong>Refine this</strong> edits the current image; <strong>Try again</strong> regenerates from the source images.
+          </p>
+
+          {/* Loading skeleton while a regenerate is in flight */}
+          {busy === "image" && (
+            <div className="mt-3 aspect-square w-full max-w-md animate-pulse rounded-lg bg-surface-2" aria-hidden />
+          )}
+
+          {/* Publish — the single primary action */}
+          <div className="mt-5 border-t border-line pt-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <button className="btn-primary" onClick={approveGenerated} disabled={publishing || busy !== null}>
+                {publishing && <span className="spinner" aria-hidden />}
+                {publishing ? "Publishing…" : "Approve & publish"}
+              </button>
+              <button className="btn" onClick={downloadPreview} disabled={publishing || busy !== null}>Download</button>
+              <label className="btn cursor-pointer">
+                Upload corrected
+                <input type="file" accept="image/*" className="hidden" onChange={onCorrectedFile} />
+              </label>
+              <button className="ml-auto text-sm text-subtle hover:text-ink"
+                      onClick={() => { setVariations([]); setActiveIdx(0); setFeedback(""); setMsg(null); }}
+                      disabled={publishing || busy !== null}>
+                Start over
+              </button>
+            </div>
+            {publishedUrl && (
+              <p className="alert alert-info mt-3" role="status">
+                Published: <a href={publishedUrl} target="_blank" rel="noreferrer">{publishedUrl}</a>
+              </p>
+            )}
+          </div>
         </section>
       )}
 

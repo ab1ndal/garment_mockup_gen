@@ -1,3 +1,4 @@
+import base64
 from io import BytesIO
 
 import pytest
@@ -140,6 +141,64 @@ def test_generate_image_rejects_bad_model(client, monkeypatch):
     r = client.post("/api/generate/image", json={
         "productid": "BC25001", "prompt": "p", "image_ids": ["f1"], "model": "gpt-image-1"})
     assert r.status_code == 400
+
+
+def _refine_b64() -> str:
+    return base64.b64encode(_png_bytes()).decode("ascii")
+
+
+def test_generate_image_refine_appends_prior_output(client, monkeypatch):
+    calls = {}
+    _wire_happy(monkeypatch, calls=calls)
+    r = client.post("/api/generate/image", json={
+        "productid": "BC25001", "prompt": "p", "image_ids": ["f1", "f2"],
+        "refine_image_b64": _refine_b64(),
+    })
+    assert r.status_code == 200
+    assert calls["downloaded"] == ["f1", "f2"]
+    # 2 downloaded sources + 1 refine reference
+    assert calls["gen"]["n_images"] == 3
+
+
+def test_generate_image_refine_only_no_sources(client, monkeypatch):
+    calls = {}
+    _wire_happy(monkeypatch, calls=calls)
+    r = client.post("/api/generate/image", json={
+        "productid": "BC25001", "prompt": "p", "image_ids": [],
+        "refine_image_b64": _refine_b64(),
+    })
+    assert r.status_code == 200
+    assert calls.get("downloaded") in (None, [])     # no Drive download needed
+    assert calls["gen"]["n_images"] == 1             # the refine image alone
+
+
+def test_generate_image_requires_source_or_refine_400(client, monkeypatch):
+    _wire_happy(monkeypatch, calls={})
+    r = client.post("/api/generate/image",
+                    json={"productid": "BC25001", "prompt": "p", "image_ids": []})
+    assert r.status_code == 400
+
+
+def test_generate_image_bad_refine_400(client, monkeypatch):
+    _wire_happy(monkeypatch, calls={})
+    r = client.post("/api/generate/image", json={
+        "productid": "BC25001", "prompt": "p", "image_ids": [],
+        "refine_image_b64": "!!!not-base64!!!",
+    })
+    assert r.status_code == 400
+
+
+def test_generate_image_refine_dropped_when_sources_at_cap(client, monkeypatch):
+    calls = {}
+    _wire_happy(monkeypatch, calls=calls)
+    many = [f"id{i}" for i in range(15)]
+    r = client.post("/api/generate/image", json={
+        "productid": "BC25001", "prompt": "p", "image_ids": many,
+        "refine_image_b64": _refine_b64(),
+    })
+    assert r.status_code == 200
+    assert len(calls["downloaded"]) == 14            # sources capped at _MAX_REFS
+    assert calls["gen"]["n_images"] == 14            # refine dropped, not 15
 
 
 def test_generation_options_lists_choices_and_defaults(client):
