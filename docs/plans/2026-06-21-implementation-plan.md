@@ -79,8 +79,9 @@ Each phase ships independently and leaves the repo working.
 - [x] Category prompts for the 19 uncovered categories with ≥10 products: 15 shared Gemini-optimized constants (based on existing prompt style + `categories.description`), wired into `CATEGORY_PROMPTS`, seeded idempotently. No schema change. (commits `c420560`, `eaf0cf9`; `tests/test_category_prompts.py`, `tests/test_prompts_repo.py`.)
 - [x] Docs: `README.md` + `.env.example` + deploy notes. (commit `84af1e7`.)
 
-## Phase 6 — Auto-refine prompt button
-- [ ] On-demand button that turns a thin/short prompt into a detailed Gemini-optimized prompt (only when the user asks).
+## Phase 6 — Auto-refine prompt button  ← ✅ DONE
+**Design:** `docs/superpowers/specs/2026-06-23-phase6-auto-refine-prompt-design.md`. **Plan:** `docs/superpowers/plans/2026-06-23-phase6-auto-refine-prompt.md`.
+- [x] On-demand button that turns a freeform instruction into a full Gemini-optimized image or video prompt (only when the user asks). Stateless `POST /api/prompts/refine` + shared `RefineButton`; advanced `GEMINI_TEXT_MODEL`; fill-only, no auto-save.
 
 ## Phase 7 — Backfill
 - [ ] Backfill `mockups`/variations from the existing generated Drive folder (idempotent ingest into DB + Supabase Storage).
