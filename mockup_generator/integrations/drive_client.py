@@ -32,7 +32,7 @@ from mockup_generator.config import settings
 #   ...open?id=<id>                  ...?id=<id>
 _FOLDER_ID_RE = re.compile(r"(?:/folders/|[?&]id=)([A-Za-z0-9_-]+)")
 
-_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+_SCOPES = ["https://www.googleapis.com/auth/drive"]  # read + write: backfill deletes/moves files
 _MAX_FILES = 100
 _MAX_SUBFOLDERS = 30  # variant subfolders scanned per product (bounds Drive list calls)
 _FOLDER_MIME = "application/vnd.google-apps.folder"
