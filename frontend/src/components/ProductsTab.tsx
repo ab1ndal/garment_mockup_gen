@@ -645,9 +645,20 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
           )}
 
           {/* Feedback + regenerate */}
-          <div className="field mt-4">
-            <label htmlFor="fb">Feedback for next version</label>
-            <textarea id="fb" value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={3}
+          <div className="mt-4">
+            <div className="flex items-center justify-between gap-3">
+              <label htmlFor="fb" className="text-xs font-semibold text-subtle">
+                Feedback for next version
+              </label>
+              <RefineButton
+                kind="image"
+                instruction={feedback}
+                categoryid={product.categoryid ?? undefined}
+                onRefined={setFeedback}
+                onError={(m) => setMsg({ kind: "error", text: m })}
+              />
+            </div>
+            <textarea id="fb" className="mt-2" value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={3}
                       placeholder="e.g. make the sleeves longer, warmer background…" />
             <p className="mt-1 text-xs text-subtle">Leave empty to regenerate unchanged.</p>
           </div>

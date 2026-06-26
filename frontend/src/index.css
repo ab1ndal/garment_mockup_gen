@@ -646,21 +646,143 @@ td.mono,
 }
 .modal {
   /* margin:auto centers when space allows, collapses to top when taller
-     than the viewport so the whole dialog stays scrollable (no clipping). */
+     than the viewport. Head/foot stay fixed; the body scrolls internally. */
   margin: auto;
   width: 100%;
   max-width: 880px;
-  padding: var(--sp-5);
+  max-height: calc(100dvh - 2 * var(--sp-5));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-md);
 }
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--border);
+}
+.modal-head h3 {
+  font-size: var(--fs-lg);
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.modal-head h3 .modal-sub {
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  padding: var(--sp-5);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  padding: var(--sp-4) var(--sp-5);
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.modal-foot-group {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
 
-/* Backfill review grid: inset card content so image/label/button
-   don't sit flush against the card border. */
+/* Icon-only button (modal close): quiet until hover, full 44px hit area. */
+.icon-btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-muted);
+}
+.icon-btn:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* Review form: color / theme / aspect on one responsive row. */
+.review-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--sp-4);
+}
+.review-fields .field select,
+.review-fields .field input {
+  min-height: 44px;
+}
+
+/* Framed image — surface-2 mat so transparent/letterboxed PNGs read cleanly. */
+.img-frame {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.img-frame img {
+  display: block;
+  width: 100%;
+}
+
+/* Backfill review grid card */
 .bf-card {
   padding: var(--sp-3);
+  transition: box-shadow 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+.bf-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-strong);
+  transform: translateY(-2px);
+}
+.bf-thumb {
+  position: relative;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  aspect-ratio: 3 / 4;
+}
+.bf-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.bf-thumb-empty {
+  display: grid;
+  place-items: center;
+  color: var(--text-subtle);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.bf-card-title {
+  font-size: var(--fs-base);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 .bf-card-actions {
   gap: var(--sp-2);
@@ -668,6 +790,11 @@ td.mono,
 .bf-card-actions > button {
   flex: 1;
   min-height: 40px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bf-card:hover {
+    transform: none;
+  }
 }
 
 /* Sub-tabs inside a panel: same look as top-level tabs, tighter top margin. */

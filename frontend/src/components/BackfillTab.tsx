@@ -22,7 +22,7 @@ const EMPTY_COPY: Record<BackfillStatus, string> = {
   regenerate: "Nothing flagged for regeneration.",
 };
 
-type Dest = "approved" | "edit" | "regenerate";
+type Dest = "approved" | "edit" | "regenerate" | "skipped" | "pending";
 
 const gridStyle: React.CSSProperties = {
   display: "grid",
@@ -227,7 +227,12 @@ export default function BackfillTab() {
       </div>
 
       {active && (
-        <ReviewPanel item={active} onClose={() => setActive(null)} onResolved={onResolved} />
+        <ReviewPanel
+          item={active}
+          status={status}
+          onClose={() => setActive(null)}
+          onResolved={onResolved}
+        />
       )}
     </div>
   );
@@ -236,21 +241,22 @@ export default function BackfillTab() {
 function Card({ item, children }: { item: BackfillItem; children: React.ReactNode }) {
   return (
     <div className="card bf-card stack-sm">
-      {item.thumbnail_url ? (
-        <img
-          src={item.thumbnail_url}
-          alt={`Generated mockup ${item.productid ?? item.filename}`}
-          loading="lazy"
-          style={{ width: "100%", borderRadius: "var(--r-md)", aspectRatio: "3 / 4", objectFit: "cover" }}
-        />
-      ) : (
-        <div className="muted" style={{ aspectRatio: "3 / 4", display: "grid", placeItems: "center" }}>
-          no preview
-        </div>
-      )}
-      <div className="toolbar" style={{ justifyContent: "space-between", alignItems: "center" }}>
-        <strong>{item.productid ?? item.filename}</strong>
-        {item.unknown_product && <span className="pill pill-pending">unknown product</span>}
+      <div className="bf-thumb">
+        {item.thumbnail_url ? (
+          <img
+            src={item.thumbnail_url}
+            alt={`Generated mockup ${item.productid ?? item.filename}`}
+            loading="lazy"
+          />
+        ) : (
+          <div className="bf-thumb-empty">no preview</div>
+        )}
+      </div>
+      <div className="toolbar" style={{ justifyContent: "space-between", alignItems: "center", gap: "var(--sp-2)" }}>
+        <strong className="bf-card-title mono" title={item.productid ?? item.filename}>
+          {item.productid ?? item.filename}
+        </strong>
+        {item.unknown_product && <span className="pill pill-pending">unknown</span>}
       </div>
       <div className="toolbar bf-card-actions">{children}</div>
     </div>
@@ -308,7 +314,7 @@ function Modal({
       }}
     >
       <div
-        className="modal stack"
+        className="modal"
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -322,9 +328,10 @@ function Modal({
 }
 
 function ReviewPanel({
-  item, onClose, onResolved,
+  item, status, onClose, onResolved,
 }: {
   item: BackfillItem;
+  status: BackfillStatus;
   onClose: () => void;
   onResolved: (fileId: string, dest: Dest) => void;
 }) {
@@ -385,88 +392,126 @@ function ReviewPanel({
       .finally(() => setBusy(false));
   };
 
+  const doSkip = () => {
+    setBusy(true);
+    setMsg(null);
+    skipBackfill({ file_id: item.file_id, productid: item.productid })
+      .then(() => onResolved(item.file_id, "skipped"))
+      .catch(onErr)
+      .finally(() => setBusy(false));
+  };
+
+  const doUnskip = () => {
+    setBusy(true);
+    setMsg(null);
+    unskipBackfill({ file_id: item.file_id, productid: item.productid })
+      .then(() => onResolved(item.file_id, "pending"))
+      .catch(onErr)
+      .finally(() => setBusy(false));
+  };
+
+  const title = item.productid ?? item.filename;
+
   return (
-    <Modal title={`Review ${item.productid ?? item.filename}`} onClose={onClose}>
-      <div className="toolbar" style={{ justifyContent: "space-between", alignItems: "center" }}>
-        <strong>{item.productid ?? item.filename}{item.product_name ? ` — ${item.product_name}` : ""}</strong>
-        <button onClick={onClose}>Close</button>
+    <Modal title={`Review ${title}`} onClose={onClose}>
+      <div className="modal-head">
+        <h3>
+          <span className="mono">{title}</span>
+          {item.product_name && <span className="modal-sub">{item.product_name}</span>}
+          {item.unknown_product && <span className="pill pill-pending">unknown</span>}
+        </h3>
+        <button className="icon-btn" onClick={onClose} aria-label="Close review">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
       </div>
 
-      <div className="split">
-        <div className="stack-sm">
-          <span className="section-label">Original images</span>
-          {!data ? (
-            <p className="muted">Loading…</p>
-          ) : (
-            <div style={gridStyle}>
-              {[...data.originals.loose, ...data.originals.groups.flatMap((g) => g.images)].map((im) => (
-                <img
-                  key={im.id}
-                  src={im.thumbnail_url}
-                  alt={im.name}
-                  loading="lazy"
-                  style={{ width: "100%", borderRadius: "var(--r-sm)" }}
-                />
-              ))}
+      <div className="modal-body">
+        <div className="split">
+          <div className="stack-sm">
+            <span className="section-label">Original images</span>
+            {!data ? (
+              <p className="muted">Loading…</p>
+            ) : (
+              <div style={gridStyle}>
+                {[...data.originals.loose, ...data.originals.groups.flatMap((g) => g.images)].map((im) => (
+                  <div key={im.id} className="img-frame">
+                    <img src={im.thumbnail_url} alt={im.name} loading="lazy" />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="stack-sm">
+            <span className="section-label">Generated</span>
+            <div className="img-frame">
+              <img
+                src={data ? data.generated_preview : item.thumbnail_url ?? ""}
+                alt={`Generated mockup ${title}`}
+              />
             </div>
-          )}
+          </div>
         </div>
-        <div className="stack-sm">
-          <span className="section-label">Generated</span>
-          <img
-            src={data ? data.generated_preview : item.thumbnail_url ?? ""}
-            alt={`Generated mockup ${item.productid ?? item.filename}`}
-            style={{ width: "100%", borderRadius: "var(--r-sm)" }}
+
+        <div className="review-fields">
+          <div className="field">
+            <label htmlFor="bf-color">Color</label>
+            <select id="bf-color" value={color} onChange={(e) => setColor(e.target.value)}>
+              <option value="">— select —</option>
+              {colors.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="bf-theme">Theme</label>
+            <input id="bf-theme" value={theme} onChange={(e) => setTheme(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="bf-aspect">Aspect</label>
+            <select id="bf-aspect" value={aspect} onChange={(e) => setAspect(e.target.value)}>
+              {ASPECTS.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="field">
+          <label htmlFor="bf-comment">Edit notes</label>
+          <textarea
+            id="bf-comment"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="What to fix… (optional)"
+            rows={2}
           />
         </div>
+
+        {item.unknown_product && (
+          <p className="alert alert-info" role="note">
+            Unknown product — approve disabled. Flag for edits moves the image to edit/ (record saved);
+            flag for regeneration moves it to rejected/.
+          </p>
+        )}
+
+        {msg && <p className="alert alert-error" role="alert">{msg}</p>}
       </div>
 
-      <div className="toolbar">
-        <div className="field">
-          <label htmlFor="bf-color">Color</label>
-          <select id="bf-color" value={color} onChange={(e) => setColor(e.target.value)}>
-            <option value="">— select —</option>
-            {colors.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+      <div className="modal-foot">
+        <div className="modal-foot-group">
+          {status === "skipped" ? (
+            <button disabled={busy} onClick={doUnskip}>Unskip</button>
+          ) : (
+            <button disabled={busy} onClick={doSkip}>Skip</button>
+          )}
         </div>
-        <div className="field">
-          <label htmlFor="bf-theme">Theme</label>
-          <input id="bf-theme" value={theme} onChange={(e) => setTheme(e.target.value)} />
-        </div>
-        <div className="field">
-          <label htmlFor="bf-aspect">Aspect</label>
-          <select id="bf-aspect" value={aspect} onChange={(e) => setAspect(e.target.value)}>
-            {ASPECTS.map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
+        <div className="modal-foot-group">
+          <button className="btn-danger" disabled={busy} onClick={doFlag}>Flag for regeneration</button>
+          <button disabled={busy} onClick={doFlagEdit}>Flag for edits</button>
+          <button className="btn-primary" disabled={busy || item.unknown_product || !color} onClick={doApprove}>
+            Approve &amp; publish
+          </button>
         </div>
       </div>
-
-      <div className="field">
-        <label htmlFor="bf-comment">Edit notes</label>
-        <textarea
-          id="bf-comment"
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          placeholder="What to fix… (optional)"
-          rows={2}
-        />
-      </div>
-
-      {msg && <p className="alert" role="alert">{msg}</p>}
-
-      <div className="toolbar">
-        <button className="btn-primary" disabled={busy || item.unknown_product || !color} onClick={doApprove}>
-          Approve &amp; publish
-        </button>
-        <button disabled={busy} onClick={doFlagEdit}>Flag for edits</button>
-        <button className="btn-danger" disabled={busy} onClick={doFlag}>Flag for regeneration</button>
-      </div>
-      {item.unknown_product && (
-        <p className="muted">
-          Unknown product — approve disabled. Flag for edits moves the image to edit/ (record saved);
-          flag for regeneration moves it to rejected/.
-        </p>
-      )}
     </Modal>
   );
 }
