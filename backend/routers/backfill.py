@@ -1,11 +1,19 @@
-"""Backfill review endpoints.
+"""Backfill review endpoints (DB-backed worklist).
 
-Walk the previously-generated Drive mockups: list paginated review cards
-(``items``), load a card's originals + preview (``sources``), then publish
-(``approve`` → Supabase + archive the Drive original), send back for
-regeneration (``flag`` → base_mockup=false + move to ``rejected/``), or send
-back for manual editing (``flag-edit`` → move to ``edit/`` + record a pending
-``backfill_edits`` row for future pickup).
+Review state lives in ``backfill_items`` (seeded once from Drive, reconciled via
+``/rescan``) — listing a page is a single indexed query, not a Drive scan. Each
+action transitions a row optimistically (``transition`` guards on the expected
+status so concurrent reviewers can't both win) and then mirrors the change into
+Drive by moving the file to the matching reserved folder:
+
+  approve     -> publish to Supabase + move original to published/
+  flag        -> base_mockup=false + move to rejected/   (regenerate)
+  flag-edit   -> move to edit/ + record a pending backfill_edits row
+  skip        -> move to skipped/ (deferred, re-reviewable)
+  unskip      -> move back to the worklist root
+
+Drive still holds the bytes: thumbnails are fetched per page and the full-res PNG
+is downloaded only when publishing.
 """
 
 from __future__ import annotations
@@ -21,20 +29,25 @@ from supabase import Client
 from backend.auth import CurrentUser, get_current_user
 from backend.deps import get_db
 from backend.schemas import (
-    BackfillApproveRequest, BackfillEditRequest, BackfillFlagRequest,
-    BackfillItem, BackfillItemsResponse,
+    BackfillApproveRequest, BackfillCountsResponse, BackfillEditRequest,
+    BackfillFlagRequest, BackfillItem, BackfillItemsResponse,
 )
 from mockup_generator.config import settings
-from mockup_generator.db import backfill_edits_repo, mockups_repo, products_repo, variants_repo
+from mockup_generator.db import (
+    backfill_edits_repo, backfill_items_repo as items_repo,
+    mockups_repo, products_repo, variants_repo,
+)
 from mockup_generator.generation import publish
 from mockup_generator.integrations import drive_client
 from mockup_generator.integrations.drive_client import DriveNotConfigured
-from mockup_generator.services import backfill_service
+from mockup_generator.services import backfill_sync
 
 router = APIRouter(prefix="/api/backfill", tags=["backfill"])
 log = logging.getLogger(__name__)
 
 _STD_ASPECTS = [("1:1", 1.0), ("4:5", 0.8), ("3:4", 0.75), ("9:16", 0.5625), ("16:9", 1.7778)]
+
+_ALREADY_HANDLED = "This mockup was already handled by another reviewer."
 
 
 def _suggest_aspect(w: int, h: int) -> str:
@@ -44,32 +57,64 @@ def _suggest_aspect(w: int, h: int) -> str:
     return min(_STD_ASPECTS, key=lambda a: abs(a[1] - ratio))[0]
 
 
-@router.get("/items", response_model=BackfillItemsResponse)
-def list_items(offset: int = 0, limit: int = 20, refresh: bool = False,
-               user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
+def _claim(db: Client, file_id: str, expect: str, to: str) -> None:
+    """Win the row ``expect -> to`` or raise 409 if another reviewer beat us to it."""
+    if not items_repo.transition(db, file_id=file_id, expect=expect, to=to):
+        raise HTTPException(status_code=409, detail=_ALREADY_HANDLED)
+
+
+def _move(file_id: str, parent_id: str, where: str) -> str | None:
+    """Mirror a transition into Drive. Returns a non-fatal warning on failure (the
+    DB row is already authoritative); raises only when Drive isn't configured."""
     try:
-        index = backfill_service.get_index(settings.generated_mockups_folder_id, refresh=refresh)
+        drive_client.move_file(file_id, parent_id)
+        return None
     except DriveNotConfigured as exc:
         raise HTTPException(status_code=503, detail="Drive access is not configured on the server") from exc
-    page = backfill_service.paginate(index, offset, limit)
-    thumbs = drive_client.thumbnails_for(page)
+    except Exception as exc:  # noqa: BLE001 - status already saved; Drive mirror is best-effort
+        log.warning("status saved but Drive move to %s failed for %s: %s", where, file_id, exc)
+        return f"Saved, but the Drive file could not be moved to {where}/ (will reconcile on rescan)."
 
-    items: list[BackfillItem] = []
-    for it in page:
-        pid = it["productid"]
-        product = products_repo.get_product(db, pid) if pid else None
-        colors = variants_repo.list_colors(db, pid) if product else []
-        items.append(BackfillItem(
-            productid=pid,
-            product_name=getattr(product, "name", None),
-            alpha=it["alpha"],
-            file_id=it["file_id"],
-            filename=it["name"],
-            thumbnail_url=thumbs.get(it["file_id"]),
-            colors=colors,
-            unknown_product=product is None,
-        ))
-    return BackfillItemsResponse(total=len(index), remaining=len(index), items=items)
+
+@router.get("/items", response_model=BackfillItemsResponse)
+def list_items(status: str = items_repo.PENDING, offset: int = 0, limit: int = 20,
+               user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
+    if status not in items_repo.TAB_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Unknown status: {status}")
+    rows, total = items_repo.page(db, status=status, offset=offset, limit=limit)
+    names = products_repo.names_for(db, [r.productid for r in rows if r.productid])
+    thumbs = drive_client.thumbnails_for(
+        [{"file_id": r.file_id, "thumbnail_link": r.thumbnail_link} for r in rows]
+    ) if rows else {}
+
+    items = [
+        BackfillItem(
+            productid=r.productid,
+            product_name=names.get(r.productid) if r.productid else None,
+            alpha=r.alpha,
+            file_id=r.file_id,
+            filename=r.filename,
+            thumbnail_url=thumbs.get(r.file_id),
+            unknown_product=not (r.productid and r.productid in names),
+        )
+        for r in rows
+    ]
+    return BackfillItemsResponse(total=total, offset=offset, limit=limit, items=items)
+
+
+@router.get("/counts", response_model=BackfillCountsResponse)
+def counts(user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
+    return BackfillCountsResponse(counts=items_repo.counts(db))
+
+
+@router.post("/rescan")
+def rescan(user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
+    """Re-sync ``backfill_items`` from Drive (the only path that scans Drive)."""
+    try:
+        written = backfill_sync.rescan(db, settings.generated_mockups_folder_id)
+    except DriveNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Drive access is not configured on the server") from exc
+    return {"status": "ok", "synced": written}
 
 
 @router.get("/{file_id}/sources")
@@ -77,6 +122,7 @@ def card_sources(file_id: str, productid: str | None = None,
                  user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
     originals = {"loose": [], "groups": []}
     product = products_repo.get_product(db, productid) if productid else None
+    colors = variants_repo.list_colors(db, productid) if product else []
     if product and getattr(product, "producturl", None):
         fid = drive_client.extract_folder_id(product.producturl)
         if fid:
@@ -100,31 +146,29 @@ def card_sources(file_id: str, productid: str | None = None,
         w, h = 1, 1
     preview = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
     return {"originals": originals, "generated_preview": preview,
-            "suggested_aspect": _suggest_aspect(w, h)}
+            "colors": colors, "suggested_aspect": _suggest_aspect(w, h)}
 
 
 @router.post("/approve")
 def approve(req: BackfillApproveRequest,
             user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
+    # Reserve the row first so a second reviewer can't also publish it.
+    _claim(db, req.file_id, items_repo.PENDING, items_repo.PUBLISHED)
     try:
         png = drive_client.download_file(req.file_id)
-    except DriveNotConfigured as exc:
-        raise HTTPException(status_code=503, detail="Drive access is not configured on the server") from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Could not load the generated image: {exc}") from exc
-
-    try:
         result = publish.publish_image(
             db, productid=req.productid, png=png, color=req.color,
             theme_name=req.theme_name, aspect_ratio=req.aspect_ratio,
             created_by=user.id, prompt_text=None,
         )
-    except Exception as exc:  # noqa: BLE001
+    except DriveNotConfigured as exc:
+        items_repo.transition(db, file_id=req.file_id, expect=items_repo.PUBLISHED, to=items_repo.PENDING)
+        raise HTTPException(status_code=503, detail="Drive access is not configured on the server") from exc
+    except Exception as exc:  # noqa: BLE001 - revert the claim so the card returns for retry
+        items_repo.transition(db, file_id=req.file_id, expect=items_repo.PUBLISHED, to=items_repo.PENDING)
         raise HTTPException(status_code=502, detail=f"Could not publish the mockup: {exc}") from exc
 
-    # Archive the original out of the worklist instead of deleting it: the service
-    # account is an Editor (not owner) of the generated folder, so it can move but
-    # cannot delete/trash files it doesn't own. published/ is excluded from the scan.
+    # Archive the original out of the worklist (SA is Editor, can move not delete).
     warning = None
     try:
         archive = drive_client.ensure_subfolder(
@@ -132,8 +176,7 @@ def approve(req: BackfillApproveRequest,
         drive_client.move_file(req.file_id, archive)
     except Exception as exc:  # noqa: BLE001 - published already; Drive archive is non-fatal
         log.warning("published %s but Drive archive failed: %s", req.file_id, exc)
-        warning = "Published, but the Drive original could not be archived (will reappear on refresh)."
-    backfill_service.evict(req.file_id)
+        warning = "Published, but the Drive original could not be archived (will reconcile on rescan)."
 
     return {"status": "ok", "image_url": result["image_url"],
             "variation_id": result["variation_id"], "warning": warning}
@@ -142,44 +185,50 @@ def approve(req: BackfillApproveRequest,
 @router.post("/flag")
 def flag(req: BackfillFlagRequest,
          user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
+    _claim(db, req.file_id, items_repo.PENDING, items_repo.REGENERATE)
     if req.productid:
         mockups_repo.set_base_mockup(db, req.productid, False)
     rejected = drive_client.ensure_subfolder(
         settings.generated_mockups_folder_id, drive_client.REJECTED_FOLDER)
-    try:
-        drive_client.move_file(req.file_id, rejected)
-    except DriveNotConfigured as exc:
-        raise HTTPException(status_code=503, detail="Drive access is not configured on the server") from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Could not move the image to rejected/: {exc}") from exc
-    backfill_service.evict(req.file_id)
-    return {"status": "ok"}
+    warning = _move(req.file_id, rejected, drive_client.REJECTED_FOLDER)
+    return {"status": "ok", "warning": warning}
 
 
 @router.post("/flag-edit")
 def flag_edit(req: BackfillEditRequest,
               user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
-    # Move first (clears the worklist), then record the pending edit. Mirrors
-    # /approve: if the record insert fails after the move, the image is already
-    # in edit/, so surface a non-fatal warning rather than failing the request.
+    _claim(db, req.file_id, items_repo.PENDING, items_repo.EDIT)
     edit = drive_client.ensure_subfolder(
         settings.generated_mockups_folder_id, drive_client.EDIT_FOLDER)
-    try:
-        drive_client.move_file(req.file_id, edit)
-    except DriveNotConfigured as exc:
-        raise HTTPException(status_code=503, detail="Drive access is not configured on the server") from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Could not move the image to edit/: {exc}") from exc
+    warning = _move(req.file_id, edit, drive_client.EDIT_FOLDER)
 
     comment = (req.comment or "").strip() or None
-    warning = None
     try:
         backfill_edits_repo.insert(
             db, file_id=req.file_id, productid=req.productid,
             comment=comment, created_by=user.id,
         )
     except Exception as exc:  # noqa: BLE001 - moved already; the record is non-fatal
-        log.warning("moved %s to edit/ but the edit record failed: %s", req.file_id, exc)
-        warning = "Moved to edit/, but the edit record could not be saved."
-    backfill_service.evict(req.file_id)
+        log.warning("flagged %s for edit but the edit record failed: %s", req.file_id, exc)
+        warning = warning or "Flagged for edit, but the edit record could not be saved."
+    return {"status": "ok", "warning": warning}
+
+
+@router.post("/skip")
+def skip(req: BackfillFlagRequest,
+         user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
+    """Defer a card to ``skipped/`` — off the worklist but re-reviewable."""
+    _claim(db, req.file_id, items_repo.PENDING, items_repo.SKIPPED)
+    skipped = drive_client.ensure_subfolder(
+        settings.generated_mockups_folder_id, drive_client.SKIPPED_FOLDER)
+    warning = _move(req.file_id, skipped, drive_client.SKIPPED_FOLDER)
+    return {"status": "ok", "warning": warning}
+
+
+@router.post("/unskip")
+def unskip(req: BackfillFlagRequest,
+           user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
+    """Undo a skip: move back to the worklist root and re-surface as pending."""
+    _claim(db, req.file_id, items_repo.SKIPPED, items_repo.PENDING)
+    warning = _move(req.file_id, settings.generated_mockups_folder_id, "the worklist")
     return {"status": "ok", "warning": warning}

@@ -126,14 +126,18 @@ class BackfillItem(BaseModel):
     file_id: str
     filename: str
     thumbnail_url: str | None
-    colors: list[str]
     unknown_product: bool
 
 
 class BackfillItemsResponse(BaseModel):
-    total: int
-    remaining: int
+    total: int            # full count for the requested status (drives the pager)
+    offset: int
+    limit: int
     items: list[BackfillItem]
+
+
+class BackfillCountsResponse(BaseModel):
+    counts: dict[str, int]   # {status: count} for each sub-tab
 
 
 class BackfillApproveRequest(BaseModel):

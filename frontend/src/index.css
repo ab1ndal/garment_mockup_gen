@@ -662,6 +662,37 @@ td.mono,
 .bf-card {
   padding: var(--sp-3);
 }
+.bf-card-actions {
+  gap: var(--sp-2);
+}
+.bf-card-actions > button {
+  flex: 1;
+  min-height: 40px;
+}
+
+/* Sub-tabs inside a panel: same look as top-level tabs, tighter top margin. */
+.subtabs {
+  margin-top: 0;
+}
+.tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: var(--sp-2);
+  padding: 0 6px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-radius: var(--r-full);
+}
+.tab[aria-selected="true"] .tab-count {
+  color: var(--accent);
+  background: var(--accent-soft, var(--surface-2));
+}
 
 @media (prefers-reduced-motion: no-preference) {
   .modal-overlay {
