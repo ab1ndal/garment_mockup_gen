@@ -6,7 +6,8 @@ import {
   type GenOptions,
 } from "../api";
 import RefineButton from "./RefineButton";
-import { ArrowUpRightIcon, CheckIcon } from "./icons";
+import { useImageLightbox } from "./Lightbox";
+import { ArrowUpRightIcon, CheckIcon, ExpandIcon } from "./icons";
 
 const PAGE_SIZE = 30;
 // Prefetch the next page when this many rows remain below the scroll position.
@@ -220,6 +221,7 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
   const [activeIdx, setActiveIdx] = useState(0);
   const [feedback, setFeedback] = useState("");
   const active = variations[activeIdx] ?? null;
+  const lightbox = useImageLightbox();
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [colors, setColors] = useState<string[]>([]);
@@ -482,14 +484,16 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
         {imgState === "ready" && totalImages > 0 && (
           <div className="flex flex-col gap-5">
             {imgs.loose.length > 0 && (
-              <ImageGrid images={imgs.loose} picked={picked} onToggle={togglePick} />
+              <ImageGrid images={imgs.loose} picked={picked} onToggle={togglePick}
+                         onEnlarge={(im) => lightbox.showDrive(im.id, im.name, im.thumbnail_url)} />
             )}
             {imgs.groups.map((g) => (
               <div key={g.id}>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-subtle">
                   {g.name} <span className="text-muted">· {g.images.length}</span>
                 </p>
-                <ImageGrid images={g.images} picked={picked} onToggle={togglePick} />
+                <ImageGrid images={g.images} picked={picked} onToggle={togglePick}
+                           onEnlarge={(im) => lightbox.showDrive(im.id, im.name, im.thumbnail_url)} />
               </div>
             ))}
           </div>
@@ -610,15 +614,30 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
               {[...imgs.loose, ...imgs.groups.flatMap((g) => g.images)]
                 .filter((im) => picked.has(im.id))
                 .map((im) => (
-                  <img key={im.id} src={im.thumbnail_url} alt={`Source ${im.name}`}
-                       className="h-16 w-16 shrink-0 rounded-md border border-line object-cover sm:h-auto sm:w-full" />
+                  <button
+                    key={im.id}
+                    type="button"
+                    onClick={() => lightbox.showDrive(im.id, im.name, im.thumbnail_url)}
+                    aria-label={`Enlarge source ${im.name}`}
+                    className="img-zoom h-16 w-16 shrink-0 overflow-hidden rounded-md! border! border-line! p-0! min-h-0! sm:h-auto sm:w-full"
+                  >
+                    <img src={im.thumbnail_url} alt={`Source ${im.name}`}
+                         className="h-full w-full object-cover sm:h-auto" />
+                  </button>
                 ))}
             </div>
-            <img
-              src={`data:image/png;base64,${active.b64}`}
-              alt={`Variation ${activeIdx + 1}`}
-              className="max-w-full rounded-lg border border-line"
-            />
+            <button
+              type="button"
+              onClick={() => lightbox.show(`data:image/png;base64,${active.b64}`, `Variation ${activeIdx + 1}`)}
+              aria-label={`Enlarge variation ${activeIdx + 1}`}
+              className="img-zoom block overflow-hidden rounded-lg! border! border-line! p-0! min-h-0!"
+            >
+              <img
+                src={`data:image/png;base64,${active.b64}`}
+                alt={`Variation ${activeIdx + 1}`}
+                className="max-w-full"
+              />
+            </button>
           </div>
 
           {/* History filmstrip */}
@@ -789,6 +808,8 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
           </p>
         )}
       </section>
+
+      {lightbox.node}
     </div>
   );
 }
@@ -819,31 +840,46 @@ function ImageGridSkeleton({ tiles = 10 }: { tiles?: number }) {
   );
 }
 
-function ImageGrid({ images, picked, onToggle }: {
-  images: ProductImage[]; picked: Set<string>; onToggle: (id: string) => void;
+function ImageGrid({ images, picked, onToggle, onEnlarge }: {
+  images: ProductImage[]; picked: Set<string>;
+  onToggle: (id: string) => void;
+  onEnlarge: (img: ProductImage) => void;
 }) {
   return (
     <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
       {images.map((img) => {
         const sel = picked.has(img.id);
         return (
-          <button
+          // Container holds two sibling buttons (tap = select, ⤢ = enlarge) so
+          // neither is nested inside the other.
+          <div
             key={img.id}
-            type="button"
-            onClick={() => onToggle(img.id)}
-            aria-pressed={sel}
-            aria-label={`${sel ? "Deselect" : "Select"} source image ${img.name}`}
-            className={`relative aspect-square min-h-0! overflow-hidden rounded-lg! p-0! transition
-              ${sel ? "border-accent! ring-2 ring-accent/30" : "border-line! hover:border-line-strong!"}`}
+            className={`relative aspect-square overflow-hidden rounded-lg border transition
+              ${sel ? "border-accent ring-2 ring-accent/30" : "border-line hover:border-line-strong"}`}
           >
             <img src={img.thumbnail_url} alt={img.name}
                  className="h-full w-full object-cover" loading="lazy" />
+            <button
+              type="button"
+              onClick={() => onToggle(img.id)}
+              aria-pressed={sel}
+              aria-label={`${sel ? "Deselect" : "Select"} source image ${img.name}`}
+              className="absolute inset-0 border-0! bg-transparent! p-0! min-h-0!"
+            />
             {sel && (
-              <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-accent text-white">
+              <span className="pointer-events-none absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-accent text-white">
                 <CheckIcon size={13} strokeWidth={2.5} />
               </span>
             )}
-          </button>
+            <button
+              type="button"
+              onClick={() => onEnlarge(img)}
+              aria-label={`Enlarge source image ${img.name}`}
+              className="enlarge-btn absolute bottom-1.5 left-1.5"
+            >
+              <ExpandIcon size={15} strokeWidth={2} />
+            </button>
+          </div>
         );
       })}
     </div>

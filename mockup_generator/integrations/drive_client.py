@@ -127,6 +127,35 @@ def _thumbnail_data_uri(session, link: str | None, file_id: str) -> str:
         return public
 
 
+def large_image_data_uri(file_id: str, size: int = 1600) -> str:
+    """Browser-renderable enlarged preview for a Drive file, as a data URI.
+
+    Used by the click-to-enlarge lightbox. Upsizes the file's ``thumbnailLink``
+    to ``=s{size}`` — Drive renders HEIC/raw to JPEG, so the result is
+    browser-safe and far lighter than streaming the original. Falls back to the
+    public thumbnail URL when the link is unavailable or the fetch fails."""
+    public = f"https://drive.google.com/thumbnail?id={file_id}&sz=w{size}"
+    svc, session = _clients()
+    try:
+        meta = svc.files().get(
+            fileId=file_id, fields="thumbnailLink", supportsAllDrives=True,
+        ).execute()
+    except Exception:
+        return public
+    link = meta.get("thumbnailLink")
+    if not link:
+        return public
+    big = re.sub(r"=s\d+", f"=s{size}", link) if "=s" in link else f"{link}=s{size}"
+    try:
+        resp = session.get(big, timeout=15)
+        resp.raise_for_status()
+        ctype = resp.headers.get("Content-Type", "image/jpeg").split(";")[0]
+        b64 = base64.b64encode(resp.content).decode("ascii")
+        return f"data:{ctype};base64,{b64}"
+    except Exception:
+        return public
+
+
 def _list_image_files(svc, folder_id: str) -> list[dict]:
     """Raw Drive file metadata for images directly in a folder (no thumbnail fetch)."""
     resp = (

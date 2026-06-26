@@ -4,6 +4,7 @@ import {
   approveBackfill, flagBackfill, flagEditBackfill, skipBackfill, unskipBackfill,
   type BackfillItem, type BackfillSources, type BackfillStatus, ApiError,
 } from "../api";
+import { useImageLightbox } from "./Lightbox";
 
 const PAGE = 20;
 const ASPECTS = ["1:1", "4:5", "3:4", "9:16", "16:9"];
@@ -42,6 +43,7 @@ export default function BackfillTab() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [rescanning, setRescanning] = useState(false);
+  const lightbox = useImageLightbox();
 
   const loadCounts = useCallback(() => {
     getBackfillCounts().then((r) => setCounts(r.counts)).catch(() => {});
@@ -185,7 +187,11 @@ export default function BackfillTab() {
           <>
             <div style={gridStyle}>
               {items.map((it) => (
-                <Card key={it.file_id} item={it}>
+                <Card
+                  key={it.file_id}
+                  item={it}
+                  onEnlarge={(x) => lightbox.showDrive(x.file_id, x.productid ?? x.filename, x.thumbnail_url ?? "")}
+                >
                   {status === "pending" && (
                     <>
                       <button className="btn-primary" onClick={() => setActive(it)}>Review</button>
@@ -234,20 +240,34 @@ export default function BackfillTab() {
           onResolved={onResolved}
         />
       )}
+
+      {lightbox.node}
     </div>
   );
 }
 
-function Card({ item, children }: { item: BackfillItem; children: React.ReactNode }) {
+function Card({ item, onEnlarge, children }: {
+  item: BackfillItem;
+  onEnlarge: (item: BackfillItem) => void;
+  children: React.ReactNode;
+}) {
+  const label = item.productid ?? item.filename;
   return (
     <div className="card bf-card stack-sm">
       <div className="bf-thumb">
         {item.thumbnail_url ? (
-          <img
-            src={item.thumbnail_url}
-            alt={`Generated mockup ${item.productid ?? item.filename}`}
-            loading="lazy"
-          />
+          <button
+            type="button"
+            className="img-zoom"
+            onClick={() => onEnlarge(item)}
+            aria-label={`Enlarge generated mockup ${label}`}
+          >
+            <img
+              src={item.thumbnail_url}
+              alt={`Generated mockup ${label}`}
+              loading="lazy"
+            />
+          </button>
         ) : (
           <div className="bf-thumb-empty">no preview</div>
         )}
@@ -343,6 +363,7 @@ function ReviewPanel({
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const lightbox = useImageLightbox();
 
   useEffect(() => {
     getBackfillSources(item.file_id, item.productid)
@@ -437,21 +458,35 @@ function ReviewPanel({
             ) : (
               <div style={gridStyle}>
                 {[...data.originals.loose, ...data.originals.groups.flatMap((g) => g.images)].map((im) => (
-                  <div key={im.id} className="img-frame">
+                  <button
+                    key={im.id}
+                    type="button"
+                    className="img-frame img-zoom"
+                    onClick={() => lightbox.showDrive(im.id, im.name, im.thumbnail_url)}
+                    aria-label={`Enlarge original ${im.name}`}
+                  >
                     <img src={im.thumbnail_url} alt={im.name} loading="lazy" />
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
           </div>
           <div className="stack-sm">
             <span className="section-label">Generated</span>
-            <div className="img-frame">
+            <button
+              type="button"
+              className="img-frame img-zoom"
+              onClick={() => {
+                const src = data ? data.generated_preview : item.thumbnail_url ?? "";
+                if (src) lightbox.show(src, `Generated mockup ${title}`);
+              }}
+              aria-label={`Enlarge generated mockup ${title}`}
+            >
               <img
                 src={data ? data.generated_preview : item.thumbnail_url ?? ""}
                 alt={`Generated mockup ${title}`}
               />
-            </div>
+            </button>
           </div>
         </div>
 
@@ -512,6 +547,8 @@ function ReviewPanel({
           </button>
         </div>
       </div>
+
+      {lightbox.node}
     </Modal>
   );
 }

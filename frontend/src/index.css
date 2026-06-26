@@ -745,6 +745,123 @@ td.mono,
   width: 100%;
 }
 
+/* Clickable image that opens the enlarge lightbox. Resets button chrome and
+   inherits any frame styling (border/radius) from a co-class like .img-frame. */
+.img-zoom {
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: zoom-in;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.img-zoom:not(.img-frame) {
+  border: 0;
+}
+.img-zoom:hover:not(:disabled) {
+  filter: brightness(1.04);
+}
+.img-zoom:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.bf-thumb .img-zoom {
+  height: 100%;
+}
+
+/* Small "enlarge" affordance pinned in a corner of a selectable thumbnail.
+   Kept visible (not hover-only) so it works on touch; brightens on hover/focus. */
+.enlarge-btn {
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 9999px;
+  color: #fff;
+  background: oklch(21.03% 0.0059 285.89 / 0.62);
+  backdrop-filter: blur(3px);
+  opacity: 0.92;
+  transition: background 150ms ease, opacity 150ms ease;
+}
+.enlarge-btn:hover,
+.enlarge-btn:focus-visible {
+  opacity: 1;
+  background: oklch(21.03% 0.0059 285.89 / 0.85);
+}
+
+/* Enlarge lightbox — layered above modals (.modal-overlay is z-index 1000). */
+.lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-5);
+  background: oklch(0% 0 0 / 0.82);
+  animation: lb-fade 150ms ease;
+}
+.lightbox-figure {
+  position: relative;
+  margin: 0;
+  display: flex;
+}
+.lightbox-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(92vw, 1400px);
+  max-height: 88dvh;
+  object-fit: contain;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+}
+.lightbox-close {
+  position: fixed;
+  top: var(--sp-4);
+  right: var(--sp-4);
+  min-width: 44px;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 9999px;
+  border: 1px solid oklch(100% 0 0 / 0.3);
+  background: oklch(0% 0 0 / 0.5);
+  color: #fff;
+}
+.lightbox-close:hover {
+  background: oklch(0% 0 0 / 0.75);
+}
+.lightbox-loading {
+  position: absolute;
+  left: 50%;
+  bottom: var(--sp-4);
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-md);
+  background: oklch(0% 0 0 / 0.6);
+  color: #fff;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+@keyframes lb-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lightbox-overlay { animation: none; }
+}
+
 /* Backfill review grid card */
 .bf-card {
   padding: var(--sp-3);

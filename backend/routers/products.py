@@ -76,6 +76,27 @@ def list_product_images(
     return ProductImages(**grouped)
 
 
+@router.get("/drive/image/{file_id}")
+def drive_image(
+    file_id: str,
+    size: int = Query(1600, ge=200, le=4096),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Enlarged, browser-renderable preview of a Drive file, as a data URI.
+
+    Backs the click-to-enlarge lightbox for source/original images (their grid
+    thumbnails are too small to inspect). Fetched lazily, only when an image is
+    opened.
+    """
+    try:
+        image_url = drive_client.large_image_data_uri(file_id, size=size)
+    except DriveNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Drive access is not configured on the server") from exc
+    except Exception as exc:  # Drive API / network errors
+        raise HTTPException(status_code=502, detail=f"Could not load image: {exc}") from exc
+    return {"image_url": image_url}
+
+
 @router.get("/products/{productid}/colors")
 def list_product_colors(
     productid: str,

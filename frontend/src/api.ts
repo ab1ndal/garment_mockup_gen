@@ -213,6 +213,13 @@ export const listProductImages = (id: string) =>
 export const getProductColors = (id: string) =>
   apiFetch<{ colors: string[] }>(`/api/products/${encodeURIComponent(id)}/colors`);
 
+// Enlarged, browser-renderable preview of a Drive file (data URI), for the
+// click-to-enlarge lightbox. Fetched lazily when an image is opened.
+export const getDriveImage = (fileId: string, size = 1600) =>
+  apiFetch<{ image_url: string }>(
+    `/api/drive/image/${encodeURIComponent(fileId)}?size=${size}`,
+  );
+
 export const listPrompts = (categoryid: string) =>
   apiFetch<Prompt[]>(`/api/prompts?categoryid=${encodeURIComponent(categoryid)}`);
 
