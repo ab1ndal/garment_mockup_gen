@@ -53,8 +53,8 @@ export default function BackfillTab() {
     listBackfill({ status: s, offset: off, limit: PAGE })
       .then((r) => {
         setItems(r.items);
-        setTotal(r.total);
-        setOffset(r.offset);
+        setTotal(Number.isFinite(r.total) ? r.total : 0);
+        setOffset(Number.isFinite(r.offset) ? r.offset : off);
       })
       .catch((e: ApiError) => setError(e.message))
       .finally(() => setLoading(false));
