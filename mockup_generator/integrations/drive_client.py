@@ -53,13 +53,15 @@ _FOLDER_MIME = "application/vnd.google-apps.folder"
 _THUMB_WORKERS = 8  # parallel thumbnail fetches (each is a serial HTTP GET otherwise)
 
 # Reserved worklist subfolders the backfill flow writes into. Approved originals
-# are archived to ``published/``, flagged ones moved to ``rejected/``, and ones
-# sent back for manual editing moved to ``edit/``; all are excluded from the scan
-# so handled images never re-surface as review cards.
+# are archived to ``published/``, flagged ones moved to ``rejected/``, ones sent
+# back for manual editing moved to ``edit/``, and ones deferred for later review
+# moved to ``skipped/``; all are excluded from the scan so handled images never
+# re-surface as review cards. The sub-tabs read these folders back directly.
 ARCHIVE_FOLDER = "published"
 REJECTED_FOLDER = "rejected"
 EDIT_FOLDER = "edit"
-_RESERVED_SUBFOLDERS = {ARCHIVE_FOLDER, REJECTED_FOLDER, EDIT_FOLDER}
+SKIPPED_FOLDER = "skipped"
+_RESERVED_SUBFOLDERS = {ARCHIVE_FOLDER, REJECTED_FOLDER, EDIT_FOLDER, SKIPPED_FOLDER}
 
 
 class DriveNotConfigured(RuntimeError):
@@ -216,9 +218,10 @@ def move_file(file_id: str, new_parent_id: str) -> None:
     ).execute()
 
 
-def ensure_subfolder(parent_id: str, name: str) -> str:
-    """Return the id of the child folder ``name`` under ``parent_id``, creating it
-    if absent. Used once to resolve the root-level ``rejected/`` folder."""
+def find_subfolder(parent_id: str, name: str) -> str | None:
+    """Return the id of the child folder ``name`` under ``parent_id``, or ``None``
+    if it doesn't exist. Read-only — does not create (used by the sub-tab listings,
+    where an absent folder simply means an empty bucket)."""
     svc, _ = _clients()
     resp = (
         svc.files()
@@ -231,13 +234,37 @@ def ensure_subfolder(parent_id: str, name: str) -> str:
         .execute()
     )
     existing = resp.get("files", [])
+    return existing[0]["id"] if existing else None
+
+
+def ensure_subfolder(parent_id: str, name: str) -> str:
+    """Return the id of the child folder ``name`` under ``parent_id``, creating it
+    if absent. Used to resolve the root-level ``rejected/``/``edit/``/``skipped/`` folders."""
+    svc, _ = _clients()
+    existing = find_subfolder(parent_id, name)
     if existing:
-        return existing[0]["id"]
+        return existing
     created = svc.files().create(
         body={"name": name, "mimeType": _FOLDER_MIME, "parents": [parent_id]},
         fields="id", supportsAllDrives=True,
     ).execute()
     return created["id"]
+
+
+def list_bucket(root_id: str, name: str) -> list[dict]:
+    """Flat scan-style list of images inside a reserved bucket subfolder
+    (``skipped``/``edit``/``rejected``) directly under ``root_id``.
+
+    Mirrors ``scan_folder_of_folders`` item shape (``productid``/``alpha`` parsed
+    from the filename, ``thumbnail_link`` for a later batched fetch) so callers
+    build review cards the same way. Empty list if the bucket folder doesn't exist
+    yet (nothing has been moved there)."""
+    folder_id = find_subfolder(root_id, name)
+    if not folder_id:
+        return []
+    svc, _ = _clients()
+    files = _list_image_files(svc, folder_id)
+    return [_scan_item(f, folder_id, name) for f in files]
 
 
 def list_folder_image_groups(folder_id: str) -> dict:

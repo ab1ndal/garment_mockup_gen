@@ -342,29 +342,41 @@ export interface BackfillItem {
   file_id: string;
   filename: string;
   thumbnail_url: string | null;
-  colors: string[];
   unknown_product: boolean;
 }
 
 export interface BackfillItems {
   total: number;
-  remaining: number;
+  offset: number;
+  limit: number;
   items: BackfillItem[];
 }
 
 export interface BackfillSources {
   originals: ProductImages;
   generated_preview: string;
+  colors: string[];
   suggested_aspect: string;
 }
 
-export function listBackfill(p: { offset?: number; limit?: number; refresh?: boolean }) {
+/** Review queues, by row status. "pending" is the main To-review tab. */
+export type BackfillStatus = "pending" | "skipped" | "edit" | "regenerate";
+
+export function listBackfill(
+  p: { status?: BackfillStatus; offset?: number; limit?: number } = {}
+) {
   const q = new URLSearchParams();
+  q.set("status", p.status ?? "pending");
   if (p.offset != null) q.set("offset", String(p.offset));
   if (p.limit != null) q.set("limit", String(p.limit));
-  if (p.refresh) q.set("refresh", "true");
   return apiFetch<BackfillItems>(`/api/backfill/items?${q.toString()}`);
 }
+
+export const getBackfillCounts = () =>
+  apiFetch<{ counts: Record<BackfillStatus, number> }>("/api/backfill/counts");
+
+export const rescanBackfill = () =>
+  apiFetch<{ status: string; synced: number }>("/api/backfill/rescan", { method: "POST" });
 
 export const getBackfillSources = (fileId: string, productid: string | null) =>
   apiFetch<BackfillSources>(
@@ -385,7 +397,19 @@ export const approveBackfill = (b: {
   );
 
 export const flagBackfill = (b: { file_id: string; productid: string | null }) =>
-  apiFetch<{ status: string }>("/api/backfill/flag", {
+  apiFetch<{ status: string; warning?: string | null }>("/api/backfill/flag", {
+    method: "POST",
+    body: JSON.stringify(b),
+  });
+
+export const skipBackfill = (b: { file_id: string; productid: string | null }) =>
+  apiFetch<{ status: string; warning?: string | null }>("/api/backfill/skip", {
+    method: "POST",
+    body: JSON.stringify(b),
+  });
+
+export const unskipBackfill = (b: { file_id: string; productid: string | null }) =>
+  apiFetch<{ status: string; warning?: string | null }>("/api/backfill/unskip", {
     method: "POST",
     body: JSON.stringify(b),
   });

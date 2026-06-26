@@ -67,6 +67,21 @@ def get_product(client: Client, productid: str) -> Product | None:
     return _row(rows[0]) if rows else None
 
 
+def names_for(client: Client, productids: list[str]) -> dict[str, str]:
+    """Return ``{productid: name}`` for the given ids in one query (skips blanks).
+
+    Used to enrich a page of backfill cards without an N+1 lookup per card.
+    """
+    pids = [p for p in dict.fromkeys(productids) if p]
+    if not pids:
+        return {}
+    resp = (
+        client.table("product_browse").select("productid, name")
+        .in_("productid", pids).execute()
+    )
+    return {r["productid"]: r["name"] for r in (resp.data or [])}
+
+
 def list_categories(client: Client) -> list[tuple[str, str]]:
     resp = client.table("categories").select("categoryid, name").order("name").execute()
     return [(r["categoryid"], r["name"]) for r in (resp.data or [])]
