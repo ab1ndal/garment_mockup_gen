@@ -39,7 +39,8 @@ def generate_mockup_bytes(
     thinking_level: str | None = None,
 ) -> bytes:
     """Generate one mockup from reference ``images`` + ``prompt`` → image bytes
-    (PNG by default, JPEG when ``output_mime_type='image/jpeg'``)."""
+    (PNG by default, JPEG when ``output_mime_type='image/jpeg'``).
+    JPEG output converts each image to RGB first, flattening any alpha channel."""
     model_name = model or settings.gemini_image_model
     parts = []
     for im in images:

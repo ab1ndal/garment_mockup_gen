@@ -459,3 +459,19 @@ def test_upload_gemini_failure_502(client, monkeypatch):
                         lambda *a, **k: (_ for _ in ()).throw(NoImageReturned("nope")))
     r = _upload(client)
     assert r.status_code == 502
+
+
+def test_upload_bad_refine_400(client, monkeypatch):
+    _wire_upload(monkeypatch, calls={})
+    r = _upload(client, fields={"refine_image_b64": "!!!not-base64!!!"}, files=[])
+    assert r.status_code == 400
+
+
+def test_upload_refine_dropped_when_files_at_cap(client, monkeypatch):
+    calls = {}
+    _wire_upload(monkeypatch, calls=calls)
+    files = [("files", (f"{i}.png", _png_bytes(), "image/png")) for i in range(14)]
+    refine = base64.b64encode(_png_bytes()).decode("ascii")
+    r = _upload(client, fields={"refine_image_b64": refine}, files=files)
+    assert r.status_code == 200
+    assert calls["gen"]["n_images"] == 14  # refine dropped — uploads already at the 14 cap
