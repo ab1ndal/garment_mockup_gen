@@ -252,11 +252,21 @@ export const refinePrompt = (
     body: JSON.stringify({ instruction, categoryid, kind }),
   });
 
+export interface ImageCaps {
+  aspect_ratios: string[];
+  image_sizes: string[];
+  mime_types: string[];
+  person_generation: string[];
+  thinking_levels: string[];
+}
+
 export interface GenOptions {
   models: string[];
   resolutions: string[];
   aspect_ratios: string[];
   defaults: { model: string; resolution: string; aspect_ratio: string };
+  image_caps: Record<string, ImageCaps>;
+  image_compression: { min: number; max: number; default: number };
   video_models: string[];
   video_resolutions: string[];
   video_aspect_ratios: string[];
@@ -290,6 +300,40 @@ export const generateImage = (b: {
     method: "POST",
     body: JSON.stringify(b),
   });
+
+export interface GenUploadPreview extends GenPreview {
+  mime_type: string;
+}
+
+/** Ad-hoc generation from uploaded files (no product, no DB write). */
+export function generateImageUpload(
+  files: File[],
+  fields: {
+    prompt: string;
+    model?: string;
+    resolution?: string;
+    aspect_ratio?: string;
+    mime_type?: string;
+    compression_quality?: number;
+    person_generation?: string;
+    thinking_level?: string;
+    refine_image_b64?: string;
+  },
+): Promise<GenUploadPreview> {
+  const fd = new FormData();
+  fd.append("prompt", fields.prompt);
+  if (fields.model) fd.append("model", fields.model);
+  if (fields.resolution) fd.append("resolution", fields.resolution);
+  if (fields.aspect_ratio) fd.append("aspect_ratio", fields.aspect_ratio);
+  if (fields.mime_type) fd.append("mime_type", fields.mime_type);
+  if (fields.compression_quality != null)
+    fd.append("compression_quality", String(fields.compression_quality));
+  if (fields.person_generation) fd.append("person_generation", fields.person_generation);
+  if (fields.thinking_level) fd.append("thinking_level", fields.thinking_level);
+  if (fields.refine_image_b64) fd.append("refine_image_b64", fields.refine_image_b64);
+  files.forEach((f) => fd.append("files", f));
+  return apiUpload<GenUploadPreview>("/api/generate/image/upload", fd);
+}
 
 export const approveMockup = (form: FormData) =>
   apiUpload<ApproveResult>("/api/generate/approve", form);
