@@ -105,6 +105,13 @@ class GeneratePreview(BaseModel):
     image_b64: str
 
 
+class GenerateUploadPreview(BaseModel):
+    status: str
+    detail: str
+    image_b64: str
+    mime_type: str
+
+
 class GenerateResponse(BaseModel):
     status: str
     detail: str

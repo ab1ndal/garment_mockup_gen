@@ -26,7 +26,8 @@ from supabase import Client
 from backend.auth import CurrentUser, get_current_user
 from backend.deps import get_db
 from backend.schemas import (
-    ApproveResponse, GeneratePreview, GenerateRequest, VideoGenerateRequest, VideoJobResponse,
+    ApproveResponse, GeneratePreview, GenerateRequest, GenerateUploadPreview,
+    VideoGenerateRequest, VideoJobResponse,
 )
 from mockup_generator.config import settings
 from mockup_generator.db import productimages_repo, products_repo
@@ -237,6 +238,82 @@ def generate_image(req: GenerateRequest, user: CurrentUser = Depends(get_current
     return GeneratePreview(
         status="ok", detail="Preview generated.",
         image_b64=base64.b64encode(png).decode("ascii"),
+    )
+
+
+@router.post("/image/upload", response_model=GenerateUploadPreview)
+async def generate_image_upload(
+    prompt: str = Form(...),
+    model: str | None = Form(None),
+    resolution: str | None = Form(None),
+    aspect_ratio: str | None = Form(None),
+    mime_type: str | None = Form(None),
+    compression_quality: int | None = Form(None),
+    person_generation: str | None = Form(None),
+    thinking_level: str | None = Form(None),
+    refine_image_b64: str | None = Form(None),
+    files: list[UploadFile] = File(default=[]),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Ad-hoc, catalog-free generation: uploaded reference images + prompt →
+    preview bytes (PNG or JPEG). Writes nothing — no productid, no DB, no Drive."""
+    model_name = model or settings.gemini_image_model
+    if model is not None and model not in ALLOWED_MODELS:
+        raise HTTPException(status_code=400, detail=f"Unsupported model: {model}")
+    caps = _caps_for(model_name)
+    if aspect_ratio and aspect_ratio not in caps["aspect_ratios"]:
+        raise HTTPException(status_code=400, detail=f"Unsupported aspect ratio for {model_name}: {aspect_ratio}")
+    if resolution and resolution not in caps["image_sizes"]:
+        raise HTTPException(status_code=400, detail=f"Unsupported image size for {model_name}: {resolution}")
+    if mime_type and mime_type not in caps["mime_types"]:
+        raise HTTPException(status_code=400, detail=f"Unsupported output format: {mime_type}")
+    if person_generation and person_generation not in caps["person_generation"]:
+        raise HTTPException(status_code=400, detail=f"Unsupported person_generation: {person_generation}")
+    if thinking_level and thinking_level not in caps["thinking_levels"]:
+        raise HTTPException(status_code=400, detail=f"thinking_level not supported for {model_name}")
+    if compression_quality is not None:
+        if mime_type != "image/jpeg":
+            raise HTTPException(status_code=400, detail="compression_quality applies only to image/jpeg.")
+        if not 1 <= compression_quality <= 100:
+            raise HTTPException(status_code=400, detail="compression_quality must be 1–100.")
+
+    # Decode the refine reference first so bad input fails fast as a 400.
+    refine_img = _decode_b64_image(refine_image_b64) if refine_image_b64 else None
+
+    images: list[Image.Image] = []
+    for f in files[:_MAX_REFS]:
+        raw = await f.read()
+        if len(raw) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="An uploaded image is too large.")
+        try:
+            images.append(Image.open(BytesIO(raw)).convert("RGB"))
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="An uploaded file is not a valid image.") from exc
+
+    if not images and refine_img is None:
+        raise HTTPException(status_code=400, detail="Select or upload at least one source image.")
+
+    # Uploads own the reference budget; the refine image is appended only if room.
+    if refine_img is not None and len(images) < _MAX_REFS:
+        images.append(refine_img)
+
+    try:
+        out = service.generate_mockup_bytes(
+            images, prompt,
+            model=model, resolution=resolution, aspect_ratio=aspect_ratio,
+            output_mime_type=mime_type, output_compression_quality=compression_quality,
+            person_generation=person_generation or None, thinking_level=thinking_level or None,
+        )
+    except service.NoImageReturned as exc:
+        raise HTTPException(status_code=502, detail="The model returned no image. Try again.") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Image generation failed: {exc}") from exc
+
+    out_fmt = (Image.open(BytesIO(out)).format or "PNG").upper()
+    out_mime = "image/jpeg" if out_fmt in ("JPEG", "JPG") else "image/png"
+    return GenerateUploadPreview(
+        status="ok", detail="Preview generated.",
+        image_b64=base64.b64encode(out).decode("ascii"), mime_type=out_mime,
     )
 
 
