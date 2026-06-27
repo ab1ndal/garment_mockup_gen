@@ -5,6 +5,7 @@ import { getMe, getCategories, type Me } from "./api";
 import ProductsTab from "./components/ProductsTab";
 import PromptsTab from "./components/PromptsTab";
 import BackfillTab from "./components/BackfillTab";
+import QuickGenerateTab from "./components/QuickGenerateTab";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -98,6 +99,7 @@ export default function App() {
 
 const TABS = [
   { id: "products", label: "Products" },
+  { id: "quickgen", label: "Quick Generate" },
   { id: "prompts", label: "Prompts" },
   { id: "backfill", label: "Backfill" },
 ] as const;
@@ -135,7 +137,15 @@ function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       </nav>
 
       <div role="tabpanel">
-        {tab === "products" ? <ProductsTab /> : tab === "prompts" ? <PromptsTab /> : <BackfillTab />}
+        {tab === "products" ? (
+          <ProductsTab />
+        ) : tab === "quickgen" ? (
+          <QuickGenerateTab />
+        ) : tab === "prompts" ? (
+          <PromptsTab />
+        ) : (
+          <BackfillTab />
+        )}
       </div>
     </div>
   );

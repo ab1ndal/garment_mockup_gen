@@ -19,7 +19,7 @@ const RES_LABEL: Record<string, string> = {
 };
 const ASPECT_LABEL: Record<string, string> = {
   "1:1": "1:1 · square", "3:4": "3:4 · portrait", "4:3": "4:3 · landscape",
-  "9:16": "9:16 · story/reel", "16:9": "16:9 · wide", "2:3": "2:3", "3:2": "3:2", "21:9": "21:9",
+  "9:16": "9:16 · story/reel", "16:9": "16:9 · wide", "2:3": "2:3", "3:2": "3:2",
 };
 const VRES_LABEL: Record<string, string> = { "720p": "720p", "1080p": "1080p · 8s only" };
 

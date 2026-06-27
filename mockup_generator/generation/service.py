@@ -33,12 +33,14 @@ def generate_mockup_bytes(
     model: str | None = None,
     resolution: str | None = None,
     aspect_ratio: str | None = None,
+    output_mime_type: str | None = None,
+    output_compression_quality: int | None = None,
+    person_generation: str | None = None,
+    thinking_level: str | None = None,
 ) -> bytes:
-    """Generate one mockup from reference ``images`` + ``prompt`` → PNG bytes.
-
-    ``images`` are thumbnailed to ``MAX_SIDE`` defensively; callers may pass
-    full-resolution PIL images straight from a Drive download.
-    """
+    """Generate one mockup from reference ``images`` + ``prompt`` → image bytes
+    (PNG by default, JPEG when ``output_mime_type='image/jpeg'``).
+    JPEG output converts each image to RGB first, flattening any alpha channel."""
     model_name = model or settings.gemini_image_model
     parts = []
     for im in images:
@@ -51,6 +53,10 @@ def generate_mockup_bytes(
         model_name, contents,
         aspect_ratio=aspect_ratio or ASPECT_RATIO,
         resolution=resolution or RESOLUTION,
+        output_mime_type=output_mime_type,
+        output_compression_quality=output_compression_quality,
+        person_generation=person_generation,
+        thinking_level=thinking_level,
     )
     data = first_image_bytes(response)
     if data is None:

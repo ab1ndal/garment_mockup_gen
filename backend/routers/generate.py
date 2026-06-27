@@ -26,7 +26,8 @@ from supabase import Client
 from backend.auth import CurrentUser, get_current_user
 from backend.deps import get_db
 from backend.schemas import (
-    ApproveResponse, GeneratePreview, GenerateRequest, VideoGenerateRequest, VideoJobResponse,
+    ApproveResponse, GeneratePreview, GenerateRequest, GenerateUploadPreview,
+    VideoGenerateRequest, VideoJobResponse,
 )
 from mockup_generator.config import settings
 from mockup_generator.db import productimages_repo, products_repo
@@ -54,8 +55,40 @@ _MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
 # Selectable image-generation options surfaced to the portal.
 ALLOWED_MODELS = ["gemini-3-pro-image", "gemini-3.1-flash-image", "gemini-2.5-flash-image"]
 ALLOWED_RESOLUTIONS = ["1K", "2K", "4K"]          # 1K and 2K cost the same → default 2K
-ALLOWED_ASPECTS = ["1:1", "3:4", "4:3", "9:16", "16:9", "2:3", "3:2", "21:9"]  # model-supported set
+
+# Gemini-3 image models support this full aspect set; 2.5-Flash a subset. 21:9 is NOT supported.
+ASPECTS_FULL = ["1:1", "16:9", "9:16", "4:3", "3:4", "5:4", "4:5",
+                "3:2", "2:3", "1:4", "4:1", "1:8", "8:1"]
+ASPECTS_25 = ["1:1", "16:9", "9:16", "4:3", "3:4", "5:4", "4:5", "3:2", "2:3"]
+PERSON_VALUES = ["DONT_ALLOW", "ALLOW_ADULT", "ALLOW_ALL"]
+MIME_TYPES = ["image/png", "image/jpeg"]
+COMPRESSION_BOUNDS = {"min": 1, "max": 100, "default": 90}
+
+# Per-model capability map. thinking_levels == [] means the control is hidden in the UI.
+IMAGE_CAPS = {
+    "gemini-3-pro-image": {
+        "aspect_ratios": ASPECTS_FULL, "image_sizes": ["1K", "2K", "4K"],
+        "mime_types": MIME_TYPES, "person_generation": PERSON_VALUES, "thinking_levels": [],
+    },
+    "gemini-3.1-flash-image": {
+        "aspect_ratios": ASPECTS_FULL, "image_sizes": ["512px", "1K", "2K", "4K"],
+        "mime_types": MIME_TYPES, "person_generation": PERSON_VALUES,
+        "thinking_levels": ["minimal", "high"],
+    },
+    "gemini-2.5-flash-image": {
+        "aspect_ratios": ASPECTS_25, "image_sizes": ["1K", "2K"],
+        "mime_types": MIME_TYPES, "person_generation": PERSON_VALUES, "thinking_levels": [],
+    },
+}
+_DEFAULT_CAPS_MODEL = "gemini-3-pro-image"
+ALLOWED_ASPECTS = ASPECTS_FULL  # legacy flat list for /image + flat /options
 _DEFAULTS = {"model": "gemini-3-pro-image", "resolution": "2K", "aspect_ratio": "1:1"}
+
+
+def _caps_for(model: str | None) -> dict:
+    """Capability set for a model, falling back to the 3-Pro set for unknowns
+    (e.g. an env-configured default not in IMAGE_CAPS)."""
+    return IMAGE_CAPS.get(model or settings.gemini_image_model, IMAGE_CAPS[_DEFAULT_CAPS_MODEL])
 
 # Selectable video-generation options. 1080p requires duration 8s (VEO constraint).
 ALLOWED_VEO_MODELS = [
@@ -141,6 +174,8 @@ def generation_options(user: CurrentUser = Depends(get_current_user)):
         "resolutions": ALLOWED_RESOLUTIONS,
         "aspect_ratios": ALLOWED_ASPECTS,
         "defaults": {**_DEFAULTS, "model": settings.gemini_image_model},
+        "image_caps": IMAGE_CAPS,
+        "image_compression": COMPRESSION_BOUNDS,
         "video_models": video_models,
         "video_resolutions": ALLOWED_VIDEO_RESOLUTIONS,
         "video_aspect_ratios": ALLOWED_VIDEO_ASPECTS,
@@ -203,6 +238,82 @@ def generate_image(req: GenerateRequest, user: CurrentUser = Depends(get_current
     return GeneratePreview(
         status="ok", detail="Preview generated.",
         image_b64=base64.b64encode(png).decode("ascii"),
+    )
+
+
+@router.post("/image/upload", response_model=GenerateUploadPreview)
+async def generate_image_upload(
+    prompt: str = Form(...),
+    model: str | None = Form(None),
+    resolution: str | None = Form(None),
+    aspect_ratio: str | None = Form(None),
+    mime_type: str | None = Form(None),
+    compression_quality: int | None = Form(None),
+    person_generation: str | None = Form(None),
+    thinking_level: str | None = Form(None),
+    refine_image_b64: str | None = Form(None),
+    files: list[UploadFile] = File(default=[]),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Ad-hoc, catalog-free generation: uploaded reference images + prompt →
+    preview bytes (PNG or JPEG). Writes nothing — no productid, no DB, no Drive."""
+    model_name = model or settings.gemini_image_model
+    if model is not None and model not in ALLOWED_MODELS:
+        raise HTTPException(status_code=400, detail=f"Unsupported model: {model}")
+    caps = _caps_for(model_name)
+    if aspect_ratio and aspect_ratio not in caps["aspect_ratios"]:
+        raise HTTPException(status_code=400, detail=f"Unsupported aspect ratio for {model_name}: {aspect_ratio}")
+    if resolution and resolution not in caps["image_sizes"]:
+        raise HTTPException(status_code=400, detail=f"Unsupported image size for {model_name}: {resolution}")
+    if mime_type and mime_type not in caps["mime_types"]:
+        raise HTTPException(status_code=400, detail=f"Unsupported output format: {mime_type}")
+    if person_generation and person_generation not in caps["person_generation"]:
+        raise HTTPException(status_code=400, detail=f"Unsupported person_generation: {person_generation}")
+    if thinking_level and thinking_level not in caps["thinking_levels"]:
+        raise HTTPException(status_code=400, detail=f"thinking_level not supported for {model_name}")
+    if compression_quality is not None:
+        if mime_type != "image/jpeg":
+            raise HTTPException(status_code=400, detail="compression_quality applies only to image/jpeg.")
+        if not 1 <= compression_quality <= 100:
+            raise HTTPException(status_code=400, detail="compression_quality must be 1–100.")
+
+    # Decode the refine reference first so bad input fails fast as a 400.
+    refine_img = _decode_b64_image(refine_image_b64) if refine_image_b64 else None
+
+    images: list[Image.Image] = []
+    for f in files[:_MAX_REFS]:
+        raw = await f.read()
+        if len(raw) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="An uploaded image is too large.")
+        try:
+            images.append(Image.open(BytesIO(raw)).convert("RGB"))
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="An uploaded file is not a valid image.") from exc
+
+    if not images and refine_img is None:
+        raise HTTPException(status_code=400, detail="Select or upload at least one source image.")
+
+    # Uploads own the reference budget; the refine image is appended only if room.
+    if refine_img is not None and len(images) < _MAX_REFS:
+        images.append(refine_img)
+
+    try:
+        out = service.generate_mockup_bytes(
+            images, prompt,
+            model=model, resolution=resolution, aspect_ratio=aspect_ratio,
+            output_mime_type=mime_type, output_compression_quality=compression_quality,
+            person_generation=person_generation or None, thinking_level=thinking_level or None,
+        )
+    except service.NoImageReturned as exc:
+        raise HTTPException(status_code=502, detail="The model returned no image. Try again.") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Image generation failed: {exc}") from exc
+
+    out_fmt = (Image.open(BytesIO(out)).format or "PNG").upper()
+    out_mime = "image/jpeg" if out_fmt in ("JPEG", "JPG") else "image/png"
+    return GenerateUploadPreview(
+        status="ok", detail="Preview generated.",
+        image_b64=base64.b64encode(out).decode("ascii"), mime_type=out_mime,
     )
 
 

@@ -164,3 +164,63 @@ def test_generate_mockup_bytes_raises_when_no_image_returned(monkeypatch):
     )
     with pytest.raises(service.NoImageReturned):
         service.generate_mockup_bytes([_png_image()], "prompt")
+
+
+def test_generate_with_retries_threads_output_options_and_thinking(monkeypatch):
+    captured = {}
+    _capture_client(monkeypatch, captured)
+
+    common.generate_with_retries(
+        "m", ["p"],
+        output_mime_type="image/jpeg", output_compression_quality=80,
+        thinking_level="high",
+    )
+
+    ic = captured["config"].image_config
+    assert ic.image_output_options is not None
+    assert ic.image_output_options.mime_type == "image/jpeg"
+    assert ic.image_output_options.compression_quality == 80
+    assert captured["config"].thinking_config is not None
+
+
+def test_generate_with_retries_omits_output_options_and_thinking_by_default(monkeypatch):
+    captured = {}
+    _capture_client(monkeypatch, captured)
+
+    common.generate_with_retries("m", ["p"])
+
+    ic = captured["config"].image_config
+    assert ic.image_output_options is None
+    assert captured["config"].thinking_config is None
+
+
+def test_first_image_bytes_preserves_jpeg():
+    from io import BytesIO as _B
+    buf = _B()
+    _png_image().save(buf, "JPEG")
+    blob = _FakeBlob(buf.getvalue(), mime_type="image/jpeg")
+    part = type("P", (), {"inline_data": blob})()
+    resp = _FakeResponse([part])
+
+    data = common.first_image_bytes(resp)
+    assert Image.open(_B(data)).format == "JPEG"
+
+
+def test_generate_mockup_bytes_threads_output_and_thinking(monkeypatch):
+    captured = {}
+
+    def fake_retries(model_name, contents, **kwargs):
+        captured["kwargs"] = kwargs
+        return _FakeResponse([_FakePart(_png_image())])
+
+    monkeypatch.setattr(service, "generate_with_retries", fake_retries)
+    service.generate_mockup_bytes(
+        [_png_image()], "p",
+        output_mime_type="image/jpeg", output_compression_quality=70,
+        person_generation="ALLOW_ADULT", thinking_level="high",
+    )
+    kw = captured["kwargs"]
+    assert kw["output_mime_type"] == "image/jpeg"
+    assert kw["output_compression_quality"] == 70
+    assert kw["person_generation"] == "ALLOW_ADULT"
+    assert kw["thinking_level"] == "high"
