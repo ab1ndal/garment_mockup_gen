@@ -1,12 +1,12 @@
 """Publish mockup images into the existing ``productimages`` table.
 
-At most one row per ``(productid, caption, phototheme)`` where ``caption`` holds
-the variant color and ``phototheme`` holds the photo-theme label (the prompt
-label, plus an aspect suffix for non-1:1). This is a *photo* theme — how the
-shot is styled/framed — not a product variant. Re-publishing the same triple
-replaces it (see ``delete_for``), so no duplicates pile up; differing
-theme/aspect coexist. ``list_for`` lets the caller find prior rows' URLs for
-Storage cleanup.
+Each approved design is *appended* as its own row: ``caption`` holds the variant
+color and ``phototheme`` holds the photo-theme label (the prompt label, plus an
+aspect suffix for non-1:1). This is a *photo* theme — how the shot is
+styled/framed — not a product variant. Multiple designs for the same
+``(productid, caption, phototheme)`` coexist; ``next_display_order`` gives the
+next append position. ``list_for`` / ``delete_for`` (NULL-aware on caption) let
+a caller query or prune rows for one product + color + photo-theme.
 
 ``caption`` is NULL-aware (color may be absent). ``phototheme`` is always
 concrete (defaults to ``"Default"``) so it filters with a plain equality.
@@ -31,6 +31,15 @@ def list_for(client: Client, productid: str, caption: str | None,
     q = client.table("productimages").select("imageid, imageurl").eq("productid", productid)
     resp = _filter(q, caption, theme).execute()
     return list(resp.data or [])
+
+
+def next_display_order(client: Client, productid: str) -> int:
+    """Count of existing images for a product = the next append position."""
+    resp = (
+        client.table("productimages").select("imageid", count="exact")
+        .eq("productid", productid).execute()
+    )
+    return resp.count or 0
 
 
 def delete_for(client: Client, productid: str, caption: str | None,

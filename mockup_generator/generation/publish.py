@@ -1,10 +1,13 @@
 """Shared publish path for approved mockups.
 
-Uploads the PNG to the public ``mockups`` bucket, replaces the single
-``productimages`` row for ``(productid, color, phototheme)`` (cleaning up the
-prior Storage object), writes a ``mockup_variations`` audit row, and flips
-``mockups.base_mockup``. Used by both ``/generate/approve`` (Phase 3) and the
-Phase 7 backfill flow — one publish path, no duplication.
+Uploads the PNG to the public ``mockups`` bucket and *appends* a new
+``productimages`` row — every approve is kept, so multiple designs for the same
+``(productid, color, phototheme)`` coexist instead of overwriting one another.
+The display order (the next append position) is baked into the Storage key, so
+each design also gets its own permanent object. Also writes a
+``mockup_variations`` audit row and flips ``mockups.base_mockup``. Used by both
+``/generate/approve`` (Phase 3) and the Phase 7 backfill flow — one publish
+path, no duplication.
 """
 
 from __future__ import annotations
@@ -29,22 +32,15 @@ def publish_image(
 ) -> dict:
     """Publish ``png`` for ``productid`` + ``color``. Returns
     ``{"image_url", "variation_id"}``."""
-    slug = storage_client.slugify(color)
-    key = f"{slug}_{storage_client.short_hex()}" if slug else storage_client.short_hex()
-    _path, public_url = storage_client.upload_mockup(productid, png, key)
-
     theme = build_photo_theme(theme_name, aspect_ratio)
 
-    # One row per (productid, color, theme): replace the prior row and clean up
-    # its orphaned Storage object (best-effort — cleanup must not fail a publish).
-    for prior in productimages_repo.list_for(db, productid, color, theme):
-        old_path = storage_client.path_from_public_url(prior.get("imageurl") or "")
-        if old_path:
-            try:
-                storage_client.delete_object(old_path)
-            except Exception:  # noqa: BLE001 - orphan cleanup is non-fatal
-                pass
-    productimages_repo.delete_for(db, productid, color, theme)
+    # Append: never overwrite a prior design. The next display order goes into
+    # the Storage key so each variant gets its own permanent object.
+    order = productimages_repo.next_display_order(db, productid)
+    slug = storage_client.slugify(color)
+    stem = "_".join(p for p in (slug, str(order)) if p)
+    key = f"{stem}_{storage_client.short_hex()}"
+    _path, public_url = storage_client.upload_mockup(productid, png, key)
 
     row = mockup_variations_repo.insert(
         db, productid=productid, prompt_text=prompt_text, image_url=public_url,
@@ -52,5 +48,5 @@ def publish_image(
     )
     mockups_repo.set_base_mockup(db, productid, True)
     productimages_repo.insert(db, productid=productid, imageurl=public_url,
-                              caption=color, theme=theme)
+                              caption=color, theme=theme, displayorder=order)
     return {"image_url": public_url, "variation_id": row.get("variation_id")}

@@ -40,6 +40,27 @@ class _InsertDb:
         return _CountQ(self._count) if self._calls == 1 else _InsertQ(self.sink)
 
 
+class _CountOnlyDb:
+    """Single table() call: a count query."""
+    def __init__(self, sink, count):
+        self.sink = sink
+        self._count = count
+
+    def table(self, name):
+        self.sink["table"] = name
+        return _CountQ(self._count)
+
+
+def test_next_display_order_returns_count():
+    sink = {}
+    assert productimages_repo.next_display_order(_CountOnlyDb(sink, count=3), "BC1") == 3
+    assert sink["table"] == "productimages"
+
+
+def test_next_display_order_zero_when_no_rows():
+    assert productimages_repo.next_display_order(_CountOnlyDb({}, count=None), "BC1") == 0
+
+
 def test_insert_computes_displayorder_from_count_and_sets_caption():
     sink = {}
     row = productimages_repo.insert(

@@ -40,14 +40,14 @@ def _wire(monkeypatch, calls):
                         lambda db, pid, value=True: calls.__setitem__("flag", (pid, value)))
     monkeypatch.setattr(gen.publish.productimages_repo, "insert",
                         lambda db, **kw: (calls.__setitem__("image", kw) or {"imageid": 1}))
-    # no-redundancy seam: prior rows (default none), delete row, delete object
-    monkeypatch.setattr(gen.publish.productimages_repo, "list_for",
-                        lambda db, pid, cap, theme="Default": calls.get("existing", []))
+    # Append model: the next display order is baked into the storage key.
+    monkeypatch.setattr(gen.publish.productimages_repo, "next_display_order",
+                        lambda db, pid: calls.get("order", 0))
+    # Replace seams must never fire — guard against regressions.
     monkeypatch.setattr(gen.publish.productimages_repo, "delete_for",
                         lambda db, pid, cap, theme="Default": calls.__setitem__("deleted_for", (pid, cap, theme)))
     monkeypatch.setattr(gen.publish.storage_client, "delete_object",
                         lambda path, **kw: calls.setdefault("removed", []).append(path))
-    # path_from_public_url is the real pure function (not mocked)
 
 
 def test_approve_generated_publishes(client, monkeypatch):
@@ -62,33 +62,35 @@ def test_approve_generated_publishes(client, monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
-    assert body["image_url"] == "https://public/BC25001/parrot-green_deadbeef.png"
+    assert body["image_url"] == "https://public/BC25001/parrot-green_0_deadbeef.png"
     assert body["variation_id"] == 42
-    assert calls["key"] == "parrot-green_deadbeef"
+    assert calls["key"] == "parrot-green_0_deadbeef"
     assert calls["variation"]["color"] == "Parrot Green"
     assert calls["variation"]["prompt_text"] == "a saree"
-    assert calls["variation"]["image_url"] == "https://public/BC25001/parrot-green_deadbeef.png"
+    assert calls["variation"]["image_url"] == "https://public/BC25001/parrot-green_0_deadbeef.png"
     assert calls["flag"] == ("BC25001", True)
-    assert calls["image"]["imageurl"] == "https://public/BC25001/parrot-green_deadbeef.png"
+    assert calls["image"]["imageurl"] == "https://public/BC25001/parrot-green_0_deadbeef.png"
     assert calls["image"]["caption"] == "Parrot Green"
     assert calls["image"]["theme"] == "Default"  # no theme/aspect sent -> Default
-    assert calls["deleted_for"] == ("BC25001", "Parrot Green", "Default")
-    assert "removed" not in calls  # no prior row -> nothing deleted from storage
+    assert calls["image"]["displayorder"] == 0
+    assert "deleted_for" not in calls  # append model -> never replace
+    assert "removed" not in calls      # no prior PNG deleted
 
 
-def test_approve_replaces_existing_row_and_deletes_old_object(client, monkeypatch):
+def test_approve_appends_keeping_prior_design(client, monkeypatch):
+    """A second design for the same color+theme is appended at the next display
+    order, with its own storage object — the prior one is untouched."""
     calls = {}
     _wire(monkeypatch, calls)
-    calls["existing"] = [{
-        "imageid": 5,
-        "imageurl": "https://proj.supabase.co/storage/v1/object/public/mockups/BC25001/old_cafef00d.png",
-    }]
+    calls["order"] = 1
     r = client.post("/api/generate/approve",
                     data={"productid": "BC25001", "color": "Red", "source": "generated"},
                     files={"image": ("m.png", _png_bytes(), "image/png")})
     assert r.status_code == 200
-    assert calls["removed"] == ["BC25001/old_cafef00d.png"]      # old object cleaned up
-    assert calls["deleted_for"] == ("BC25001", "Red", "Default")  # old row replaced
+    assert calls["key"] == "red_1_deadbeef"
+    assert calls["image"]["displayorder"] == 1
+    assert "deleted_for" not in calls  # old row kept
+    assert "removed" not in calls      # old PNG kept
 
 
 def test_approve_builds_phototheme_from_label_and_aspect(client, monkeypatch):
@@ -100,7 +102,6 @@ def test_approve_builds_phototheme_from_label_and_aspect(client, monkeypatch):
                     files={"image": ("m.png", _png_bytes(), "image/png")})
     assert r.status_code == 200
     assert calls["image"]["theme"] == "Studio·9:16"      # non-1:1 -> aspect suffix
-    assert calls["deleted_for"] == ("BC1", "Red", "Studio·9:16")
 
 
 def test_approve_theme_label_without_aspect_suffix_at_1to1(client, monkeypatch):
@@ -123,7 +124,7 @@ def test_approve_corrected_defaults_prompt_text(client, monkeypatch):
     assert r.status_code == 200
     assert calls["variation"]["prompt_text"] == "(manual upload)"
     assert calls["variation"]["color"] is None  # repo omits None from the payload
-    assert calls["key"] == "deadbeef"  # no color -> hex only
+    assert calls["key"] == "0_deadbeef"  # no color -> order + hex
 
 
 def test_approve_rejects_non_image_400(client, monkeypatch):
