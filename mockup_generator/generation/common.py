@@ -86,12 +86,8 @@ def load_images_from_folder(
 
 
 def first_image_bytes(response) -> bytes | None:
-    """Return PNG bytes of the first image part, or None if there is none.
-
-    Gemini 3 image models are *thinking* models: a response can interleave
-    ``thought`` / ``text`` parts with the image. Scan for the first part that
-    carries image ``inline_data`` rather than assuming ``parts[0]``.
-    """
+    """Return image bytes of the first image part, preserving the model's
+    format (JPEG stays JPEG, everything else normalized to PNG)."""
     for part in response.candidates[0].content.parts:
         blob = getattr(part, "inline_data", None)
         data = getattr(blob, "data", None)
@@ -100,12 +96,10 @@ def first_image_bytes(response) -> bytes | None:
         mime = getattr(blob, "mime_type", "") or ""
         if mime and not mime.startswith("image/"):
             continue
-        # Read the raw bytes through PIL. Do NOT use ``part.as_image()``: in
-        # google-genai 2.x it returns a ``types.Image`` (no ``.convert``), not
-        # a PIL image, despite its stale docstring.
         img = Image.open(BytesIO(data))
+        out_fmt = "JPEG" if (img.format or "PNG").upper() in ("JPEG", "JPG") else "PNG"
         buf = BytesIO()
-        img.convert("RGB").save(buf, format="PNG")
+        img.convert("RGB").save(buf, format=out_fmt)
         return buf.getvalue()
     return None
 
@@ -127,6 +121,9 @@ def generate_with_retries(
     resolution: str = "4K",
     person_generation: str | None = None,
     system_instruction: str | None = None,
+    output_mime_type: str | None = None,
+    output_compression_quality: int | None = None,
+    thinking_level: str | None = None,
     max_attempts: int = 5,
 ):
     """Call Gemini image generation with exponential backoff on 429/5xx.
@@ -135,10 +132,25 @@ def generate_with_retries(
     accepts it on ``ImageConfig`` client-side, but the **Gemini Developer API
     (api-key) rejects it at call time** ("only supported in Gemini Enterprise
     Agent Platform mode"). Pass it only when running against Vertex.
+
+    ``output_mime_type`` / ``output_compression_quality`` control the format
+    returned by the model (default: PNG, no quality override). Pass
+    ``output_mime_type="image/jpeg"`` to get JPEG output.
+
+    ``thinking_level`` enables extended thinking (``"low"``, ``"medium"``,
+    ``"high"``); omit for default model behaviour.
     """
     image_config = types.ImageConfig(aspect_ratio=aspect_ratio, image_size=resolution)
     if person_generation is not None:
         image_config.person_generation = person_generation
+    if output_mime_type is not None or output_compression_quality is not None:
+        image_config.image_output_options = types.ImageConfigImageOutputOptions(
+            mime_type=output_mime_type,
+            compression_quality=output_compression_quality,
+        )
+    thinking_config = (
+        types.ThinkingConfig(thinking_level=thinking_level) if thinking_level else None
+    )
     client = get_genai_client()
     if system_instruction is None:
         system_instruction = (
@@ -161,6 +173,7 @@ def generate_with_retries(
                     response_modalities=["IMAGE"],
                     safety_settings=safety_settings,
                     image_config=image_config,
+                    thinking_config=thinking_config,
                 ),
             )
         except errors.ClientError as e:
