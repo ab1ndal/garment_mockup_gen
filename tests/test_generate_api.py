@@ -132,7 +132,7 @@ def test_generate_image_rejects_bad_resolution(client, monkeypatch):
 def test_generate_image_rejects_bad_aspect(client, monkeypatch):
     _wire_happy(monkeypatch, calls={})
     r = client.post("/api/generate/image", json={
-        "productid": "BC25001", "prompt": "p", "image_ids": ["f1"], "aspect_ratio": "4:5"})
+        "productid": "BC25001", "prompt": "p", "image_ids": ["f1"], "aspect_ratio": "21:9"})
     assert r.status_code == 400
 
 
@@ -208,10 +208,18 @@ def test_generation_options_lists_choices_and_defaults(client):
     assert "gemini-3-pro-image" in body["models"]
     assert body["resolutions"] == ["1K", "2K", "4K"]
     assert "1:1" in body["aspect_ratios"] and "3:4" in body["aspect_ratios"]
-    assert "4:5" not in body["aspect_ratios"]  # not supported by the model
+    assert "4:5" in body["aspect_ratios"]       # now supported
+    assert "21:9" not in body["aspect_ratios"]  # removed — unsupported by the model
     assert body["defaults"]["resolution"] in body["resolutions"]
     assert body["defaults"]["aspect_ratio"] in body["aspect_ratios"]
-    # video options
+    # per-model capability map
+    caps = body["image_caps"]["gemini-3-pro-image"]
+    assert "4K" in caps["image_sizes"]
+    assert caps["thinking_levels"] == []
+    flash = body["image_caps"]["gemini-3.1-flash-image"]
+    assert "512px" in flash["image_sizes"] and "high" in flash["thinking_levels"]
+    assert "4K" not in body["image_caps"]["gemini-2.5-flash-image"]["image_sizes"]
+    # video options (unchanged)
     assert "veo-3.1-generate-preview" in body["video_models"]
     assert body["video_resolutions"] == ["720p", "1080p"]
     assert body["video_aspect_ratios"] == ["9:16", "16:9"]

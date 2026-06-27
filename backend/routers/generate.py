@@ -54,8 +54,40 @@ _MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
 # Selectable image-generation options surfaced to the portal.
 ALLOWED_MODELS = ["gemini-3-pro-image", "gemini-3.1-flash-image", "gemini-2.5-flash-image"]
 ALLOWED_RESOLUTIONS = ["1K", "2K", "4K"]          # 1K and 2K cost the same → default 2K
-ALLOWED_ASPECTS = ["1:1", "3:4", "4:3", "9:16", "16:9", "2:3", "3:2", "21:9"]  # model-supported set
+
+# Gemini-3 image models support this full aspect set; 2.5-Flash a subset. 21:9 is NOT supported.
+ASPECTS_FULL = ["1:1", "16:9", "9:16", "4:3", "3:4", "5:4", "4:5",
+                "3:2", "2:3", "1:4", "4:1", "1:8", "8:1"]
+ASPECTS_25 = ["1:1", "16:9", "9:16", "4:3", "3:4", "5:4", "4:5", "3:2", "2:3"]
+PERSON_VALUES = ["DONT_ALLOW", "ALLOW_ADULT", "ALLOW_ALL"]
+MIME_TYPES = ["image/png", "image/jpeg"]
+COMPRESSION_BOUNDS = {"min": 1, "max": 100, "default": 90}
+
+# Per-model capability map. thinking_levels == [] means the control is hidden in the UI.
+IMAGE_CAPS = {
+    "gemini-3-pro-image": {
+        "aspect_ratios": ASPECTS_FULL, "image_sizes": ["1K", "2K", "4K"],
+        "mime_types": MIME_TYPES, "person_generation": PERSON_VALUES, "thinking_levels": [],
+    },
+    "gemini-3.1-flash-image": {
+        "aspect_ratios": ASPECTS_FULL, "image_sizes": ["512px", "1K", "2K", "4K"],
+        "mime_types": MIME_TYPES, "person_generation": PERSON_VALUES,
+        "thinking_levels": ["minimal", "high"],
+    },
+    "gemini-2.5-flash-image": {
+        "aspect_ratios": ASPECTS_25, "image_sizes": ["1K", "2K"],
+        "mime_types": MIME_TYPES, "person_generation": PERSON_VALUES, "thinking_levels": [],
+    },
+}
+_DEFAULT_CAPS_MODEL = "gemini-3-pro-image"
+ALLOWED_ASPECTS = ASPECTS_FULL  # legacy flat list for /image + flat /options
 _DEFAULTS = {"model": "gemini-3-pro-image", "resolution": "2K", "aspect_ratio": "1:1"}
+
+
+def _caps_for(model: str | None) -> dict:
+    """Capability set for a model, falling back to the 3-Pro set for unknowns
+    (e.g. an env-configured default not in IMAGE_CAPS)."""
+    return IMAGE_CAPS.get(model or settings.gemini_image_model, IMAGE_CAPS[_DEFAULT_CAPS_MODEL])
 
 # Selectable video-generation options. 1080p requires duration 8s (VEO constraint).
 ALLOWED_VEO_MODELS = [
@@ -141,6 +173,8 @@ def generation_options(user: CurrentUser = Depends(get_current_user)):
         "resolutions": ALLOWED_RESOLUTIONS,
         "aspect_ratios": ALLOWED_ASPECTS,
         "defaults": {**_DEFAULTS, "model": settings.gemini_image_model},
+        "image_caps": IMAGE_CAPS,
+        "image_compression": COMPRESSION_BOUNDS,
         "video_models": video_models,
         "video_resolutions": ALLOWED_VIDEO_RESOLUTIONS,
         "video_aspect_ratios": ALLOWED_VIDEO_ASPECTS,
