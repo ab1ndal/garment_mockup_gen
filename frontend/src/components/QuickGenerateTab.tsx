@@ -283,7 +283,7 @@ export default function QuickGenerateTab() {
                   type="button"
                   onClick={() => setActiveIdx(i)}
                   aria-label={`View variation ${i + 1}`}
-                  aria-current={i === activeIdx}
+                  aria-pressed={i === activeIdx}
                   className={`h-16 w-16 shrink-0 overflow-hidden rounded-md border p-0 ${i === activeIdx ? "border-accent" : "border-line"}`}
                 >
                   <img src={`data:${v.mime};base64,${v.b64}`} alt={`Variation ${i + 1}`} className="h-full w-full object-cover" />
