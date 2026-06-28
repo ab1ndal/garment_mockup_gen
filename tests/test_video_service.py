@@ -52,10 +52,11 @@ class _FakeClient:
         self.files = self
 
     # models.generate_videos
-    def generate_videos(self, *, model, prompt, image, config):
+    def generate_videos(self, *, model, prompt, config, image=None, video=None):
         self._captured["model"] = model
         self._captured["prompt"] = prompt
         self._captured["image"] = image
+        self._captured["video"] = video
         self._captured["config"] = config
         return self._op
 
@@ -129,3 +130,46 @@ def test_generate_video_bytes_times_out(monkeypatch):
     _patch_client(monkeypatch, _FakeClient(op))
     with pytest.raises(video_service.VideoTimeout):
         video_service.generate_video_bytes(b"i", "p", poll_interval=1, poll_timeout=10)
+
+
+def test_generate_video_bytes_wires_last_frame_and_reference(monkeypatch):
+    captured = {}
+    op = _FakeOperation(videos=[_FakeGenerated(_FakeVideo(b"V"))], flips_after=0)
+    _patch_client(monkeypatch, _FakeClient(op, captured=captured))
+
+    video_service.generate_video_bytes(
+        b"start", "p", duration=8,
+        last_frame_bytes=b"end",
+        reference_image_bytes=[b"r1", b"r2"],
+        person_generation="allow_adult",
+        generate_audio=True,
+    )
+    cfg = captured["config"]
+    assert cfg.last_frame is not None
+    assert len(cfg.reference_images) == 2
+    assert cfg.reference_images[0].reference_type == video_service.types.VideoGenerationReferenceType.ASSET
+    assert cfg.person_generation == "allow_adult"
+    assert cfg.generate_audio is True
+    assert captured["image"] is not None
+    assert captured["video"] is None
+
+
+def test_generate_video_bytes_extension_uses_video_not_image(monkeypatch):
+    captured = {}
+    op = _FakeOperation(videos=[_FakeGenerated(_FakeVideo(b"V"))], flips_after=0)
+    _patch_client(monkeypatch, _FakeClient(op, captured=captured))
+
+    video_service.generate_video_bytes(
+        None, "extend it", resolution="720p", extend_video_bytes=b"PRIORMP4",
+    )
+    assert captured["video"] is not None
+    assert captured["image"] is None
+
+
+def test_generate_video_bytes_text_to_video_no_media(monkeypatch):
+    captured = {}
+    op = _FakeOperation(videos=[_FakeGenerated(_FakeVideo(b"V"))], flips_after=0)
+    _patch_client(monkeypatch, _FakeClient(op, captured=captured))
+
+    video_service.generate_video_bytes(None, "a model walks", aspect_ratio="9:16")
+    assert captured["image"] is None and captured["video"] is None
