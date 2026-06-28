@@ -51,6 +51,7 @@ def _decode_b64_image(b64: str) -> Image.Image:
 
 _MAX_REFS = 14
 _MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
+_MAX_VIDEO_UPLOAD_BYTES = 200 * 1024 * 1024  # 200 MB — an extension source clip
 
 # Selectable image-generation options surfaced to the portal.
 ALLOWED_MODELS = ["gemini-3-pro-image", "gemini-3.1-flash-image", "gemini-2.5-flash-image"]
@@ -99,6 +100,62 @@ ALLOWED_VIDEO_ASPECTS = ["9:16", "16:9"]
 ALLOWED_VIDEO_DURATIONS = [4, 6, 8]
 _VIDEO_DEFAULTS = {"model": "veo-3.1-generate-preview", "resolution": "720p",
                    "aspect_ratio": "9:16", "duration": 4}
+
+_VIDEO_MODES_FULL = ["text", "image", "frames", "reference", "extend"]
+_VIDEO_MODES_LITE = ["text", "image", "frames"]
+_VIDEO_PERSON_VALUES = ["allow_all", "allow_adult"]
+
+VIDEO_CAPS = {
+    "veo-3.1-generate-preview": {
+        "modes": _VIDEO_MODES_FULL, "aspect_ratios": ALLOWED_VIDEO_ASPECTS,
+        "resolutions": ALLOWED_VIDEO_RESOLUTIONS, "durations": ALLOWED_VIDEO_DURATIONS,
+        "person_generation": _VIDEO_PERSON_VALUES,
+    },
+    "veo-3.1-fast-generate-preview": {
+        "modes": _VIDEO_MODES_FULL, "aspect_ratios": ALLOWED_VIDEO_ASPECTS,
+        "resolutions": ALLOWED_VIDEO_RESOLUTIONS, "durations": ALLOWED_VIDEO_DURATIONS,
+        "person_generation": _VIDEO_PERSON_VALUES,
+    },
+    "veo-3.1-lite-generate-preview": {
+        "modes": _VIDEO_MODES_LITE, "aspect_ratios": ALLOWED_VIDEO_ASPECTS,
+        "resolutions": ALLOWED_VIDEO_RESOLUTIONS, "durations": ALLOWED_VIDEO_DURATIONS,
+        "person_generation": _VIDEO_PERSON_VALUES,
+    },
+}
+_DEFAULT_VIDEO_CAPS_MODEL = "veo-3.1-generate-preview"
+
+
+def _video_caps_for(model: str | None) -> dict:
+    return VIDEO_CAPS.get(model or settings.veo_model, VIDEO_CAPS[_DEFAULT_VIDEO_CAPS_MODEL])
+
+
+def _validate_video_params(*, model: str | None, mode: str,
+                           aspect_ratio: str | None, resolution: str | None,
+                           duration: int | None) -> None:
+    """Enforce model allow-list, per-model mode support, and VEO cross-field
+    constraints. Raises HTTPException(400) on any violation."""
+    if model is not None and model not in ALLOWED_VEO_MODELS:
+        raise HTTPException(status_code=400, detail=f"Unsupported video model: {model}")
+    caps = _video_caps_for(model)
+    if mode not in caps["modes"]:
+        raise HTTPException(status_code=400,
+                            detail=f"Mode '{mode}' is not supported by {model or settings.veo_model}.")
+    if aspect_ratio and aspect_ratio not in caps["aspect_ratios"]:
+        raise HTTPException(status_code=400, detail=f"Unsupported video aspect ratio: {aspect_ratio}")
+    if resolution and resolution not in caps["resolutions"]:
+        raise HTTPException(status_code=400, detail=f"Unsupported video resolution: {resolution}")
+    if duration is not None and duration not in caps["durations"]:
+        raise HTTPException(status_code=400, detail=f"Unsupported video duration: {duration}")
+
+    eff_resolution = resolution or _VIDEO_DEFAULTS["resolution"]
+    eff_duration = duration if duration is not None else _VIDEO_DEFAULTS["duration"]
+    if eff_resolution == "1080p" and eff_duration != 8:
+        raise HTTPException(status_code=400, detail="1080p video requires an 8-second duration.")
+    if mode in ("reference", "frames") and eff_duration != 8:
+        raise HTTPException(status_code=400,
+                            detail=f"{mode.capitalize()} mode requires an 8-second duration.")
+    if mode == "extend" and eff_resolution != "720p":
+        raise HTTPException(status_code=400, detail="Video extension is 720p only.")
 
 
 # ── In-memory video jobs ──────────────────────────────────────────────────────
@@ -159,6 +216,29 @@ def _run_video_job(job_id, image_bytes, prompt, model, aspect_ratio, resolution,
         _set_job(job_id, status="error", detail=f"Video generation failed: {exc}")
 
 
+def _run_video_upload_job(
+    job_id, prompt, model, aspect_ratio, resolution, duration,
+    negative_prompt, person_generation, generate_audio,
+    start_bytes, last_bytes, ref_bytes, ext_bytes,
+) -> None:
+    _set_job(job_id, status="running")
+    try:
+        mp4 = video_service.generate_video_bytes(
+            start_bytes, prompt, model=model, aspect_ratio=aspect_ratio,
+            resolution=resolution, duration=duration, negative_prompt=negative_prompt,
+            person_generation=person_generation, generate_audio=generate_audio,
+            last_frame_bytes=last_bytes, reference_image_bytes=ref_bytes,
+            extend_video_bytes=ext_bytes,
+        )
+        _set_job(job_id, status="done", data=mp4)
+    except video_service.VideoTimeout:
+        _set_job(job_id, status="error", detail="Video generation timed out. Try again.")
+    except video_service.NoVideoReturned:
+        _set_job(job_id, status="error", detail="The model returned no video. Try again.")
+    except Exception as exc:  # noqa: BLE001 - surface any failure to the poller
+        _set_job(job_id, status="error", detail=f"Video generation failed: {exc}")
+
+
 @router.get("/options")
 def generation_options(user: CurrentUser = Depends(get_current_user)):
     """Selectable model / quality / aspect-ratio choices + recommended defaults."""
@@ -181,6 +261,7 @@ def generation_options(user: CurrentUser = Depends(get_current_user)):
         "video_aspect_ratios": ALLOWED_VIDEO_ASPECTS,
         "video_durations": ALLOWED_VIDEO_DURATIONS,
         "video_defaults": {**_VIDEO_DEFAULTS, "model": settings.veo_model},
+        "video_caps": VIDEO_CAPS,
     }
 
 
@@ -366,17 +447,8 @@ def generate_video(req: VideoGenerateRequest, user: CurrentUser = Depends(get_cu
     """Enqueue a VEO render of an already-published Supabase mockup. Returns a
     job_id immediately; poll ``/video/{job_id}`` for the mp4. Persists nothing —
     the video lives in memory until downloaded, then is evicted."""
-    if req.model is not None and req.model not in ALLOWED_VEO_MODELS:
-        raise HTTPException(status_code=400, detail=f"Unsupported video model: {req.model}")
-    if req.resolution is not None and req.resolution not in ALLOWED_VIDEO_RESOLUTIONS:
-        raise HTTPException(status_code=400, detail=f"Unsupported video resolution: {req.resolution}")
-    if req.aspect_ratio is not None and req.aspect_ratio not in ALLOWED_VIDEO_ASPECTS:
-        raise HTTPException(status_code=400, detail=f"Unsupported video aspect ratio: {req.aspect_ratio}")
-    if req.duration is not None and req.duration not in ALLOWED_VIDEO_DURATIONS:
-        raise HTTPException(status_code=400, detail=f"Unsupported video duration: {req.duration}")
-    # VEO: 1080p only renders at 8s.
-    if req.resolution == "1080p" and (req.duration or _VIDEO_DEFAULTS["duration"]) != 8:
-        raise HTTPException(status_code=400, detail="1080p video requires an 8-second duration.")
+    _validate_video_params(model=req.model, mode="image", aspect_ratio=req.aspect_ratio,
+                           resolution=req.resolution, duration=req.duration)
 
     # Resolve the source mockup that lives in Supabase Storage.
     object_path = storage_client.path_from_public_url(req.image_url or "") if req.image_url else None
@@ -407,6 +479,59 @@ def generate_video(req: VideoGenerateRequest, user: CurrentUser = Depends(get_cu
         _video_jobs[job_id] = _VideoJob(status="pending", filename=filename)
     _spawn(_run_video_job, job_id, image_bytes, req.prompt,
            req.model, req.aspect_ratio, req.resolution, req.duration)
+    return VideoJobResponse(job_id=job_id, status="pending")
+
+
+@router.post("/video/upload", response_model=VideoJobResponse)
+async def generate_video_upload(
+    mode: str = Form(...),
+    prompt: str = Form(...),
+    model: str | None = Form(None),
+    aspect_ratio: str | None = Form(None),
+    resolution: str | None = Form(None),
+    duration: int | None = Form(None),
+    negative_prompt: str | None = Form(None),
+    person_generation: str | None = Form(None),
+    generate_audio: bool | None = Form(None),
+    start_frame: UploadFile | None = File(None),
+    last_frame: UploadFile | None = File(None),
+    reference_images: list[UploadFile] = File(default=[]),
+    extend_video: UploadFile | None = File(None),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Ad-hoc, catalog-free VEO render. Mode-specific uploads + prompt → enqueued
+    job; poll ``/video/{job_id}`` for the mp4. Writes nothing — no productid, no
+    DB, no Storage. Extension re-uses the in-session clip the client re-submits."""
+    _validate_video_params(model=model, mode=mode, aspect_ratio=aspect_ratio,
+                           resolution=resolution, duration=duration)
+
+    async def _read(f: UploadFile, *, cap: int) -> bytes:
+        raw = await f.read()
+        if len(raw) > cap:
+            raise HTTPException(status_code=413, detail="An uploaded file is too large.")
+        return raw
+
+    start_bytes = await _read(start_frame, cap=_MAX_UPLOAD_BYTES) if start_frame else None
+    last_bytes = await _read(last_frame, cap=_MAX_UPLOAD_BYTES) if last_frame else None
+    ref_bytes = [await _read(f, cap=_MAX_UPLOAD_BYTES) for f in reference_images[:3]] or None
+    ext_bytes = await _read(extend_video, cap=_MAX_VIDEO_UPLOAD_BYTES) if extend_video else None
+
+    if mode == "image" and not start_bytes:
+        raise HTTPException(status_code=400, detail="Image-to-video needs a start frame.")
+    if mode == "frames" and (not start_bytes or not last_bytes):
+        raise HTTPException(status_code=400, detail="Frames mode needs a start and an end frame.")
+    if mode == "reference" and not ref_bytes:
+        raise HTTPException(status_code=400, detail="Reference mode needs at least one reference image.")
+    if mode == "extend" and not ext_bytes:
+        raise HTTPException(status_code=400, detail="Extend mode needs a source clip.")
+
+    _reap_video_jobs()
+    job_id = uuid.uuid4().hex
+    with _video_jobs_lock:
+        _video_jobs[job_id] = _VideoJob(status="pending", filename="quick_video.mp4")
+    _spawn(_run_video_upload_job, job_id, prompt, model, aspect_ratio, resolution, duration,
+           negative_prompt, person_generation, generate_audio,
+           start_bytes, last_bytes, ref_bytes, ext_bytes)
     return VideoJobResponse(job_id=job_id, status="pending")
 
 

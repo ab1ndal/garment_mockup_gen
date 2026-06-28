@@ -38,39 +38,66 @@ class VideoTimeout(RuntimeError):
 
 
 def generate_video_bytes(
-    image_bytes: bytes,
-    prompt: str,
+    image_bytes: bytes | None = None,
+    prompt: str = "",
     *,
     model: str | None = None,
     aspect_ratio: str | None = None,
     resolution: str | None = None,
     duration: int | None = None,
     negative_prompt: str | None = None,
+    person_generation: str | None = None,
+    generate_audio: bool | None = None,
+    last_frame_bytes: bytes | None = None,
+    reference_image_bytes: list[bytes] | None = None,
+    extend_video_bytes: bytes | None = None,
     poll_timeout: int | None = None,
     poll_interval: int | None = None,
 ) -> bytes:
-    """Animate ``image_bytes`` with VEO under ``prompt`` → mp4 bytes.
+    """Generate an mp4 with VEO under ``prompt`` → mp4 bytes.
 
-    The first frame is the supplied mockup image. Blocks (polling) until the job
-    finishes, the timeout elapses, or the model returns nothing.
+    Mode is inferred from the inputs: ``extend_video_bytes`` extends a prior
+    clip; otherwise ``image_bytes`` is the first frame (and ``last_frame_bytes``
+    the last, for interpolation); ``reference_image_bytes`` supply consistency
+    assets; with none of these it is text-to-video. Blocks (polling) until the
+    job finishes, the timeout elapses, or the model returns nothing.
     """
     model_name = model or settings.veo_model
     timeout = poll_timeout if poll_timeout is not None else settings.veo_poll_timeout_sec
     interval = poll_interval if poll_interval is not None else settings.veo_poll_interval_sec
 
-    client = get_genai_client()
-    operation = client.models.generate_videos(
-        model=model_name,
-        prompt=prompt,
-        image=types.Image(image_bytes=image_bytes, mime_type="image/png"),
-        config=types.GenerateVideosConfig(
-            aspect_ratio=aspect_ratio or ASPECT_RATIO,
-            resolution=resolution or RESOLUTION,
-            duration_seconds=duration if duration is not None else DURATION_SEC,
-            number_of_videos=1,
-            negative_prompt=negative_prompt if negative_prompt is not None else DEFAULT_NEGATIVE,
-        ),
+    cfg_kwargs: dict = dict(
+        aspect_ratio=aspect_ratio or ASPECT_RATIO,
+        resolution=resolution or RESOLUTION,
+        duration_seconds=duration if duration is not None else DURATION_SEC,
+        number_of_videos=1,
+        negative_prompt=negative_prompt if negative_prompt is not None else DEFAULT_NEGATIVE,
     )
+    if person_generation:
+        cfg_kwargs["person_generation"] = person_generation
+    if generate_audio is not None:
+        cfg_kwargs["generate_audio"] = generate_audio
+    if last_frame_bytes:
+        cfg_kwargs["last_frame"] = types.Image(image_bytes=last_frame_bytes, mime_type="image/png")
+    if reference_image_bytes:
+        cfg_kwargs["reference_images"] = [
+            types.VideoGenerationReferenceImage(
+                image=types.Image(image_bytes=b, mime_type="image/png"),
+                reference_type=types.VideoGenerationReferenceType.ASSET,
+            )
+            for b in reference_image_bytes
+        ]
+
+    call_kwargs: dict = dict(
+        model=model_name, prompt=prompt, config=types.GenerateVideosConfig(**cfg_kwargs),
+    )
+    if extend_video_bytes:
+        call_kwargs["video"] = types.Video(video_bytes=extend_video_bytes, mime_type="video/mp4")
+    elif image_bytes:
+        call_kwargs["image"] = types.Image(image_bytes=image_bytes, mime_type="image/png")
+
+    client = get_genai_client()
+    operation = client.models.generate_videos(**call_kwargs)
 
     start = time.monotonic()
     while not operation.done:

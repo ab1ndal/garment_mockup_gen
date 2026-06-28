@@ -260,6 +260,14 @@ export interface ImageCaps {
   thinking_levels: string[];
 }
 
+export interface VideoCaps {
+  modes: string[];
+  aspect_ratios: string[];
+  resolutions: string[];
+  durations: number[];
+  person_generation: string[];
+}
+
 export interface GenOptions {
   models: string[];
   resolutions: string[];
@@ -272,6 +280,7 @@ export interface GenOptions {
   video_aspect_ratios: string[];
   video_durations: number[];
   video_defaults: { model: string; resolution: string; aspect_ratio: string; duration: number };
+  video_caps: Record<string, VideoCaps>;
 }
 
 // Static, near-constant; fetched once and shared.
@@ -355,6 +364,44 @@ export const startVideo = (b: {
   aspect_ratio?: string;
   duration?: number;
 }) => apiFetch<VideoJob>("/api/generate/video", { method: "POST", body: JSON.stringify(b) });
+
+/** Ad-hoc, catalog-free VEO render from uploaded media + prompt. Returns a
+ *  job_id to poll with getVideoResult(). */
+export function startVideoUpload(
+  fields: {
+    mode: string;
+    prompt: string;
+    model?: string;
+    aspect_ratio?: string;
+    resolution?: string;
+    duration?: number;
+    negative_prompt?: string;
+    person_generation?: string;
+    generate_audio?: boolean;
+  },
+  files: {
+    startFrame?: File;
+    lastFrame?: File;
+    referenceImages?: File[];
+    extendVideo?: Blob;
+  },
+): Promise<VideoJob> {
+  const fd = new FormData();
+  fd.append("mode", fields.mode);
+  fd.append("prompt", fields.prompt);
+  if (fields.model) fd.append("model", fields.model);
+  if (fields.aspect_ratio) fd.append("aspect_ratio", fields.aspect_ratio);
+  if (fields.resolution) fd.append("resolution", fields.resolution);
+  if (fields.duration != null) fd.append("duration", String(fields.duration));
+  if (fields.negative_prompt) fd.append("negative_prompt", fields.negative_prompt);
+  if (fields.person_generation) fd.append("person_generation", fields.person_generation);
+  if (fields.generate_audio != null) fd.append("generate_audio", String(fields.generate_audio));
+  if (files.startFrame) fd.append("start_frame", files.startFrame);
+  if (files.lastFrame) fd.append("last_frame", files.lastFrame);
+  (files.referenceImages ?? []).forEach((f) => fd.append("reference_images", f));
+  if (files.extendVideo) fd.append("extend_video", files.extendVideo, "clip.mp4");
+  return apiUpload<VideoJob>("/api/generate/video/upload", fd);
+}
 
 /** Poll one job. Resolves to a Blob (mp4) when done, else the JSON status. */
 export async function getVideoResult(jobId: string): Promise<Blob | VideoJob> {
