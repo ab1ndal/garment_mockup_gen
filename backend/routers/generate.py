@@ -100,6 +100,62 @@ ALLOWED_VIDEO_DURATIONS = [4, 6, 8]
 _VIDEO_DEFAULTS = {"model": "veo-3.1-generate-preview", "resolution": "720p",
                    "aspect_ratio": "9:16", "duration": 4}
 
+_VIDEO_MODES_FULL = ["text", "image", "frames", "reference", "extend"]
+_VIDEO_MODES_LITE = ["text", "image", "frames"]
+_VIDEO_PERSON_VALUES = ["allow_all", "allow_adult"]
+
+VIDEO_CAPS = {
+    "veo-3.1-generate-preview": {
+        "modes": _VIDEO_MODES_FULL, "aspect_ratios": ALLOWED_VIDEO_ASPECTS,
+        "resolutions": ALLOWED_VIDEO_RESOLUTIONS, "durations": ALLOWED_VIDEO_DURATIONS,
+        "person_generation": _VIDEO_PERSON_VALUES,
+    },
+    "veo-3.1-fast-generate-preview": {
+        "modes": _VIDEO_MODES_FULL, "aspect_ratios": ALLOWED_VIDEO_ASPECTS,
+        "resolutions": ALLOWED_VIDEO_RESOLUTIONS, "durations": ALLOWED_VIDEO_DURATIONS,
+        "person_generation": _VIDEO_PERSON_VALUES,
+    },
+    "veo-3.1-lite-generate-preview": {
+        "modes": _VIDEO_MODES_LITE, "aspect_ratios": ALLOWED_VIDEO_ASPECTS,
+        "resolutions": ALLOWED_VIDEO_RESOLUTIONS, "durations": ALLOWED_VIDEO_DURATIONS,
+        "person_generation": _VIDEO_PERSON_VALUES,
+    },
+}
+_DEFAULT_VIDEO_CAPS_MODEL = "veo-3.1-generate-preview"
+
+
+def _video_caps_for(model: str | None) -> dict:
+    return VIDEO_CAPS.get(model or settings.veo_model, VIDEO_CAPS[_DEFAULT_VIDEO_CAPS_MODEL])
+
+
+def _validate_video_params(*, model: str | None, mode: str,
+                           aspect_ratio: str | None, resolution: str | None,
+                           duration: int | None) -> None:
+    """Enforce model allow-list, per-model mode support, and VEO cross-field
+    constraints. Raises HTTPException(400) on any violation."""
+    if model is not None and model not in ALLOWED_VEO_MODELS:
+        raise HTTPException(status_code=400, detail=f"Unsupported video model: {model}")
+    caps = _video_caps_for(model)
+    if mode not in caps["modes"]:
+        raise HTTPException(status_code=400,
+                            detail=f"Mode '{mode}' is not supported by {model or settings.veo_model}.")
+    if aspect_ratio and aspect_ratio not in caps["aspect_ratios"]:
+        raise HTTPException(status_code=400, detail=f"Unsupported video aspect ratio: {aspect_ratio}")
+    if resolution and resolution not in caps["resolutions"]:
+        raise HTTPException(status_code=400, detail=f"Unsupported video resolution: {resolution}")
+    if duration is not None and duration not in caps["durations"]:
+        raise HTTPException(status_code=400, detail=f"Unsupported video duration: {duration}")
+
+    eff_resolution = resolution or _VIDEO_DEFAULTS["resolution"]
+    eff_duration = duration if duration is not None else _VIDEO_DEFAULTS["duration"]
+    if eff_resolution == "1080p" and eff_duration != 8:
+        raise HTTPException(status_code=400, detail="1080p video requires an 8-second duration.")
+    if mode in ("reference", "frames") and eff_duration != 8:
+        raise HTTPException(status_code=400,
+                            detail=f"{mode.capitalize()} mode requires an 8-second duration.")
+    if mode == "extend" and eff_resolution != "720p":
+        raise HTTPException(status_code=400, detail="Video extension is 720p only.")
+
 
 # ── In-memory video jobs ──────────────────────────────────────────────────────
 # VEO renders take minutes — longer than a reverse proxy (HF Space) will hold a
@@ -181,6 +237,7 @@ def generation_options(user: CurrentUser = Depends(get_current_user)):
         "video_aspect_ratios": ALLOWED_VIDEO_ASPECTS,
         "video_durations": ALLOWED_VIDEO_DURATIONS,
         "video_defaults": {**_VIDEO_DEFAULTS, "model": settings.veo_model},
+        "video_caps": VIDEO_CAPS,
     }
 
 
@@ -366,17 +423,8 @@ def generate_video(req: VideoGenerateRequest, user: CurrentUser = Depends(get_cu
     """Enqueue a VEO render of an already-published Supabase mockup. Returns a
     job_id immediately; poll ``/video/{job_id}`` for the mp4. Persists nothing —
     the video lives in memory until downloaded, then is evicted."""
-    if req.model is not None and req.model not in ALLOWED_VEO_MODELS:
-        raise HTTPException(status_code=400, detail=f"Unsupported video model: {req.model}")
-    if req.resolution is not None and req.resolution not in ALLOWED_VIDEO_RESOLUTIONS:
-        raise HTTPException(status_code=400, detail=f"Unsupported video resolution: {req.resolution}")
-    if req.aspect_ratio is not None and req.aspect_ratio not in ALLOWED_VIDEO_ASPECTS:
-        raise HTTPException(status_code=400, detail=f"Unsupported video aspect ratio: {req.aspect_ratio}")
-    if req.duration is not None and req.duration not in ALLOWED_VIDEO_DURATIONS:
-        raise HTTPException(status_code=400, detail=f"Unsupported video duration: {req.duration}")
-    # VEO: 1080p only renders at 8s.
-    if req.resolution == "1080p" and (req.duration or _VIDEO_DEFAULTS["duration"]) != 8:
-        raise HTTPException(status_code=400, detail="1080p video requires an 8-second duration.")
+    _validate_video_params(model=req.model, mode="image", aspect_ratio=req.aspect_ratio,
+                           resolution=req.resolution, duration=req.duration)
 
     # Resolve the source mockup that lives in Supabase Storage.
     object_path = storage_client.path_from_public_url(req.image_url or "") if req.image_url else None

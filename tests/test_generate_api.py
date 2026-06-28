@@ -475,3 +475,42 @@ def test_upload_refine_dropped_when_files_at_cap(client, monkeypatch):
     r = _upload(client, fields={"refine_image_b64": refine}, files=files)
     assert r.status_code == 200
     assert calls["gen"]["n_images"] == 14  # refine dropped — uploads already at the 14 cap
+
+
+def test_options_includes_video_caps(client):
+    body = client.get("/api/generate/options").json()
+    caps = body["video_caps"]
+    full = caps["veo-3.1-generate-preview"]
+    assert set(full["modes"]) == {"text", "image", "frames", "reference", "extend"}
+    lite = caps["veo-3.1-lite-generate-preview"]
+    assert "reference" not in lite["modes"] and "extend" not in lite["modes"]
+    assert full["resolutions"] == ["720p", "1080p"]
+    assert full["durations"] == [4, 6, 8]
+
+
+def test_validate_video_params_rules():
+    from fastapi import HTTPException
+    import pytest as _pytest
+    # reference mode requires 8s
+    with _pytest.raises(HTTPException) as e1:
+        gen._validate_video_params(model="veo-3.1-generate-preview", mode="reference",
+                                   aspect_ratio="9:16", resolution="720p", duration=4)
+    assert e1.value.status_code == 400
+    # extend requires 720p
+    with _pytest.raises(HTTPException) as e2:
+        gen._validate_video_params(model="veo-3.1-generate-preview", mode="extend",
+                                   aspect_ratio="9:16", resolution="1080p", duration=8)
+    assert e2.value.status_code == 400
+    # lite does not support reference mode
+    with _pytest.raises(HTTPException) as e3:
+        gen._validate_video_params(model="veo-3.1-lite-generate-preview", mode="reference",
+                                   aspect_ratio="9:16", resolution="720p", duration=8)
+    assert e3.value.status_code == 400
+    # 1080p requires 8s
+    with _pytest.raises(HTTPException) as e4:
+        gen._validate_video_params(model="veo-3.1-generate-preview", mode="image",
+                                   aspect_ratio="9:16", resolution="1080p", duration=6)
+    assert e4.value.status_code == 400
+    # valid combo: no raise
+    gen._validate_video_params(model="veo-3.1-generate-preview", mode="frames",
+                               aspect_ratio="16:9", resolution="720p", duration=8)
