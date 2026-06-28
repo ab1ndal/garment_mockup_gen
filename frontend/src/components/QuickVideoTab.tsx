@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getGenerationOptions, startVideoUpload, getVideoResult,
   type GenOptions, type VideoCaps, type VideoJob,
@@ -23,6 +23,7 @@ const MODE_HINT: Record<Mode, string> = {
 };
 const MAX_REFS = 3;
 const POLL_MS = 5000;
+const MAX_POLLS = 72;
 
 type Clip = { url: string; promptUsed: string; mode: Mode };
 
@@ -41,6 +42,7 @@ export default function QuickVideoTab() {
   const [lastFrame, setLastFrame] = useState<File | null>(null);
   const [refImages, setRefImages] = useState<File[]>([]);
 
+  const clipUrlsRef = useRef<string[]>([]);
   const [clips, setClips] = useState<Clip[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [feedback, setFeedback] = useState("");
@@ -61,8 +63,8 @@ export default function QuickVideoTab() {
   useEffect(() => () => { if (startUrl) URL.revokeObjectURL(startUrl); }, [startUrl]);
   useEffect(() => () => { if (lastUrl) URL.revokeObjectURL(lastUrl); }, [lastUrl]);
   useEffect(() => () => refUrls.forEach((u) => URL.revokeObjectURL(u)), [refUrls]);
-  // Revoke clip URLs on unmount.
-  useEffect(() => () => clips.forEach((c) => URL.revokeObjectURL(c.url)), [clips]);
+  // Revoke clip URLs on unmount only.
+  useEffect(() => () => clipUrlsRef.current.forEach((u) => URL.revokeObjectURL(u)), []);
 
   useEffect(() => {
     getGenerationOptions().then((o) => {
@@ -92,8 +94,7 @@ export default function QuickVideoTab() {
     if (needs8 && duration !== 8) setDuration(8);
     else if (!caps.durations.includes(duration)) setDuration(caps.durations[0]);
     if (personGen && !caps.person_generation.includes(personGen)) setPersonGen("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caps, mode, resolution]);
+  }, [caps, mode, resolution, duration]);
 
   const durationLocked = mode === "reference" || mode === "frames" || resolution === "1080p";
   const resolutionLocked = mode === "extend";
@@ -112,12 +113,16 @@ export default function QuickVideoTab() {
 
   const poll = async (jobId: string): Promise<Blob> =>
     new Promise<Blob>((resolve, reject) => {
+      let attempts = 0;
       const tick = async () => {
         try {
           const r = await getVideoResult(jobId);
           if (r instanceof Blob) return resolve(r);
           if ((r as VideoJob).status === "error")
             return reject(new Error((r as VideoJob).detail || "Video generation failed."));
+          attempts += 1;
+          if (attempts >= MAX_POLLS)
+            return reject(new Error("Video generation timed out — try again."));
           setTimeout(tick, POLL_MS);
         } catch (e) {
           reject(e as Error);
@@ -154,6 +159,7 @@ export default function QuickVideoTab() {
       );
       const blob = await poll(job_id);
       const url = URL.createObjectURL(blob);
+      clipUrlsRef.current.push(url);
       setClips((prev) => {
         const next = [...prev, { url, promptUsed, mode }];
         setActiveIdx(next.length - 1);
@@ -437,9 +443,9 @@ export default function QuickVideoTab() {
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={download} disabled={busy}>Download</button>
+            <button type="button" onClick={download} disabled={busy}>Download</button>
             {caps && caps.modes.includes("extend") && (
-              <button onClick={startExtend} disabled={busy}>Extend +7s</button>
+              <button type="button" onClick={startExtend} disabled={busy}>Extend +7s</button>
             )}
           </div>
         </section>
