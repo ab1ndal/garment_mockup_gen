@@ -68,23 +68,24 @@ def _image_meta(instruction: str, category_name: str | None) -> str:
 
 def _video_meta(instruction: str, category_name: str | None) -> str:
     return (
-        "Rewrite the user's instruction into ONE short vertical (9:16) product "
-        "video-generation prompt for VEO. Be more creative than a still image "
-        "prompt while keeping the garment pixel-faithful to the reference.\n"
+        "Rewrite the user's instruction into ONE short product video-generation "
+        "prompt for Google VEO. Expand a thin description into a vivid, creative, "
+        "shot-described clip while keeping the garment pixel-faithful to the "
+        "reference.\n"
         + _category_line(category_name)
-        + "Cover, in order:\n"
-        "- Opening framing and a clear camera / shot language (slow push-in, gentle "
-        "dolly, orbit, or pan) with pacing for a few-second clip and a loop-friendly "
-        "resolve.\n"
-        "- Motion: fabric flow and drape, subtle model motion (a turn, twirl, or "
-        "step), and a lighting or mood shift.\n"
-        "- An evocative, creative mood and atmosphere.\n"
+        + "Write it as one single paragraph (NOT a list), and cover, in a "
+        "natural order: subject and wardrobe; the action/motion (fabric flow and "
+        "drape, a turn, twirl, or step); clear camera and shot language (slow "
+        "push-in, gentle dolly, orbit, or pan) with pacing for a few-second clip "
+        "and a loop-friendly resolve; lighting and mood; and a brief ambient "
+        "audio cue (the soft rustle of fabric, gentle room tone — VEO renders "
+        "native audio).\n"
         "Hard rules:\n"
-        "- Keep the garment pixel-faithful: DO NOT invent motifs, colors, or change "
-        "the silhouette.\n"
+        "- Keep the garment pixel-faithful: DO NOT invent motifs, colors, or "
+        "change the silhouette.\n"
         "- Preserve EVERY explicit instruction the user gave, verbatim in intent. "
         "Drop nothing.\n"
-        "- Output the prompt text only.\n\n"
+        "- Keep it to one paragraph; output the prompt text only.\n\n"
         f"User instruction:\n{instruction.strip()}"
     )
 

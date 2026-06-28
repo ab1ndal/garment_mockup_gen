@@ -70,3 +70,16 @@ def test_no_text_raises_refine_failed(monkeypatch):
     _patch_client(monkeypatch, text="")
     with pytest.raises(refine.RefineFailed):
         refine.refine_prompt("thin")
+
+
+def test_video_meta_covers_veo_structure_and_is_one_paragraph():
+    from mockup_generator.prompts.refine import _video_meta
+    meta = _video_meta("model twirls in a red lehenga", "Lehenga")
+    low = meta.lower()
+    # VEO shot grammar + audio cue + single-paragraph instruction
+    assert "camera" in low
+    assert "audio" in low or "ambient" in low
+    assert "one paragraph" in low or "single paragraph" in low
+    # preserves the user's instruction and the category grounding
+    assert "model twirls in a red lehenga" in meta
+    assert "Lehenga" in meta
