@@ -514,3 +514,104 @@ def test_validate_video_params_rules():
     # valid combo: no raise
     gen._validate_video_params(model="veo-3.1-generate-preview", mode="frames",
                                aspect_ratio="16:9", resolution="720p", duration=8)
+
+
+def _wire_video_upload(monkeypatch, *, calls):
+    monkeypatch.setattr(gen, "_spawn", lambda fn, *a: fn(*a))
+
+    def fake_video(image_bytes=None, prompt="", **kw):
+        calls["video"] = {"image_bytes": image_bytes, "prompt": prompt, "kw": kw}
+        return b"MP4BYTES"
+
+    monkeypatch.setattr(gen.video_service, "generate_video_bytes", fake_video)
+
+
+def _png_upload(name):
+    return (name, (f"{name}.png", _png_bytes(), "image/png"))
+
+
+def test_video_upload_text_mode_no_files(client, monkeypatch):
+    calls = {}
+    _wire_video_upload(monkeypatch, calls=calls)
+    r = client.post("/api/generate/video/upload",
+                    data={"mode": "text", "prompt": "a model walks the ramp"})
+    assert r.status_code == 200
+    assert r.json()["status"] in ("pending", "running", "done")
+    assert calls["video"]["image_bytes"] is None
+    assert calls["video"]["prompt"] == "a model walks the ramp"
+
+
+def test_video_upload_image_mode_wires_start_frame(client, monkeypatch):
+    calls = {}
+    _wire_video_upload(monkeypatch, calls=calls)
+    r = client.post("/api/generate/video/upload",
+                    data={"mode": "image", "prompt": "slow pan"},
+                    files=[_png_upload("start_frame")])
+    assert r.status_code == 200
+    assert calls["video"]["image_bytes"] is not None
+
+
+def test_video_upload_frames_mode_wires_last_frame(client, monkeypatch):
+    calls = {}
+    _wire_video_upload(monkeypatch, calls=calls)
+    r = client.post("/api/generate/video/upload",
+                    data={"mode": "frames", "prompt": "reveal", "duration": "8"},
+                    files=[_png_upload("start_frame"), _png_upload("last_frame")])
+    assert r.status_code == 200
+    assert calls["video"]["kw"]["last_frame_bytes"] is not None
+
+
+def test_video_upload_reference_mode_wires_refs(client, monkeypatch):
+    calls = {}
+    _wire_video_upload(monkeypatch, calls=calls)
+    files = [("reference_images", (f"r{i}.png", _png_bytes(), "image/png")) for i in range(3)]
+    r = client.post("/api/generate/video/upload",
+                    data={"mode": "reference", "prompt": "consistency", "duration": "8"},
+                    files=files)
+    assert r.status_code == 200
+    assert len(calls["video"]["kw"]["reference_image_bytes"]) == 3
+
+
+def test_video_upload_extend_mode_wires_video(client, monkeypatch):
+    calls = {}
+    _wire_video_upload(monkeypatch, calls=calls)
+    r = client.post("/api/generate/video/upload",
+                    data={"mode": "extend", "prompt": "more", "resolution": "720p"},
+                    files=[("extend_video", ("clip.mp4", b"PRIORMP4", "video/mp4"))])
+    assert r.status_code == 200
+    assert calls["video"]["kw"]["extend_video_bytes"] == b"PRIORMP4"
+
+
+def test_video_upload_image_mode_requires_start_frame_400(client, monkeypatch):
+    _wire_video_upload(monkeypatch, calls={})
+    r = client.post("/api/generate/video/upload", data={"mode": "image", "prompt": "p"})
+    assert r.status_code == 400
+
+
+def test_video_upload_extend_requires_video_400(client, monkeypatch):
+    _wire_video_upload(monkeypatch, calls={})
+    r = client.post("/api/generate/video/upload",
+                    data={"mode": "extend", "prompt": "p", "resolution": "720p"})
+    assert r.status_code == 400
+
+
+def test_video_upload_rejects_reference_on_lite_400(client, monkeypatch):
+    _wire_video_upload(monkeypatch, calls={})
+    files = [("reference_images", ("r.png", _png_bytes(), "image/png"))]
+    r = client.post("/api/generate/video/upload",
+                    data={"mode": "reference", "prompt": "p", "duration": "8",
+                          "model": "veo-3.1-lite-generate-preview"},
+                    files=files)
+    assert r.status_code == 400
+
+
+def test_video_upload_then_streams_mp4(client, monkeypatch):
+    calls = {}
+    _wire_video_upload(monkeypatch, calls=calls)
+    started = client.post("/api/generate/video/upload",
+                          data={"mode": "text", "prompt": "p"})
+    job_id = started.json()["job_id"]
+    r = client.get(f"/api/generate/video/{job_id}")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "video/mp4"
+    assert r.content == b"MP4BYTES"

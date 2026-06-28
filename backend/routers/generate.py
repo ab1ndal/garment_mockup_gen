@@ -51,6 +51,7 @@ def _decode_b64_image(b64: str) -> Image.Image:
 
 _MAX_REFS = 14
 _MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
+_MAX_VIDEO_UPLOAD_BYTES = 200 * 1024 * 1024  # 200 MB — an extension source clip
 
 # Selectable image-generation options surfaced to the portal.
 ALLOWED_MODELS = ["gemini-3-pro-image", "gemini-3.1-flash-image", "gemini-2.5-flash-image"]
@@ -205,6 +206,29 @@ def _run_video_job(job_id, image_bytes, prompt, model, aspect_ratio, resolution,
         mp4 = video_service.generate_video_bytes(
             image_bytes, prompt, model=model, aspect_ratio=aspect_ratio,
             resolution=resolution, duration=duration,
+        )
+        _set_job(job_id, status="done", data=mp4)
+    except video_service.VideoTimeout:
+        _set_job(job_id, status="error", detail="Video generation timed out. Try again.")
+    except video_service.NoVideoReturned:
+        _set_job(job_id, status="error", detail="The model returned no video. Try again.")
+    except Exception as exc:  # noqa: BLE001 - surface any failure to the poller
+        _set_job(job_id, status="error", detail=f"Video generation failed: {exc}")
+
+
+def _run_video_upload_job(
+    job_id, prompt, model, aspect_ratio, resolution, duration,
+    negative_prompt, person_generation, generate_audio,
+    start_bytes, last_bytes, ref_bytes, ext_bytes,
+) -> None:
+    _set_job(job_id, status="running")
+    try:
+        mp4 = video_service.generate_video_bytes(
+            start_bytes, prompt, model=model, aspect_ratio=aspect_ratio,
+            resolution=resolution, duration=duration, negative_prompt=negative_prompt,
+            person_generation=person_generation, generate_audio=generate_audio,
+            last_frame_bytes=last_bytes, reference_image_bytes=ref_bytes,
+            extend_video_bytes=ext_bytes,
         )
         _set_job(job_id, status="done", data=mp4)
     except video_service.VideoTimeout:
@@ -455,6 +479,59 @@ def generate_video(req: VideoGenerateRequest, user: CurrentUser = Depends(get_cu
         _video_jobs[job_id] = _VideoJob(status="pending", filename=filename)
     _spawn(_run_video_job, job_id, image_bytes, req.prompt,
            req.model, req.aspect_ratio, req.resolution, req.duration)
+    return VideoJobResponse(job_id=job_id, status="pending")
+
+
+@router.post("/video/upload", response_model=VideoJobResponse)
+async def generate_video_upload(
+    mode: str = Form(...),
+    prompt: str = Form(...),
+    model: str | None = Form(None),
+    aspect_ratio: str | None = Form(None),
+    resolution: str | None = Form(None),
+    duration: int | None = Form(None),
+    negative_prompt: str | None = Form(None),
+    person_generation: str | None = Form(None),
+    generate_audio: bool | None = Form(None),
+    start_frame: UploadFile | None = File(None),
+    last_frame: UploadFile | None = File(None),
+    reference_images: list[UploadFile] = File(default=[]),
+    extend_video: UploadFile | None = File(None),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Ad-hoc, catalog-free VEO render. Mode-specific uploads + prompt → enqueued
+    job; poll ``/video/{job_id}`` for the mp4. Writes nothing — no productid, no
+    DB, no Storage. Extension re-uses the in-session clip the client re-submits."""
+    _validate_video_params(model=model, mode=mode, aspect_ratio=aspect_ratio,
+                           resolution=resolution, duration=duration)
+
+    async def _read(f: UploadFile, *, cap: int) -> bytes:
+        raw = await f.read()
+        if len(raw) > cap:
+            raise HTTPException(status_code=413, detail="An uploaded file is too large.")
+        return raw
+
+    start_bytes = await _read(start_frame, cap=_MAX_UPLOAD_BYTES) if start_frame else None
+    last_bytes = await _read(last_frame, cap=_MAX_UPLOAD_BYTES) if last_frame else None
+    ref_bytes = [await _read(f, cap=_MAX_UPLOAD_BYTES) for f in reference_images[:3]] or None
+    ext_bytes = await _read(extend_video, cap=_MAX_VIDEO_UPLOAD_BYTES) if extend_video else None
+
+    if mode == "image" and not start_bytes:
+        raise HTTPException(status_code=400, detail="Image-to-video needs a start frame.")
+    if mode == "frames" and (not start_bytes or not last_bytes):
+        raise HTTPException(status_code=400, detail="Frames mode needs a start and an end frame.")
+    if mode == "reference" and not ref_bytes:
+        raise HTTPException(status_code=400, detail="Reference mode needs at least one reference image.")
+    if mode == "extend" and not ext_bytes:
+        raise HTTPException(status_code=400, detail="Extend mode needs a source clip.")
+
+    _reap_video_jobs()
+    job_id = uuid.uuid4().hex
+    with _video_jobs_lock:
+        _video_jobs[job_id] = _VideoJob(status="pending", filename="quick_video.mp4")
+    _spawn(_run_video_upload_job, job_id, prompt, model, aspect_ratio, resolution, duration,
+           negative_prompt, person_generation, generate_audio,
+           start_bytes, last_bytes, ref_bytes, ext_bytes)
     return VideoJobResponse(job_id=job_id, status="pending")
 
 
