@@ -24,6 +24,20 @@ const MODE_HINT: Record<Mode, string> = {
   extend: "Extend the active clip by 7 seconds.",
 };
 const MAX_REFS = 3;
+// Pre-filled so every render avoids the artifacts we consistently dislike.
+const DEFAULT_NEGATIVE =
+  "sudden jerky camera movements, skips in frame, missing fabric, unrealistic movements";
+// Positive-steer preamble — VEO obeys "do X" far better than negatives. Seeds
+// camera stability, lens/scene context, and realistic cloth motion; the editor
+// fills the garment + pose details where marked.
+const DEFAULT_PROMPT =
+  "Single continuous locked-off shot, no cuts. Cinematic full-frame camera on a static tripod, " +
+  "35mm lens at eye level. The camera holds steady or moves with a slow, smooth, gentle push-in — " +
+  "no sudden pans, whips, or jerky motion. The model moves slowly and naturally, with realistic " +
+  "fabric drape, weight, and cloth physics; the garment stays fully intact with no missing or " +
+  "morphing fabric. Soft, even studio lighting on a clean seamless background, photorealistic, " +
+  "24fps motion blur.\n\n" +
+  "Garment & scene: ";
 const POLL_MS = 5000;
 const MAX_POLLS = 72;
 
@@ -37,8 +51,8 @@ export default function QuickVideoTab() {
   const [resolution, setResolution] = useState("");
   const [duration, setDuration] = useState<number>(4);
   const [personGen, setPersonGen] = useState("");
-  const [negative, setNegative] = useState("");
-  const [prompt, setPrompt] = useState("");
+  const [negative, setNegative] = useState(DEFAULT_NEGATIVE);
+  const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
 
   const [startFrame, setStartFrame] = useState<File | null>(null);
   const [lastFrame, setLastFrame] = useState<File | null>(null);
@@ -75,7 +89,7 @@ export default function QuickVideoTab() {
       setModel(d.model);
       setAspect(d.aspect_ratio);
       setResolution(d.resolution);
-      setDuration(d.duration);
+      setDuration(8); // prefer 8s for smoother motion; clamp effect falls back if unsupported
     }).catch((e: Error) => setMsg({ kind: "error", text: e.message }));
   }, []);
 
