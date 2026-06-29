@@ -4,6 +4,8 @@ import {
   type GenOptions, type VideoCaps, type VideoJob,
 } from "../api";
 import RefineButton from "./RefineButton";
+import DropZone from "./DropZone";
+import { DownloadIcon, TrashIcon } from "./icons";
 
 type Mode = "text" | "image" | "frames" | "reference" | "extend";
 
@@ -229,52 +231,52 @@ export default function QuickVideoTab() {
       {(mode === "image" || mode === "frames") && (
         <section className="mt-4">
           <p className="section-label mt-0!">{mode === "frames" ? "Start frame" : "Source frame"}</p>
-          <input
-            type="file" accept="image/*" aria-label="Start frame"
-            onChange={(e) => setStartFrame(e.target.files?.[0] ?? null)}
+          <DropZone
+            ariaLabel={mode === "frames" ? "Start frame" : "Source frame"}
+            hint="PNG or JPG · one image"
+            file={startFrame}
+            previewUrl={startUrl}
+            onFiles={(f) => setStartFrame(f[0] ?? null)}
+            onClear={() => setStartFrame(null)}
           />
-          {startUrl && (
-            <img src={startUrl} alt="Start frame preview"
-                 className="mt-2 h-24 w-24 rounded-md border border-line object-cover" />
-          )}
         </section>
       )}
       {mode === "frames" && (
         <section className="mt-4">
           <p className="section-label mt-0!">End frame</p>
-          <input
-            type="file" accept="image/*" aria-label="End frame"
-            onChange={(e) => setLastFrame(e.target.files?.[0] ?? null)}
+          <DropZone
+            ariaLabel="End frame"
+            hint="PNG or JPG · one image"
+            file={lastFrame}
+            previewUrl={lastUrl}
+            onFiles={(f) => setLastFrame(f[0] ?? null)}
+            onClear={() => setLastFrame(null)}
           />
-          {lastUrl && (
-            <img src={lastUrl} alt="End frame preview"
-                 className="mt-2 h-24 w-24 rounded-md border border-line object-cover" />
-          )}
         </section>
       )}
       {mode === "reference" && (
         <section className="mt-4">
           <p className="section-label mt-0!">Reference images · up to {MAX_REFS}</p>
-          <input
-            type="file" accept="image/*" multiple aria-label="Reference images"
-            onChange={(e) => {
-              const picked = Array.from(e.target.files ?? []);
-              setRefImages((prev) => [...prev, ...picked].slice(0, MAX_REFS));
-              e.target.value = "";
-            }}
-          />
+          {refImages.length < MAX_REFS && (
+            <DropZone
+              ariaLabel="Reference images"
+              hint={`PNG or JPG · ${MAX_REFS - refImages.length} more`}
+              multiple
+              onFiles={(picked) => setRefImages((prev) => [...prev, ...picked].slice(0, MAX_REFS))}
+            />
+          )}
           {refUrls.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-2">
               {refUrls.map((src, i) => (
-                <div key={i} className="relative h-20 w-20 overflow-hidden rounded-md border border-line">
+                <div key={i} className="relative h-20 w-20 overflow-hidden rounded-lg border border-line">
                   <img src={src} alt={`Reference ${i + 1}`} className="h-full w-full object-cover" />
                   <button
                     type="button"
                     onClick={() => setRefImages((prev) => prev.filter((_, idx) => idx !== i))}
                     aria-label={`Remove reference ${i + 1}`}
-                    className="absolute right-0.5 top-0.5 rounded-full bg-black/60 px-1.5 text-xs text-white"
+                    className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-black/60 text-white transition-colors hover:bg-black/80"
                   >
-                    ×
+                    <TrashIcon size={13} />
                   </button>
                 </div>
               ))}
@@ -443,7 +445,9 @@ export default function QuickVideoTab() {
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" onClick={download} disabled={busy}>Download</button>
+            <button type="button" className="btn-primary" onClick={download} disabled={busy}>
+              <DownloadIcon size={16} /> Save video
+            </button>
             {caps && caps.modes.includes("extend") && (
               <button type="button" onClick={startExtend} disabled={busy}>Extend +7s</button>
             )}

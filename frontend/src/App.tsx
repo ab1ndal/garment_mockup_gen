@@ -100,7 +100,7 @@ export default function App() {
 
 const TABS = [
   { id: "products", label: "Products" },
-  { id: "quickgen", label: "Quick Generate" },
+  { id: "quickgen", label: "Quick Image" },
   { id: "quickvideo", label: "Quick Video" },
   { id: "prompts", label: "Prompts" },
   { id: "backfill", label: "Backfill" },

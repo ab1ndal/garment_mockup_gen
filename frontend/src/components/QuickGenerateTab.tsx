@@ -4,6 +4,8 @@ import {
   type GenOptions, type ImageCaps,
 } from "../api";
 import RefineButton from "./RefineButton";
+import DropZone from "./DropZone";
+import { DownloadIcon, TrashIcon } from "./icons";
 import { useImageLightbox } from "./Lightbox";
 
 const RES_LABEL: Record<string, string> = {
@@ -67,15 +69,13 @@ export default function QuickGenerateTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caps]);
 
-  const addFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const picked = Array.from(e.target.files ?? []);
+  const addFiles = (picked: File[]) => {
     setFiles((prev) => {
       const next = [...prev, ...picked].slice(0, MAX_FILES);
       if (prev.length + picked.length > MAX_FILES)
         setMsg({ kind: "info", text: `Limited to ${MAX_FILES} reference images.` });
       return next;
     });
-    e.target.value = "";
   };
   const removeFile = (i: number) => setFiles((prev) => prev.filter((_, idx) => idx !== i));
 
@@ -128,7 +128,7 @@ export default function QuickGenerateTab() {
   return (
     <div className="stack">
       <section>
-        <h2 className="font-display tracking-tight">Quick Generate</h2>
+        <h2 className="font-display tracking-tight">Quick Image</h2>
         <p className="text-subtle text-sm">
           Upload reference images and generate a mockup — nothing is saved to the catalog.
         </p>
@@ -136,20 +136,27 @@ export default function QuickGenerateTab() {
 
       {/* Upload */}
       <section className="mt-4">
-        <p className="section-label mt-0!">Reference images</p>
-        <input type="file" accept="image/*" multiple onChange={addFiles} aria-label="Upload reference images" />
+        <p className="section-label mt-0!">Reference images · up to {MAX_FILES}</p>
+        {files.length < MAX_FILES && (
+          <DropZone
+            ariaLabel="Upload reference images"
+            hint={`PNG or JPG · ${MAX_FILES - files.length} more`}
+            multiple
+            onFiles={addFiles}
+          />
+        )}
         {files.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
             {previews.map((src, i) => (
-              <div key={i} className="relative h-20 w-20 overflow-hidden rounded-md border border-line">
+              <div key={i} className="relative h-20 w-20 overflow-hidden rounded-lg border border-line">
                 <img src={src} alt={files[i].name} className="h-full w-full object-cover" />
                 <button
                   type="button"
                   onClick={() => removeFile(i)}
                   aria-label={`Remove ${files[i].name}`}
-                  className="absolute right-0.5 top-0.5 rounded-full bg-black/60 px-1.5 text-xs text-white"
+                  className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-black/60 text-white transition-colors hover:bg-black/80"
                 >
-                  ×
+                  <TrashIcon size={13} />
                 </button>
               </div>
             ))}
@@ -318,7 +325,7 @@ export default function QuickGenerateTab() {
               {busy && <span className="spinner" aria-hidden />} Refine
             </button>
             <button onClick={() => generate(false)} disabled={busy}>Try again</button>
-            <button onClick={download} disabled={busy}>Download</button>
+            <button onClick={download} disabled={busy}><DownloadIcon size={16} /> Download</button>
           </div>
         </section>
       )}

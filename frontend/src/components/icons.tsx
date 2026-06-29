@@ -104,3 +104,33 @@ export function PlusIcon(props: IconProps) {
     </Svg>
   );
 }
+
+export function UploadIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <path d="M17 8l-5-5-5 5" />
+      <path d="M12 3v12" />
+    </Svg>
+  );
+}
+
+export function DownloadIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <path d="M7 10l5 5 5-5" />
+      <path d="M12 15V3" />
+    </Svg>
+  );
+}
+
+export function ImageIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+      <circle cx="9" cy="9" r="2" />
+      <path d="M21 15l-5-5L5 21" />
+    </Svg>
+  );
+}
