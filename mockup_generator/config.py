@@ -84,8 +84,10 @@ class Settings:
     @property
     def gemini_text_model(self) -> str:
         """Advanced Gemini text model used to refine/expand prompts.
-        Text sibling of the image model (not Flash); override per deploy."""
-        return _get("GEMINI_TEXT_MODEL", default="gemini-3-pro")  # type: ignore[return-value]
+        Text sibling of the image model (not Flash); override per deploy.
+        gemini-3-pro is not yet served on Vertex for this project (404), so the
+        default is the latest GA Pro text model."""
+        return _get("GEMINI_TEXT_MODEL", default="gemini-2.5-pro")  # type: ignore[return-value]
 
     @property
     def veo_model(self) -> str:
