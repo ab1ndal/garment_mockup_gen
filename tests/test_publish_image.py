@@ -46,7 +46,7 @@ def test_publish_image_writes_all_rows(monkeypatch):
     assert out["image_url"] == "https://public/BC25001/red_0_deadbeef.png"
     assert out["variation_id"] == 7
     assert calls["flag"] == ("BC25001", True)
-    assert calls["image"]["caption"] == "Red"
+    assert calls["image"]["productcolor"] == "Red"
     assert calls["image"]["theme"] == "Default"
     assert calls["variation"]["color"] == "Red"
 

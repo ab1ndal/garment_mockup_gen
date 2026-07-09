@@ -70,7 +70,7 @@ def test_approve_generated_publishes(client, monkeypatch):
     assert calls["variation"]["image_url"] == "https://public/BC25001/parrot-green_0_deadbeef.png"
     assert calls["flag"] == ("BC25001", True)
     assert calls["image"]["imageurl"] == "https://public/BC25001/parrot-green_0_deadbeef.png"
-    assert calls["image"]["caption"] == "Parrot Green"
+    assert calls["image"]["productcolor"] == "Parrot Green"
     assert calls["image"]["theme"] == "Default"  # no theme/aspect sent -> Default
     assert calls["image"]["displayorder"] == 0
     assert "deleted_for" not in calls  # append model -> never replace

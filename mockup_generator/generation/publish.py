@@ -48,5 +48,5 @@ def publish_image(
     )
     mockups_repo.set_base_mockup(db, productid, True)
     productimages_repo.insert(db, productid=productid, imageurl=public_url,
-                              caption=color, theme=theme, displayorder=order)
+                              productcolor=color, theme=theme, displayorder=order)
     return {"image_url": public_url, "variation_id": row.get("variation_id")}
