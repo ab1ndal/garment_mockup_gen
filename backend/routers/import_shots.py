@@ -22,7 +22,7 @@ from backend.deps import get_db
 from backend.schemas import (
     CreatePresetRequest, ImportDriveImagesResponse, ImportPublishRequest,
     ImportPublishResponse, PresetModel, PresetsResponse, PreviewRequest,
-    PreviewResponse, WarmRequest,
+    PreviewResponse, ReleaseRequest, WarmRequest,
 )
 from mockup_generator.db import edit_presets_repo, productimages_repo, products_repo
 from mockup_generator.generation import edit_pipeline, publish
@@ -99,6 +99,11 @@ def _get_cutout(file_id: str) -> Image.Image:
     return cutout
 
 
+def _release_cutout(file_id: str) -> None:
+    with _CACHE_LOCK:
+        _CUTOUT_CACHE.pop(file_id, None)
+
+
 def _render(file_id: str, params_model) -> bytes:
     return edit_pipeline.render(_get_cutout(file_id),
                                 EditParams(**params_model.model_dump()))
@@ -131,6 +136,13 @@ def preview(req: PreviewRequest, user: CurrentUser = Depends(get_current_user),
 def warm(req: WarmRequest, user: CurrentUser = Depends(get_current_user)):
     """Pre-compute + cache the cutout so the first adjustment is instant too."""
     _get_cutout(req.file_id)
+    return {"status": "ok"}
+
+
+@router.post("/release")
+def release(req: ReleaseRequest, user: CurrentUser = Depends(get_current_user)):
+    """Drop the cached cutout once the user is done editing that image."""
+    _release_cutout(req.file_id)
     return {"status": "ok"}
 
 

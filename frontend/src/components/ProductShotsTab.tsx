@@ -18,6 +18,7 @@ import {
   markEditPresetDefault,
   previewImportShot,
   publishImportShot,
+  releaseImportShot,
   warmImportShot,
   type Category,
   type EditParams,
@@ -192,6 +193,15 @@ export default function ProductShotsTab() {
     }, PREVIEW_DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [active, params]);
+
+  // release the cached cutout when we leave this image (switch/back/unmount)
+  useEffect(() => {
+    if (!active) return;
+    const id = active.id;
+    return () => {
+      releaseImportShot(id).catch(() => {});
+    };
+  }, [active]);
 
   const set = <K extends keyof EditParams>(k: K, v: EditParams[K]) =>
     setParams((p) => ({ ...p, [k]: v }));

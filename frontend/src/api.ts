@@ -588,6 +588,12 @@ export const warmImportShot = (file_id: string) =>
     body: JSON.stringify({ file_id }),
   });
 
+export const releaseImportShot = (file_id: string) =>
+  apiFetch<{ status: string }>("/api/import/release", {
+    method: "POST",
+    body: JSON.stringify({ file_id }),
+  });
+
 export const publishImportShot = (b: {
   productid: string;
   file_id: string;

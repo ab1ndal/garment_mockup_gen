@@ -94,3 +94,13 @@ def test_warm_populates_cache(client, monkeypatch):
     r = client.post("/api/import/warm", json={"file_id": "file-W"})
     assert r.status_code == 200 and r.json() == {"status": "ok"}
     assert "file-W" in mod._CUTOUT_CACHE
+
+
+def test_release_evicts_cached_cutout(client, monkeypatch):
+    monkeypatch.setattr(mod, "_download", lambda fid: b"bytes")
+    monkeypatch.setattr(mod.edit_pipeline, "compute_cutout", lambda b: _rgba())
+    mod._get_cutout("file-R")                      # populate
+    assert "file-R" in mod._CUTOUT_CACHE
+    r = client.post("/api/import/release", json={"file_id": "file-R"})
+    assert r.status_code == 200 and r.json() == {"status": "ok"}
+    assert "file-R" not in mod._CUTOUT_CACHE
