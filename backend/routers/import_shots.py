@@ -16,10 +16,11 @@ from supabase import Client
 from backend.auth import CurrentUser, get_current_user
 from backend.deps import get_db
 from backend.schemas import (
-    ImportDriveImagesResponse, ImportPublishRequest, ImportPublishResponse,
-    PreviewRequest, PreviewResponse,
+    CreatePresetRequest, ImportDriveImagesResponse, ImportPublishRequest,
+    ImportPublishResponse, PresetModel, PresetsResponse, PreviewRequest,
+    PreviewResponse,
 )
-from mockup_generator.db import productimages_repo, products_repo
+from mockup_generator.db import edit_presets_repo, productimages_repo, products_repo
 from mockup_generator.generation import edit_pipeline, publish
 from mockup_generator.generation.edit_pipeline import BackgroundRemovalUnavailable, EditParams
 from mockup_generator.integrations import drive_client, storage_client
@@ -84,3 +85,29 @@ def publish_shot(req: ImportPublishRequest, user: CurrentUser = Depends(get_curr
                               productcolor=req.color, theme=_PRODUCT_SHOT_THEME,
                               displayorder=order)
     return ImportPublishResponse(image_url=url, displayorder=order)
+
+
+@router.get("/presets", response_model=PresetsResponse)
+def list_presets(user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
+    return PresetsResponse(presets=edit_presets_repo.list_all(db))
+
+
+@router.post("/presets", response_model=PresetModel)
+def create_preset(req: CreatePresetRequest, user: CurrentUser = Depends(get_current_user),
+                  db: Client = Depends(get_db)):
+    return edit_presets_repo.insert(db, name=req.name, params=req.params.model_dump(),
+                                    is_default=req.is_default, created_by=user.id)
+
+
+@router.put("/presets/{preset_id}/default")
+def mark_default(preset_id: int, user: CurrentUser = Depends(get_current_user),
+                 db: Client = Depends(get_db)):
+    edit_presets_repo.set_default(db, preset_id)
+    return {"status": "ok"}
+
+
+@router.delete("/presets/{preset_id}")
+def delete_preset(preset_id: int, user: CurrentUser = Depends(get_current_user),
+                  db: Client = Depends(get_db)):
+    edit_presets_repo.delete(db, preset_id)
+    return {"status": "ok"}
