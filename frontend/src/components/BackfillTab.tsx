@@ -361,6 +361,7 @@ function ReviewPanel({
   const [theme, setTheme] = useState("Default");
   const [aspect, setAspect] = useState("1:1");
   const [comment, setComment] = useState("");
+  const [removeWm, setRemoveWm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const lightbox = useImageLightbox();
@@ -386,6 +387,7 @@ function ReviewPanel({
     approveBackfill({
       file_id: item.file_id, productid: item.productid,
       color: color || undefined, theme_name: theme, aspect_ratio: aspect,
+      remove_watermark: removeWm,
     })
       .then(() => onResolved(item.file_id, "approved"))
       .catch(onErr)
@@ -509,6 +511,15 @@ function ReviewPanel({
             </select>
           </div>
         </div>
+
+        <label className="check" style={{ minHeight: 44 }}>
+          <input
+            type="checkbox"
+            checked={removeWm}
+            onChange={(e) => setRemoveWm(e.target.checked)}
+          />
+          <span>Remove star watermark (bottom-right)</span>
+        </label>
 
         <div className="field">
           <label htmlFor="bf-comment">Edit notes</label>

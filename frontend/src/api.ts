@@ -488,6 +488,7 @@ export const approveBackfill = (b: {
   color?: string;
   theme_name?: string;
   aspect_ratio?: string;
+  remove_watermark?: boolean;
 }) =>
   apiFetch<{ status: string; image_url: string; variation_id?: number; warning?: string | null }>(
     "/api/backfill/approve",
