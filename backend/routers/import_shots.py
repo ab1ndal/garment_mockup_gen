@@ -11,6 +11,7 @@ import base64
 import logging
 import threading
 from collections import OrderedDict
+from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException
 from PIL import Image
@@ -44,32 +45,57 @@ def _download(file_id: str) -> bytes:
         raise HTTPException(status_code=502, detail=f"Could not load the image: {exc}") from exc
 
 
-_CUTOUT_CACHE: "OrderedDict[str, Image.Image]" = OrderedDict()
+_CUTOUT_CACHE: "OrderedDict[str, bytes]" = OrderedDict()  # file_id -> PNG-encoded RGBA cutout
 _CACHE_CAP = 12
 _CACHE_LOCK = threading.Lock()
+_INFLIGHT: "dict[str, threading.Event]" = {}
+
+
+def _decode(png: bytes) -> Image.Image:
+    return Image.open(BytesIO(png)).convert("RGBA")
 
 
 def _get_cutout(file_id: str) -> Image.Image:
-    """Return the RGBA cutout for a Drive file, computing+caching on a miss.
-
-    The expensive Drive download + BiRefNet run happen at most once per
-    file_id until eviction. Compute happens outside the lock so a slow run
-    never blocks cache hits.
+    """Return the RGBA cutout for a Drive file, computing+caching it (as PNG
+    bytes) on a miss. Concurrent misses on the same file_id share ONE compute
+    via an in-flight event, so warm + preview never double-run BiRefNet.
     """
-    with _CACHE_LOCK:
-        cached = _CUTOUT_CACHE.get(file_id)
-        if cached is not None:
-            _CUTOUT_CACHE.move_to_end(file_id)
-            return cached
+    while True:
+        with _CACHE_LOCK:
+            cached = _CUTOUT_CACHE.get(file_id)
+            if cached is not None:
+                _CUTOUT_CACHE.move_to_end(file_id)
+                return _decode(cached)
+            event = _INFLIGHT.get(file_id)
+            if event is None:
+                event = threading.Event()
+                _INFLIGHT[file_id] = event
+                break  # we own the compute for this file_id
+        # another request is already computing this file_id; wait, then re-check
+        event.wait()
+    # owner path: compute outside the lock so cache hits / other keys aren't blocked
     try:
         cutout = edit_pipeline.compute_cutout(_download(file_id))
+        buf = BytesIO()
+        cutout.save(buf, format="PNG")
+        png = buf.getvalue()
     except BackgroundRemovalUnavailable as exc:
+        with _CACHE_LOCK:
+            _INFLIGHT.pop(file_id, None)
+        event.set()
         raise HTTPException(status_code=503, detail="Background removal is unavailable on the server") from exc
+    except BaseException:
+        with _CACHE_LOCK:
+            _INFLIGHT.pop(file_id, None)
+        event.set()
+        raise
     with _CACHE_LOCK:
-        _CUTOUT_CACHE[file_id] = cutout
+        _CUTOUT_CACHE[file_id] = png
         _CUTOUT_CACHE.move_to_end(file_id)
         while len(_CUTOUT_CACHE) > _CACHE_CAP:
             _CUTOUT_CACHE.popitem(last=False)
+        _INFLIGHT.pop(file_id, None)
+    event.set()
     return cutout
 
 
