@@ -12,8 +12,22 @@ path, no duplication.
 
 from __future__ import annotations
 
+from io import BytesIO
+
+from PIL import Image
+
 from mockup_generator.db import mockup_variations_repo, mockups_repo, productimages_repo
 from mockup_generator.integrations import storage_client
+
+_WEBP_QUALITY = 85
+
+
+def _encode_webp(png: bytes) -> bytes:
+    """Re-encode PNG bytes to lossy WEBP (quality 85) for web display."""
+    with Image.open(BytesIO(png)) as img:
+        buf = BytesIO()
+        img.save(buf, format="WEBP", quality=_WEBP_QUALITY)
+        return buf.getvalue()
 
 
 def build_photo_theme(theme_name: str | None, aspect_ratio: str | None) -> str:
@@ -40,7 +54,12 @@ def publish_image(
     slug = storage_client.slugify(color)
     stem = "_".join(p for p in (slug, str(order)) if p)
     key = f"{stem}_{storage_client.short_hex()}"
-    _path, public_url = storage_client.upload_mockup(productid, png, key)
+    # Keep the PNG as archival; the DB references the web-optimized WEBP under
+    # the same key stem (different extension, no collision).
+    storage_client.upload_mockup(productid, png, key)
+    _path, public_url = storage_client.upload_mockup(
+        productid, _encode_webp(png), key, ext="webp", content_type="image/webp"
+    )
 
     row = mockup_variations_repo.insert(
         db, productid=productid, prompt_text=prompt_text, image_url=public_url,

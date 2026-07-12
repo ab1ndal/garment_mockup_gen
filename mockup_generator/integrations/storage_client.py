@@ -25,19 +25,22 @@ def upload_mockup(
     key: str,
     *,
     bucket: str = _BUCKET,
+    ext: str = "png",
+    content_type: str = "image/png",
 ) -> tuple[str, str]:
-    """Upload PNG ``data`` under ``{productid}/{key}.png`` to the public bucket.
+    """Upload ``data`` under ``{productid}/{key}.{ext}`` to the public bucket.
 
-    Returns ``(object_path, public_url)``: persist the stable path; hand the
-    permanent public URL to the browser / store it in productimages.
+    ``ext``/``content_type`` default to PNG; pass ``webp``/``image/webp`` for the
+    web-optimized variant. Returns ``(object_path, public_url)``: persist the
+    stable path; hand the permanent public URL to the browser / store in DB.
     """
     client = service_client()
     if client is None:
         raise StorageNotConfigured("SUPABASE_SECRET_KEY is required to upload mockups")
 
-    path = f"{productid}/{key}.png"
+    path = f"{productid}/{key}.{ext}"
     store = client.storage.from_(bucket)
-    store.upload(path, data, {"content-type": "image/png", "upsert": "true"})
+    store.upload(path, data, {"content-type": content_type, "upsert": "true"})
     return path, store.get_public_url(path)
 
 
