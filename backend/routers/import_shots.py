@@ -21,7 +21,7 @@ from backend.deps import get_db
 from backend.schemas import (
     CreatePresetRequest, ImportDriveImagesResponse, ImportPublishRequest,
     ImportPublishResponse, PresetModel, PresetsResponse, PreviewRequest,
-    PreviewResponse,
+    PreviewResponse, WarmRequest,
 )
 from mockup_generator.db import edit_presets_repo, productimages_repo, products_repo
 from mockup_generator.generation import edit_pipeline, publish
@@ -99,6 +99,13 @@ def preview(req: PreviewRequest, user: CurrentUser = Depends(get_current_user),
             db: Client = Depends(get_db)):
     png = _render(req.file_id, req.params)
     return PreviewResponse(preview="data:image/png;base64," + base64.b64encode(png).decode("ascii"))
+
+
+@router.post("/warm")
+def warm(req: WarmRequest, user: CurrentUser = Depends(get_current_user)):
+    """Pre-compute + cache the cutout so the first adjustment is instant too."""
+    _get_cutout(req.file_id)
+    return {"status": "ok"}
 
 
 @router.post("/publish", response_model=ImportPublishResponse)

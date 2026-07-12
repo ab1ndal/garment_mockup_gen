@@ -202,6 +202,10 @@ class PreviewRequest(BaseModel):
     params: EditParamsModel = EditParamsModel()
 
 
+class WarmRequest(BaseModel):
+    file_id: str
+
+
 class PreviewResponse(BaseModel):
     preview: str            # data:image/png;base64,...
 

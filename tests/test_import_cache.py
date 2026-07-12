@@ -49,3 +49,28 @@ def test_render_uses_cached_cutout(monkeypatch):
     mod._render("file-X", p)
     mod._render("file-X", p)
     assert len(computes) == 1          # second render is a cache hit
+
+
+from fastapi.testclient import TestClient
+from backend.main import app
+from backend.auth import get_current_user, CurrentUser
+from backend.deps import get_db
+from mockup_generator.db.profiles_repo import Profile
+
+
+@pytest.fixture
+def client():
+    u = CurrentUser(id="u1", email="a@b.c", role="user",
+                    profile=Profile(id="u1", email="a@b.c", role="user", is_active=True))
+    app.dependency_overrides[get_current_user] = lambda: u
+    app.dependency_overrides[get_db] = lambda: object()
+    yield TestClient(app, raise_server_exceptions=False)
+    app.dependency_overrides.clear()
+
+
+def test_warm_populates_cache(client, monkeypatch):
+    monkeypatch.setattr(mod, "_download", lambda fid: b"bytes")
+    monkeypatch.setattr(mod.edit_pipeline, "compute_cutout", lambda b: _rgba())
+    r = client.post("/api/import/warm", json={"file_id": "file-W"})
+    assert r.status_code == 200 and r.json() == {"status": "ok"}
+    assert "file-W" in mod._CUTOUT_CACHE
