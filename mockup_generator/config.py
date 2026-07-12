@@ -89,6 +89,13 @@ class Settings:
         return _get("REMBG_MODEL", default="birefnet-general-lite")  # type: ignore[return-value]
 
     @property
+    def rembg_warm(self) -> bool:
+        """Warm the rembg model at startup. Off by default: warming downloads the
+        model (~214 MB) and only helps where storage is persistent/pre-cached —
+        otherwise it slows every cold boot. Enable where the model is baked in."""
+        return str(_get("REMBG_WARM", default="0")).lower() in ("1", "true", "yes")
+
+    @property
     def gemini_text_model(self) -> str:
         """Advanced Gemini text model used to refine/expand prompts.
         Text sibling of the image model (not Flash); override per deploy.
