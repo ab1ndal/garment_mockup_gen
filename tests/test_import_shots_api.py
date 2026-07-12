@@ -16,10 +16,16 @@ def client():
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def _clear_cutout_cache():
+    im._CUTOUT_CACHE.clear()
+    yield
+    im._CUTOUT_CACHE.clear()
+
+
 def test_publish_uploads_webp_only_and_inserts_one_row(client, monkeypatch):
     calls = {}
-    monkeypatch.setattr(im.drive_client, "download_file", lambda fid: b"SRC")
-    monkeypatch.setattr(im.edit_pipeline, "apply_edits", lambda src, params: b"PNG")
+    monkeypatch.setattr(im, "_render", lambda fid, params: b"PNG")
     monkeypatch.setattr(im.publish, "_encode_webp", lambda png: b"WEBP")
     monkeypatch.setattr(im.storage_client, "slugify", lambda c: "red")
     monkeypatch.setattr(im.storage_client, "short_hex", lambda: "abcd1234")
@@ -50,18 +56,17 @@ def test_publish_uploads_webp_only_and_inserts_one_row(client, monkeypatch):
 
 
 def test_preview_returns_data_uri(client, monkeypatch):
-    monkeypatch.setattr(im.drive_client, "download_file", lambda fid: b"SRC")
-    monkeypatch.setattr(im.edit_pipeline, "apply_edits", lambda src, params: b"PNGBYTES")
+    monkeypatch.setattr(im, "_render", lambda fid, params: b"PNGBYTES")
     r = client.post("/api/import/preview", json={"file_id": "f1", "params": {}})
     assert r.status_code == 200
     assert r.json()["preview"].startswith("data:image/png;base64,")
 
 
 def test_preview_503_when_bg_unavailable(client, monkeypatch):
-    monkeypatch.setattr(im.drive_client, "download_file", lambda fid: b"SRC")
-    def _boom(src, params):
+    monkeypatch.setattr(im, "_download", lambda fid: b"SRC")
+    def _boom(src_bytes):
         raise im.edit_pipeline.BackgroundRemovalUnavailable("no model")
-    monkeypatch.setattr(im.edit_pipeline, "apply_edits", _boom)
+    monkeypatch.setattr(im.edit_pipeline, "compute_cutout", _boom)
     r = client.post("/api/import/preview", json={"file_id": "f1", "params": {}})
     assert r.status_code == 503
 

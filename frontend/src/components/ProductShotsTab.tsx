@@ -18,6 +18,8 @@ import {
   markEditPresetDefault,
   previewImportShot,
   publishImportShot,
+  releaseImportShot,
+  warmImportShot,
   type Category,
   type EditParams,
   type EditPreset,
@@ -162,6 +164,7 @@ export default function ProductShotsTab() {
   const openEditor = useCallback(
     (img: ImportImage) => {
       setActive(img);
+      warmImportShot(img.id).catch(() => {}); // best-effort: preview still computes on miss
       setPreview(null);
       setColor("");
       // default preset auto-applies; otherwise pipeline defaults
@@ -190,6 +193,15 @@ export default function ProductShotsTab() {
     }, PREVIEW_DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [active, params]);
+
+  // release the cached cutout when we leave this image (switch/back/unmount)
+  useEffect(() => {
+    if (!active) return;
+    const id = active.id;
+    return () => {
+      releaseImportShot(id).catch(() => {});
+    };
+  }, [active]);
 
   const set = <K extends keyof EditParams>(k: K, v: EditParams[K]) =>
     setParams((p) => ({ ...p, [k]: v }));
@@ -395,7 +407,12 @@ export default function ProductShotsTab() {
             {/* before / after */}
             <div className="card stack-sm p-4">
               <div className="toolbar">
-                <h2 className="section-label">Preview · {active.name}</h2>
+                <div>
+                  <h2 className="section-label">Preview · {active.name}</h2>
+                  <span className="mono block text-xs text-subtle">
+                    Product ID: {selected.productid}
+                  </span>
+                </div>
                 <button
                   className="btn-ghost"
                   onClick={() => setActive(null)}

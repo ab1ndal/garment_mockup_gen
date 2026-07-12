@@ -1,8 +1,9 @@
 """Deterministic, params-driven image edit pipeline for imported product shots.
 
-Pure image ops (no I/O) except the lazily-loaded rembg session. Colour/tonal ops
-run on RGB before straighten introduces alpha; the BiRefNet cutout + composite +
-optional shadow run last. See
+Pure image ops (no I/O) except the lazily-loaded rembg session. `compute_cutout`
+runs the single expensive step (BiRefNet segmentation) and returns an RGBA
+cutout that callers can cache. `render` applies the cheap, params-driven
+colour/geometry ops plus composite/shadow on top of a precomputed cutout. See
 docs/superpowers/specs/2026-07-12-drive-product-shot-import-design.md.
 """
 
@@ -51,30 +52,6 @@ def _gray_world(img: Image.Image, mask: Image.Image | None = None) -> Image.Imag
     scale = gray / np.clip(means, 1e-6, None)
     out = np.clip(rgb * scale, 0, 255).astype(np.uint8)
     return Image.fromarray(out)  # 3-channel uint8 -> RGB
-
-
-def apply_geometry_and_colour(img: Image.Image, params: EditParams) -> Image.Image:
-    """EXIF-normalise -> quarter-rotate -> colour/tonal (RGB) -> straighten (RGBA)."""
-    img = ImageOps.exif_transpose(img).convert("RGB")
-
-    q = params.rotate_quarter % 4
-    if q:
-        img = img.transpose(_QUARTER_CW[q])
-
-    if params.white_balance:
-        img = _gray_world(img)
-    if params.autocontrast:
-        img = ImageOps.autocontrast(img, cutoff=1, preserve_tone=True)
-    if params.brightness != 1.0:
-        img = ImageEnhance.Brightness(img).enhance(params.brightness)
-    if params.saturation != 1.0:
-        img = ImageEnhance.Color(img).enhance(params.saturation)
-
-    rgba = img.convert("RGBA")
-    if params.straighten_deg:
-        rgba = rgba.rotate(params.straighten_deg, resample=Image.Resampling.BICUBIC,
-                           expand=True, fillcolor=(0, 0, 0, 0))
-    return rgba
 
 
 _BG_COLOURS = {"white": WHITE, "cream": CREAM}
@@ -126,21 +103,59 @@ def _add_drop_shadow(fg: Image.Image, bg_rgb: tuple[int, int, int],
     return out.convert("RGB")
 
 
-def apply_edits(src_bytes: bytes, params: EditParams) -> bytes:
-    """Full pipeline: geometry+colour -> cutout -> composite -> optional shadow.
+def compute_cutout(src_bytes: bytes) -> Image.Image:
+    """EXIF-normalise the source and return the RGBA BiRefNet cutout.
 
-    Returns RGB PNG bytes. Raises BackgroundRemovalUnavailable if rembg/the model
-    cannot be loaded or run.
+    The single expensive step (rembg); its result is what callers cache.
+    Raises BackgroundRemovalUnavailable if rembg/the model cannot run.
     """
     src = Image.open(BytesIO(src_bytes))
-    prepared = apply_geometry_and_colour(src, params)       # RGBA
-    cutout = _remove_background(prepared)                    # RGBA
+    normalised = ImageOps.exif_transpose(src).convert("RGB")
+    return _remove_background(normalised)
+
+
+def render(cutout: Image.Image, params: EditParams) -> bytes:
+    """Apply cheap, params-driven ops to a precomputed RGBA cutout.
+
+    Colour/tonal ops run on the RGB channels with alpha preserved; white
+    balance uses the cutout alpha as its mask so it balances on garment
+    pixels only. Then quarter-rotate/straighten, composite, optional shadow.
+    Returns RGB PNG bytes. No rembg, no I/O — safe to run per adjustment.
+    """
+    rgba = cutout.convert("RGBA")
+    alpha = rgba.getchannel("A")
+    rgb = rgba.convert("RGB")
+
+    if params.white_balance:
+        rgb = _gray_world(rgb, mask=alpha)
+    if params.autocontrast:
+        rgb = ImageOps.autocontrast(rgb, cutoff=1, preserve_tone=True)
+    if params.brightness != 1.0:
+        rgb = ImageEnhance.Brightness(rgb).enhance(params.brightness)
+    if params.saturation != 1.0:
+        rgb = ImageEnhance.Color(rgb).enhance(params.saturation)
+
+    rgba = rgb.convert("RGBA")
+    rgba.putalpha(alpha)
+
+    q = params.rotate_quarter % 4
+    if q:
+        rgba = rgba.transpose(_QUARTER_CW[q])
+    if params.straighten_deg:
+        rgba = rgba.rotate(params.straighten_deg, resample=Image.Resampling.BICUBIC,
+                           expand=True, fillcolor=(0, 0, 0, 0))
+
     bg_rgb = _BG_COLOURS.get(params.bg, WHITE)
     if params.shadow:
-        composited = _add_drop_shadow(cutout, bg_rgb)
+        composited = _add_drop_shadow(rgba, bg_rgb)
     else:
-        base = Image.new("RGBA", cutout.size, bg_rgb + (255,))
-        composited = Image.alpha_composite(base, cutout).convert("RGB")
+        base = Image.new("RGBA", rgba.size, bg_rgb + (255,))
+        composited = Image.alpha_composite(base, rgba).convert("RGB")
     buf = BytesIO()
     composited.save(buf, format="PNG")
     return buf.getvalue()
+
+
+def apply_edits(src_bytes: bytes, params: EditParams) -> bytes:
+    """Full pipeline convenience wrapper: cutout then render."""
+    return render(compute_cutout(src_bytes), params)
