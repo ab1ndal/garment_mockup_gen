@@ -24,6 +24,7 @@
 **Files:**
 - Modify: `mockup_generator/generation/edit_pipeline.py`
 - Test: `tests/test_edit_pipeline_bg.py` (existing tests must stay green; add new ones)
+- Test: `tests/test_edit_pipeline_geometry.py` (migrate — it tests the deleted `apply_geometry_and_colour`)
 
 **Interfaces:**
 - Produces:
@@ -128,15 +129,61 @@ def apply_edits(src_bytes: bytes, params: EditParams) -> bytes:
 
 Leave `_gray_world`, `_remove_background`, `_get_session`, `_add_drop_shadow`, `EditParams`, `_QUARTER_CW`, `_BG_COLOURS`, and `BackgroundRemovalUnavailable` unchanged. Delete the now-unused `apply_geometry_and_colour`.
 
-- [ ] **Step 4: Run the full pipeline test file**
+- [ ] **Step 4: Migrate the geometry test file to `render`**
 
-Run: `poetry run pytest tests/test_edit_pipeline_bg.py -v`
-Expected: all six tests PASS (three existing + three new).
+`tests/test_edit_pipeline_geometry.py` imports and tests `apply_geometry_and_colour`, which Step 3 deletes. That behavior now lives in `render` (operating on a cutout). Replace the whole file with the same assertions expressed through `render`, using a fully-opaque cutout so colour/geometry effects survive the composite:
 
-- [ ] **Step 5: Commit**
+```python
+from io import BytesIO
+from PIL import Image
+from mockup_generator.generation.edit_pipeline import EditParams, render
+
+
+def _cutout(w=100, h=60, colour=(120, 60, 30)):
+    # fully-opaque RGBA cutout so colour/geometry ops show after composite
+    return Image.new("RGBA", (w, h), colour + (255,))
+
+
+def _out(cut, params):
+    return Image.open(BytesIO(render(cut, params)))
+
+
+def test_quarter_rotate_swaps_dimensions():
+    assert _out(_cutout(100, 60), EditParams(rotate_quarter=1)).size == (60, 100)
+
+
+def test_no_rotation_keeps_dimensions():
+    assert _out(_cutout(100, 60), EditParams()).size == (100, 60)
+
+
+def test_straighten_expands_canvas():
+    out = _out(_cutout(100, 60), EditParams(straighten_deg=10))
+    assert out.size[0] > 100 and out.size[1] > 60   # expand=True grows canvas
+
+
+def test_brightness_increases_pixel_values():
+    base = _out(_cutout(colour=(100, 100, 100)), EditParams(autocontrast=False))
+    bright = _out(_cutout(colour=(100, 100, 100)),
+                  EditParams(autocontrast=False, brightness=1.4))
+    assert bright.getpixel((0, 0))[0] > base.getpixel((0, 0))[0]
+
+
+def test_gray_world_neutralises_colour_cast():
+    out = _out(_cutout(colour=(160, 120, 120)),
+               EditParams(autocontrast=False, white_balance=True))
+    r, g, _b = out.getpixel((0, 0))
+    assert abs(r - g) < 160 - 120          # red cast reduced vs original 40-gap
+```
+
+- [ ] **Step 5: Run both pipeline test files**
+
+Run: `poetry run pytest tests/test_edit_pipeline_bg.py tests/test_edit_pipeline_geometry.py -v`
+Expected: all pass (three existing + three new in bg; five migrated in geometry).
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add mockup_generator/generation/edit_pipeline.py tests/test_edit_pipeline_bg.py
+git add mockup_generator/generation/edit_pipeline.py tests/test_edit_pipeline_bg.py tests/test_edit_pipeline_geometry.py
 git commit -m "refactor(edit): split pipeline into compute_cutout + render
 
 Segmentation now precedes geometry/colour so the cutout depends only on
@@ -151,6 +198,7 @@ as a wrapper."
 **Files:**
 - Modify: `backend/routers/import_shots.py`
 - Test: `tests/test_import_cache.py` (create)
+- Test: `tests/test_import_shots_api.py` (update — it monkeypatches the removed `apply_edits` call path)
 
 **Interfaces:**
 - Consumes: `edit_pipeline.compute_cutout`, `edit_pipeline.render` (Task 1).
@@ -282,15 +330,56 @@ Update `preview` (line 70) and `publish_shot` (line 77) to use `_render`:
 
 Remove the now-unused `edit_pipeline.apply_edits` reference from the old `_edit`. Keep the existing `EditParams` / `BackgroundRemovalUnavailable` import from `edit_pipeline` (line 25).
 
-- [ ] **Step 4: Run to verify pass**
+- [ ] **Step 4: Update the existing router tests to the new call path**
 
-Run: `poetry run pytest tests/test_import_cache.py -v`
-Expected: all three tests PASS.
+`tests/test_import_shots_api.py` monkeypatches `im.edit_pipeline.apply_edits`, which `/preview` and `/publish` no longer call. Update the three affected tests to the new seam and add an autouse fixture that clears the module cache between tests (the cache is a process global; without clearing, a `file_id` cached by one test leaks into the next).
 
-- [ ] **Step 5: Commit**
+Add after the `client` fixture:
+
+```python
+@pytest.fixture(autouse=True)
+def _clear_cutout_cache():
+    im._CUTOUT_CACHE.clear()
+    yield
+    im._CUTOUT_CACHE.clear()
+```
+
+In `test_publish_uploads_webp_only_and_inserts_one_row`, replace the two lines
+```python
+    monkeypatch.setattr(im.drive_client, "download_file", lambda fid: b"SRC")
+    monkeypatch.setattr(im.edit_pipeline, "apply_edits", lambda src, params: b"PNG")
+```
+with:
+```python
+    monkeypatch.setattr(im, "_render", lambda fid, params: b"PNG")
+```
+
+In `test_preview_returns_data_uri`, replace its two setup lines with:
+```python
+    monkeypatch.setattr(im, "_render", lambda fid, params: b"PNGBYTES")
+```
+
+In `test_preview_503_when_bg_unavailable`, exercise the real cache→503 path:
+```python
+    monkeypatch.setattr(im, "_download", lambda fid: b"SRC")
+    def _boom(src_bytes):
+        raise im.edit_pipeline.BackgroundRemovalUnavailable("no model")
+    monkeypatch.setattr(im.edit_pipeline, "compute_cutout", _boom)
+    r = client.post("/api/import/preview", json={"file_id": "f1", "params": {}})
+    assert r.status_code == 503
+```
+
+Leave `test_drive_images_lists_folder` unchanged.
+
+- [ ] **Step 5: Run both router test files to verify pass**
+
+Run: `poetry run pytest tests/test_import_cache.py tests/test_import_shots_api.py -v`
+Expected: all pass (cache tests + the four router tests).
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add backend/routers/import_shots.py tests/test_import_cache.py
+git add backend/routers/import_shots.py tests/test_import_cache.py tests/test_import_shots_api.py
 git commit -m "feat(import): cache BiRefNet cutout per Drive file_id
 
 Preview/publish now render from a cached cutout, so adjustments no longer
