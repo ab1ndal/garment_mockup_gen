@@ -26,12 +26,12 @@ from supabase import Client
 from backend.auth import CurrentUser, get_current_user
 from backend.deps import get_db
 from backend.schemas import (
-    ApproveResponse, GeneratePreview, GenerateRequest, GenerateUploadPreview,
+    ApproveExistingRequest, ApproveResponse, GeneratePreview, GenerateRequest, GenerateUploadPreview,
     VideoGenerateRequest, VideoJobResponse,
 )
 from mockup_generator.config import settings
 from mockup_generator.db import productimages_repo, products_repo
-from mockup_generator.generation import publish, service, video_service
+from mockup_generator.generation import publish, service, video_service, watermark
 from mockup_generator.integrations import drive_client, storage_client
 from mockup_generator.integrations.drive_client import DriveNotConfigured
 
@@ -429,6 +429,51 @@ async def approve_mockup(
             db, productid=productid, png=png, color=color,
             theme_name=theme_name, aspect_ratio=aspect_ratio,
             created_by=user.id, prompt_text=text,
+        )
+    except storage_client.StorageNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Storage is not configured on the server") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not store the mockup: {exc}") from exc
+
+    return ApproveResponse(
+        status="ok", detail="Published.",
+        image_url=result["image_url"], variation_id=result["variation_id"],
+    )
+
+
+@router.post("/approve-existing", response_model=ApproveResponse)
+def approve_existing(req: ApproveExistingRequest,
+                     user: CurrentUser = Depends(get_current_user),
+                     db: Client = Depends(get_db)):
+    """Publish a pre-made mockup that already lives in the product's Drive
+    folder — download, optionally erase the corner star watermark, and run the
+    canonical publish path. No generation involved."""
+    try:
+        raw = drive_client.download_file(req.file_id)
+    except DriveNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Drive access is not configured on the server") from exc
+    except Exception as exc:  # noqa: BLE001 - surface any Drive failure as upstream error
+        raise HTTPException(status_code=502, detail=f"Could not download the Drive image: {exc}") from exc
+
+    if len(raw) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Image is too large.")
+    try:
+        Image.open(BytesIO(raw)).verify()                  # cheap validity check
+        png_img = Image.open(BytesIO(raw)).convert("RGB")  # reopen (verify exhausts it)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="The Drive file is not a valid image.") from exc
+
+    buf = BytesIO()
+    png_img.save(buf, format="PNG")
+    png = buf.getvalue()
+    if req.remove_watermark:
+        png = watermark.remove_corner_star(png)
+
+    try:
+        result = publish.publish_image(
+            db, productid=req.productid, png=png, color=req.color,
+            theme_name=req.theme_name, aspect_ratio=req.aspect_ratio,
+            created_by=user.id, prompt_text="(existing mockup import)",
         )
     except storage_client.StorageNotConfigured as exc:
         raise HTTPException(status_code=503, detail="Storage is not configured on the server") from exc

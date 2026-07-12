@@ -126,6 +126,16 @@ class ApproveResponse(BaseModel):
     variation_id: int | None = None
 
 
+class ApproveExistingRequest(BaseModel):
+    """Publish an already-made Drive mockup as a generation (no AI call)."""
+    productid: str
+    file_id: str
+    color: str | None = None
+    theme_name: str | None = None
+    aspect_ratio: str | None = None
+    remove_watermark: bool = False
+
+
 class BackfillItem(BaseModel):
     productid: str | None
     product_name: str | None

@@ -615,3 +615,51 @@ def test_video_upload_then_streams_mp4(client, monkeypatch):
     assert r.status_code == 200
     assert r.headers["content-type"] == "video/mp4"
     assert r.content == b"MP4BYTES"
+
+
+def test_approve_existing_publishes_drive_image(client, monkeypatch):
+    calls = {}
+    monkeypatch.setattr(gen.drive_client, "download_file", lambda fid: (calls.__setitem__("fid", fid), _png_bytes())[1])
+    monkeypatch.setattr(gen.publish, "publish_image",
+                        lambda db, **kw: calls.update(kw) or {"image_url": "https://pub/x.webp", "variation_id": 7})
+
+    r = client.post("/api/generate/approve-existing", json={
+        "productid": "BC25001", "file_id": "drv1", "color": "Ivory",
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["image_url"] == "https://pub/x.webp" and body["variation_id"] == 7
+    assert calls["fid"] == "drv1"
+    assert calls["productid"] == "BC25001" and calls["color"] == "Ivory"
+    assert calls["prompt_text"] == "(existing mockup import)"
+
+
+def test_approve_existing_remove_watermark_flag(client, monkeypatch):
+    calls = {}
+    monkeypatch.setattr(gen.drive_client, "download_file", lambda fid: _png_bytes())
+    monkeypatch.setattr(gen.watermark, "remove_corner_star",
+                        lambda png: (calls.__setitem__("inpainted", True), png)[1])
+    monkeypatch.setattr(gen.publish, "publish_image",
+                        lambda db, **kw: {"image_url": "u", "variation_id": 1})
+
+    r = client.post("/api/generate/approve-existing", json={
+        "productid": "BC25001", "file_id": "drv1", "remove_watermark": True,
+    })
+    assert r.status_code == 200
+    assert calls.get("inpainted") is True
+
+
+def test_approve_existing_rejects_non_image(client, monkeypatch):
+    monkeypatch.setattr(gen.drive_client, "download_file", lambda fid: b"not an image")
+    r = client.post("/api/generate/approve-existing",
+                    json={"productid": "BC25001", "file_id": "drv1"})
+    assert r.status_code == 400
+
+
+def test_approve_existing_drive_failure_is_502(client, monkeypatch):
+    def boom(fid):
+        raise RuntimeError("drive down")
+    monkeypatch.setattr(gen.drive_client, "download_file", boom)
+    r = client.post("/api/generate/approve-existing",
+                    json={"productid": "BC25001", "file_id": "drv1"})
+    assert r.status_code == 502
