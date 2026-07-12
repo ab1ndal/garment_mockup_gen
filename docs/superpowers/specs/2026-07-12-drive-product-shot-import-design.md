@@ -21,8 +21,9 @@ path so these shots can be cleaned up and published cheaply and consistently.
 - Edit server-side with a small, deterministic, params-driven pipeline: rotate,
   straighten, auto colour, manual brightness/saturation, background removal +
   white/cream composite, optional soft drop-shadow.
-- Publish to the `mockups` bucket as **PNG (archival) + WEBP**, with the DB
-  pointing at the WEBP URL (matches the existing publish behaviour).
+- Publish to the `mockups` bucket as **WEBP only** (no PNG archival copy for
+  imports), with the DB pointing at the WEBP URL. (The generate/backfill flow
+  keeps its PNG+WEBP behaviour unchanged.)
 - Assign `displayorder` in a **fixed 20+ band** so future model mockups (1–19)
   always sort ahead of product shots on the storefront.
 - **Save/apply edit presets** for consistent looks, with one default preset that
@@ -49,6 +50,7 @@ path so these shots can be cleaned up and published cheaply and consistently.
 | Source | **Product's own Drive folder** (`producturl`) | Reuses `list_folder_image_groups`; ties to product |
 | Order band | **Fixed 20+, independent count** | Reserves 1–19 for future model mockups so they display first |
 | Theme label | **`"Product Shot"`** (fixed) | Distinguishes imports from model mockups |
+| Output format | **WEBP only** to Storage (no PNG archival) | Imports don't need a lossless archival copy; generate/backfill unchanged |
 | Presets | **Global, DB-backed, one default auto-applies** | Brand-wide consistency |
 
 ## Architecture
@@ -126,20 +128,25 @@ Validated at the boundary (FastAPI/Pydantic): `rotate_quarter ∈ {0,1,2,3}`,
 
 Output: RGB PNG bytes.
 
-### Storage / DB reuse (targeted refactor)
+### Storage / DB (WEBP-only for imports)
 
-Extract the PNG+WEBP dual-upload (currently inline in
-`mockup_generator/generation/publish.py`) into a shared helper:
+Imports upload **only the WEBP** to the `mockups` bucket — no PNG archival copy.
+Reuse the existing pieces already in `mockup_generator/generation/publish.py`:
+- `_encode_webp(png_bytes) -> webp_bytes` (lossy q=85) — already exists.
+- `storage_client.upload_mockup(productid, webp, key, ext="webp",
+  content_type="image/webp")` — already parameterised.
 
 ```python
-def upload_png_and_webp(productid: str, png: bytes, key: str) -> str:
-    """Upload PNG (archival) + WEBP; return the WEBP public URL."""
+webp = publish._encode_webp(apply_edits(src, params))
+_path, webp_url = storage_client.upload_mockup(
+    productid, webp, key, ext="webp", content_type="image/webp")
 ```
 
-Both `publish_image` (existing) and the new import path call it → no duplication,
-consistent WEBP behaviour.
+No shared PNG+WEBP helper needed — the generate/backfill flow keeps its own
+inline PNG+WEBP upload unchanged; imports diverge deliberately (WEBP-only).
 
 **Import publish differs from `publish_image`:**
+- Uploads **WEBP only** (no PNG); `publish_image` still uploads PNG + WEBP.
 - Writes **only** `productimages` (no `mockup_variations` audit row — not a
   generated variation).
 - Does **not** flip `mockups.base_mockup` (these aren't base model mockups).
@@ -235,8 +242,9 @@ rembg = {version = "2.0.69", extras = ["cpu"]}   # last version supporting py3.1
 - **Preview latency** — BiRefNet-lite is seconds/image on CPU. Frontend debounces
   preview requests; preview endpoint is stateless so drops/retries are safe.
   Consider a generous timeout; do not block at scale (note for later: job queue).
-- **PNG uploaded but WEBP or DB insert fails** → same orphan semantics as existing
-  `publish_image` (no new defensive code — matches current behaviour).
+- **WEBP uploaded but DB insert fails** → WEBP object orphaned in Storage, no DB
+  row (exception propagates). Same orphan semantics as existing `publish_image`;
+  no new defensive code.
 - **Concurrent imports, same product** → `next_product_shot_order` reads max ≥20
   then +1; two parallel publishes could collide on order. Backfill has the same
   accepted race; `displayorder` is not a unique key. Accepted, documented.
@@ -254,9 +262,10 @@ rembg = {version = "2.0.69", extras = ["cpu"]}   # last version supporting py3.1
   1–5 ignored→20.
 - **Unit — `edit_presets_repo`**: `set_default` clears prior default; `get_default`
   returns it / None when empty.
-- **Integration** (mock `drive_client` + `storage_client`): publish writes exactly
-  one `productimages` row, **no** `mockup_variations`, **no** `base_mockup` flip,
-  `displayorder ≥ 20`, DB URL is the WEBP.
+- **Integration** (mock `drive_client` + `storage_client`): publish uploads
+  exactly one object (WEBP, no PNG), writes exactly one `productimages` row,
+  **no** `mockup_variations`, **no** `base_mockup` flip, `displayorder ≥ 20`,
+  DB URL is the WEBP.
 - **Integration — presets**: save → list → mark-default → apply round-trip.
 - **Skip e2e** (no live Drive/Supabase in tests).
 
