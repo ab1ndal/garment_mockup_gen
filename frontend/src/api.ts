@@ -347,6 +347,20 @@ export function generateImageUpload(
 export const approveMockup = (form: FormData) =>
   apiUpload<ApproveResult>("/api/generate/approve", form);
 
+/** Publish a pre-made Drive mockup as a generation (no AI call). */
+export const approveExistingMockup = (b: {
+  productid: string;
+  file_id: string;
+  color?: string;
+  theme_name?: string;
+  aspect_ratio?: string;
+  remove_watermark?: boolean;
+}) =>
+  apiFetch<ApproveResult>("/api/generate/approve-existing", {
+    method: "POST",
+    body: JSON.stringify(b),
+  });
+
 export interface VideoJob {
   job_id: string;
   status: string; // pending | running | done | error

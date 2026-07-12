@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import {
   getCategories, listProducts, listPrompts, listProductImages, getProductColors,
-  generateImage, startVideo, getVideoResult, approveMockup, getGenerationOptions,
+  generateImage, startVideo, getVideoResult, approveMockup, approveExistingMockup, getGenerationOptions,
   type Category, type Product, type Prompt, type ProductImage, type ProductImages,
   type GenOptions,
 } from "../api";
 import RefineButton from "./RefineButton";
 import { useImageLightbox } from "./Lightbox";
-import { ArrowUpRightIcon, CheckIcon, ExpandIcon } from "./icons";
+import { ArrowUpRightIcon, CheckIcon, ExpandIcon, UploadIcon } from "./icons";
 
 const PAGE_SIZE = 30;
 // Prefetch the next page when this many rows remain below the scroll position.
@@ -226,6 +226,11 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
   const [publishing, setPublishing] = useState(false);
   const [colors, setColors] = useState<string[]>([]);
   const [color, setColor] = useState("");
+  const [useAsMockup, setUseAsMockup] = useState<ProductImage | null>(null);
+  const [useWm, setUseWm] = useState(false);
+  const [useColor, setUseColor] = useState("");
+  const [useBusy, setUseBusy] = useState(false);
+  const [useMsg, setUseMsg] = useState<{ kind: "info" | "error"; text: string } | null>(null);
 
   // Generation options (model / quality / aspect) + current selection.
   const [opts, setOpts] = useState<GenOptions | null>(null);
@@ -282,6 +287,7 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
     setImgState("loading"); setImgErr(null);
     setImgs({ loose: [], groups: [] }); setPicked(new Set());
     setVariations([]); setActiveIdx(0); setFeedback(""); setPublishedUrl(null);
+    setUseAsMockup(null); setUseWm(false); setUseColor(""); setUseMsg(null);
     listProductImages(product.productid)
       .then((r) => { setImgs(r); setImgState("ready"); })
       .catch((e: Error) => { setImgErr(e.message.replace(/^\d+:\s*/, "")); setImgState("error"); });
@@ -420,6 +426,24 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
       .finally(() => setPublishing(false));
   };
 
+  const publishExisting = () => {
+    if (!useAsMockup) return;
+    setUseBusy(true);
+    setUseMsg(null);
+    approveExistingMockup({
+      productid: product.productid, file_id: useAsMockup.id,
+      color: useColor || undefined, remove_watermark: useWm,
+    })
+      .then((r) => {
+        setPublishedUrl(r.image_url);
+        setUseMsg({ kind: "info", text: r.detail });
+        setUseAsMockup(null);
+        onPublished?.(product.productid);
+      })
+      .catch((e: Error) => setUseMsg({ kind: "error", text: e.message.replace(/^\d+:\s*/, "") }))
+      .finally(() => setUseBusy(false));
+  };
+
   const approveGenerated = async () => {
     if (!active) return;
     const blob = await (await fetch(`data:image/png;base64,${active.b64}`)).blob();
@@ -485,7 +509,8 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
           <div className="flex flex-col gap-5">
             {imgs.loose.length > 0 && (
               <ImageGrid images={imgs.loose} picked={picked} onToggle={togglePick}
-                         onEnlarge={(im) => lightbox.showDrive(im.id, im.name, im.thumbnail_url)} />
+                         onEnlarge={(im) => lightbox.showDrive(im.id, im.name, im.thumbnail_url)}
+                         onUseAsMockup={(im) => { setUseAsMockup(im); setUseColor(color); setUseMsg(null); }} />
             )}
             {imgs.groups.map((g) => (
               <div key={g.id}>
@@ -493,10 +518,55 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
                   {g.name} <span className="text-muted">· {g.images.length}</span>
                 </p>
                 <ImageGrid images={g.images} picked={picked} onToggle={togglePick}
-                           onEnlarge={(im) => lightbox.showDrive(im.id, im.name, im.thumbnail_url)} />
+                           onEnlarge={(im) => lightbox.showDrive(im.id, im.name, im.thumbnail_url)}
+                           onUseAsMockup={(im) => { setUseAsMockup(im); setUseColor(color); setUseMsg(null); }} />
               </div>
             ))}
           </div>
+        )}
+        {useAsMockup && (
+          <div className="card mt-4 p-4">
+            <p className="section-label mt-0!">Use as existing mockup</p>
+            <div className="mt-2 flex flex-wrap items-center gap-4">
+              <img src={useAsMockup.thumbnail_url} alt={useAsMockup.name}
+                   className="h-16 w-16 rounded-lg border border-line object-cover" />
+              <label className="field mb-0!">
+                <span className="text-xs font-semibold text-subtle">Color</span>
+                <select value={useColor} onChange={(e) => setUseColor(e.target.value)}>
+                  <option value="">— select —</option>
+                  {colors.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </label>
+              <label className="check" style={{ minHeight: 44 }}>
+                <input type="checkbox" checked={useWm}
+                       onChange={(e) => setUseWm(e.target.checked)} />
+                <span>Remove star watermark</span>
+              </label>
+              <div className="ml-auto flex items-center gap-2">
+                <button type="button" disabled={useBusy} onClick={() => setUseAsMockup(null)}>
+                  Cancel
+                </button>
+                <button type="button" className="btn-primary"
+                        disabled={useBusy || !useColor} onClick={publishExisting}>
+                  {useBusy && <span className="spinner" aria-hidden />}
+                  {useBusy ? "Publishing…" : "Publish as mockup"}
+                </button>
+              </div>
+            </div>
+            <p className="mt-2 text-sm text-muted">
+              Publishes this Drive image directly — no AI generation.
+            </p>
+            {useMsg && (
+              <p className={`alert ${useMsg.kind === "error" ? "alert-error" : "alert-info"}`} role="alert">
+                {useMsg.text}
+              </p>
+            )}
+          </div>
+        )}
+        {!useAsMockup && useMsg && (
+          <p className={`alert mt-3 ${useMsg.kind === "error" ? "alert-error" : "alert-info"}`} role="alert">
+            {useMsg.text}
+          </p>
         )}
       </section>
 
@@ -840,10 +910,11 @@ function ImageGridSkeleton({ tiles = 10 }: { tiles?: number }) {
   );
 }
 
-function ImageGrid({ images, picked, onToggle, onEnlarge }: {
+function ImageGrid({ images, picked, onToggle, onEnlarge, onUseAsMockup }: {
   images: ProductImage[]; picked: Set<string>;
   onToggle: (id: string) => void;
   onEnlarge: (img: ProductImage) => void;
+  onUseAsMockup?: (img: ProductImage) => void;
 }) {
   return (
     <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
@@ -879,6 +950,17 @@ function ImageGrid({ images, picked, onToggle, onEnlarge }: {
             >
               <ExpandIcon size={15} strokeWidth={2} />
             </button>
+            {onUseAsMockup && (
+              <button
+                type="button"
+                onClick={() => onUseAsMockup(img)}
+                aria-label={`Use ${img.name} as existing mockup`}
+                title="Use as existing mockup"
+                className="enlarge-btn absolute bottom-1.5 right-1.5"
+              >
+                <UploadIcon size={15} strokeWidth={2} />
+              </button>
+            )}
           </div>
         );
       })}
