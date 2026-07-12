@@ -82,6 +82,13 @@ class Settings:
         return _get("GEMINI_IMAGE_MODEL", default="gemini-3-pro-image")  # type: ignore[return-value]
 
     @property
+    def rembg_model(self) -> str:
+        """BiRefNet session name for rembg background removal (product-shot import).
+        Lite model (~214 MB) by default; set to 'birefnet-general' for the ~928 MB
+        full model where quality warrants the RAM/latency cost."""
+        return _get("REMBG_MODEL", default="birefnet-general-lite")  # type: ignore[return-value]
+
+    @property
     def gemini_text_model(self) -> str:
         """Advanced Gemini text model used to refine/expand prompts.
         Text sibling of the image model (not Flash); override per deploy.

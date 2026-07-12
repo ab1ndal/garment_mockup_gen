@@ -35,12 +35,15 @@
 
 - [ ] **Step 1: Add dependencies to `pyproject.toml`**
 
-In `[project].dependencies`, add these three entries (keep the existing list; append):
+In `[project].dependencies`, add these three entries (keep the existing list; append).
+NOTE (deviation from first draft): bare `numpy`/`onnxruntime` resolve to versions
+that require Python ≥3.11/3.12 or lack cp310 macOS-arm64 wheels — both must be
+bounded:
 
 ```toml
     "rembg[cpu]==2.0.69",
-    "onnxruntime",
-    "numpy",
+    "numpy>=1.26,<2.3",       # <2.3: 2.3 requires py3.11; 2.2.x supports 3.10
+    "onnxruntime>=1.19,<1.20" # 1.19.2 ships cp310 wheels for mac-arm64 (dev) + linux-x64 (HF)
 ```
 
 - [ ] **Step 2: Install and verify resolution**
