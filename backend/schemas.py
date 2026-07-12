@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CategoryOut(BaseModel):
@@ -164,3 +164,72 @@ class BackfillEditRequest(BaseModel):
     file_id: str
     productid: str | None = None
     comment: str | None = None
+
+
+# --- product-shot import + edit presets ---
+
+class EditParamsModel(BaseModel):
+    rotate_quarter: int = Field(default=0, ge=0, le=3)
+    straighten_deg: float = Field(default=0.0, ge=-15.0, le=15.0)
+    autocontrast: bool = True
+    white_balance: bool = False
+    brightness: float = Field(default=1.0, ge=0.5, le=1.5)
+    saturation: float = Field(default=1.0, ge=0.5, le=1.5)
+    bg: Literal["white", "cream"] = "white"
+    shadow: bool = False
+
+
+class ImportImage(BaseModel):
+    id: str
+    name: str
+    mime_type: str | None = None
+    thumbnail_url: str | None = None
+
+
+class ImportGroup(BaseModel):
+    id: str
+    name: str
+    images: list[ImportImage]
+
+
+class ImportDriveImagesResponse(BaseModel):
+    loose: list[ImportImage]
+    groups: list[ImportGroup]
+
+
+class PreviewRequest(BaseModel):
+    file_id: str
+    params: EditParamsModel = EditParamsModel()
+
+
+class PreviewResponse(BaseModel):
+    preview: str            # data:image/png;base64,...
+
+
+class ImportPublishRequest(BaseModel):
+    productid: str
+    file_id: str
+    color: str | None = None
+    params: EditParamsModel = EditParamsModel()
+
+
+class ImportPublishResponse(BaseModel):
+    image_url: str
+    displayorder: int
+
+
+class PresetModel(BaseModel):
+    preset_id: int
+    name: str
+    params: EditParamsModel
+    is_default: bool
+
+
+class PresetsResponse(BaseModel):
+    presets: list[PresetModel]
+
+
+class CreatePresetRequest(BaseModel):
+    name: str
+    params: EditParamsModel
+    is_default: bool = False

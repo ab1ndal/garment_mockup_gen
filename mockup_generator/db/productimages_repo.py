@@ -44,6 +44,27 @@ def next_display_order(client: Client, productid: str) -> int:
     return resp.count or 0
 
 
+def next_product_shot_order(client: Client, productid: str) -> int:
+    """Next display order in the reserved 20+ band for imported product shots.
+
+    Returns max(displayorder >= 20) + 1, or 20 when the band is empty. Orders
+    below 20 are reserved for model mockups and never touched.
+    """
+    resp = (
+        client.table("productimages")
+        .select("displayorder")
+        .eq("productid", productid)
+        .gte("displayorder", 20)
+        .order("displayorder", desc=True)
+        .limit(1)
+        .execute()
+    )
+    rows = resp.data or []
+    if not rows:
+        return 20
+    return (rows[0].get("displayorder") or 19) + 1
+
+
 def delete_for(client: Client, productid: str, productcolor: str | None,
                theme: str = DEFAULT_THEME) -> None:
     """Delete rows for one product + color + photo-theme — keeps one row per triple."""

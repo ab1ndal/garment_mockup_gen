@@ -521,3 +521,98 @@ export const flagEditBackfill = (b: {
     method: "POST",
     body: JSON.stringify(b),
   });
+
+// --- product-shot import & edit pipeline ---
+
+export interface EditParams {
+  rotate_quarter: number; // 0|1|2|3
+  straighten_deg: number; // -15..15
+  autocontrast: boolean;
+  white_balance: boolean;
+  brightness: number; // 0.5..1.5
+  saturation: number; // 0.5..1.5
+  bg: "white" | "cream";
+  shadow: boolean;
+}
+
+export const DEFAULT_EDIT_PARAMS: EditParams = {
+  rotate_quarter: 0,
+  straighten_deg: 0,
+  autocontrast: true,
+  white_balance: false,
+  brightness: 1,
+  saturation: 1,
+  bg: "white",
+  shadow: false,
+};
+
+export interface ImportImage {
+  id: string;
+  name: string;
+  mime_type?: string | null;
+  thumbnail_url?: string | null;
+}
+
+export interface ImportGroup {
+  id: string;
+  name: string;
+  images: ImportImage[];
+}
+
+export interface ImportDriveImages {
+  loose: ImportImage[];
+  groups: ImportGroup[];
+}
+
+export interface EditPreset {
+  preset_id: number;
+  name: string;
+  params: EditParams;
+  is_default: boolean;
+}
+
+export const getImportDriveImages = (productid: string) =>
+  apiFetch<ImportDriveImages>(
+    `/api/import/products/${encodeURIComponent(productid)}/drive-images`,
+  );
+
+export const previewImportShot = (file_id: string, params: EditParams) =>
+  apiFetch<{ preview: string }>("/api/import/preview", {
+    method: "POST",
+    body: JSON.stringify({ file_id, params }),
+  });
+
+export const publishImportShot = (b: {
+  productid: string;
+  file_id: string;
+  color: string | null;
+  params: EditParams;
+}) =>
+  apiFetch<{ image_url: string; displayorder: number }>("/api/import/publish", {
+    method: "POST",
+    body: JSON.stringify(b),
+  });
+
+export const listEditPresets = () =>
+  apiFetch<{ presets: EditPreset[] }>("/api/import/presets");
+
+export const createEditPreset = (b: {
+  name: string;
+  params: EditParams;
+  is_default: boolean;
+}) =>
+  apiFetch<EditPreset>("/api/import/presets", {
+    method: "POST",
+    body: JSON.stringify(b),
+  });
+
+export const markEditPresetDefault = (preset_id: number) =>
+  apiFetch<{ status: string }>(
+    `/api/import/presets/${preset_id}/default`,
+    { method: "PUT" },
+  );
+
+export const deleteEditPreset = (preset_id: number) =>
+  apiFetch<{ status: string }>(`/api/import/presets/${preset_id}`, {
+    method: "DELETE",
+  });

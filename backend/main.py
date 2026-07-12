@@ -17,8 +17,10 @@ from postgrest.exceptions import APIError
 from backend.auth import CurrentUser, get_current_user
 from backend.routers import backfill as backfill_router
 from backend.routers import generate as generate_router
+from backend.routers import import_shots as import_router
 from backend.routers import products as products_router
 from backend.routers import prompts as prompts_router
+from mockup_generator.config import settings
 from mockup_generator.integrations.supabase_client import anon_client, service_client
 
 log = logging.getLogger("mockup.api")
@@ -34,6 +36,17 @@ async def lifespan(_app: FastAPI):
         log.info("Supabase connectivity OK (mode=%s).", "service" if service_client() else "anon")
     except Exception as exc:  # noqa: BLE001 - never block startup; just report
         log.error("Supabase connectivity FAILED at startup: %s", exc)
+
+    # Optionally warm the background-removal model so the first import request
+    # isn't slow. Off by default (warming downloads ~214 MB); enable via
+    # REMBG_WARM=1 where the model is pre-cached/persistent.
+    if settings.rembg_warm:
+        try:
+            from mockup_generator.generation import edit_pipeline
+            edit_pipeline._get_session()
+            log.info("rembg session warmed (%s).", settings.rembg_model)
+        except Exception as exc:  # noqa: BLE001 - feature degrades to 503; boot must not fail
+            log.warning("rembg warm-up skipped: %s", exc)
     yield
 
 
@@ -43,6 +56,7 @@ app.include_router(generate_router.router)
 app.include_router(products_router.router)
 app.include_router(prompts_router.router)
 app.include_router(backfill_router.router)
+app.include_router(import_router.router)
 
 
 # Turn raw Supabase/PostgREST errors into clear, non-opaque responses.
