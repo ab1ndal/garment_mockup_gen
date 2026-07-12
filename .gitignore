@@ -35,3 +35,6 @@ frontend/tsconfig.tsbuildinfo
 
 # claude code local state (worktrees, agent scratch)
 .claude/
+
+# transient per-session task state (lessons.md stays tracked)
+tasks/todo.md
