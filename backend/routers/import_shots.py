@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import base64
 import logging
+import threading
+from collections import OrderedDict
 
 from fastapi import APIRouter, Depends, HTTPException
+from PIL import Image
 from supabase import Client
 
 from backend.auth import CurrentUser, get_current_user
@@ -41,11 +44,38 @@ def _download(file_id: str) -> bytes:
         raise HTTPException(status_code=502, detail=f"Could not load the image: {exc}") from exc
 
 
-def _edit(src: bytes, params_model) -> bytes:
+_CUTOUT_CACHE: "OrderedDict[str, Image.Image]" = OrderedDict()
+_CACHE_CAP = 12
+_CACHE_LOCK = threading.Lock()
+
+
+def _get_cutout(file_id: str) -> Image.Image:
+    """Return the RGBA cutout for a Drive file, computing+caching on a miss.
+
+    The expensive Drive download + BiRefNet run happen at most once per
+    file_id until eviction. Compute happens outside the lock so a slow run
+    never blocks cache hits.
+    """
+    with _CACHE_LOCK:
+        cached = _CUTOUT_CACHE.get(file_id)
+        if cached is not None:
+            _CUTOUT_CACHE.move_to_end(file_id)
+            return cached
     try:
-        return edit_pipeline.apply_edits(src, EditParams(**params_model.model_dump()))
+        cutout = edit_pipeline.compute_cutout(_download(file_id))
     except BackgroundRemovalUnavailable as exc:
         raise HTTPException(status_code=503, detail="Background removal is unavailable on the server") from exc
+    with _CACHE_LOCK:
+        _CUTOUT_CACHE[file_id] = cutout
+        _CUTOUT_CACHE.move_to_end(file_id)
+        while len(_CUTOUT_CACHE) > _CACHE_CAP:
+            _CUTOUT_CACHE.popitem(last=False)
+    return cutout
+
+
+def _render(file_id: str, params_model) -> bytes:
+    return edit_pipeline.render(_get_cutout(file_id),
+                                EditParams(**params_model.model_dump()))
 
 
 @router.get("/products/{productid}/drive-images", response_model=ImportDriveImagesResponse)
@@ -67,14 +97,14 @@ def drive_images(productid: str, user: CurrentUser = Depends(get_current_user),
 @router.post("/preview", response_model=PreviewResponse)
 def preview(req: PreviewRequest, user: CurrentUser = Depends(get_current_user),
             db: Client = Depends(get_db)):
-    png = _edit(_download(req.file_id), req.params)
+    png = _render(req.file_id, req.params)
     return PreviewResponse(preview="data:image/png;base64," + base64.b64encode(png).decode("ascii"))
 
 
 @router.post("/publish", response_model=ImportPublishResponse)
 def publish_shot(req: ImportPublishRequest, user: CurrentUser = Depends(get_current_user),
                  db: Client = Depends(get_db)):
-    webp = publish._encode_webp(_edit(_download(req.file_id), req.params))
+    webp = publish._encode_webp(_render(req.file_id, req.params))
     order = productimages_repo.next_product_shot_order(db, req.productid)
     slug = storage_client.slugify(req.color)
     stem = "_".join(p for p in (slug, str(order)) if p)
