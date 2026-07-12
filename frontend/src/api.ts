@@ -582,6 +582,12 @@ export const previewImportShot = (file_id: string, params: EditParams) =>
     body: JSON.stringify({ file_id, params }),
   });
 
+export const warmImportShot = (file_id: string) =>
+  apiFetch<{ status: string }>("/api/import/warm", {
+    method: "POST",
+    body: JSON.stringify({ file_id }),
+  });
+
 export const publishImportShot = (b: {
   productid: string;
   file_id: string;

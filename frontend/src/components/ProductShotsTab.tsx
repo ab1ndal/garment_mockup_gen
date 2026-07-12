@@ -18,6 +18,7 @@ import {
   markEditPresetDefault,
   previewImportShot,
   publishImportShot,
+  warmImportShot,
   type Category,
   type EditParams,
   type EditPreset,
@@ -162,6 +163,7 @@ export default function ProductShotsTab() {
   const openEditor = useCallback(
     (img: ImportImage) => {
       setActive(img);
+      warmImportShot(img.id).catch(() => {}); // best-effort: preview still computes on miss
       setPreview(null);
       setColor("");
       // default preset auto-applies; otherwise pipeline defaults
@@ -395,7 +397,12 @@ export default function ProductShotsTab() {
             {/* before / after */}
             <div className="card stack-sm p-4">
               <div className="toolbar">
-                <h2 className="section-label">Preview · {active.name}</h2>
+                <div>
+                  <h2 className="section-label">Preview · {active.name}</h2>
+                  <span className="mono block text-xs text-subtle">
+                    Product ID: {selected.productid}
+                  </span>
+                </div>
                 <button
                   className="btn-ghost"
                   onClick={() => setActive(null)}
