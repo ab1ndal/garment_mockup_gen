@@ -153,6 +153,7 @@ class BackfillApproveRequest(BaseModel):
     color: str | None = None
     theme_name: str | None = None
     aspect_ratio: str | None = None
+    remove_watermark: bool = False
 
 
 class BackfillFlagRequest(BaseModel):

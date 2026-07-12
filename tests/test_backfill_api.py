@@ -200,3 +200,39 @@ def test_rescan_syncs_from_drive(client, monkeypatch):
     r = client.post("/api/backfill/rescan")
     assert r.status_code == 200
     assert r.json()["synced"] == 42
+
+
+def test_approve_remove_watermark_routes_bytes_through_inpaint(client, monkeypatch):
+    calls = {}
+    monkeypatch.setattr(bf.items_repo, "transition", lambda db, **kw: True)
+    monkeypatch.setattr(bf.drive_client, "download_file", lambda fid: b"RAW")
+    monkeypatch.setattr(bf.watermark, "remove_corner_star",
+                        lambda png: (calls.__setitem__("inpaint_in", png), b"CLEANED")[1])
+    monkeypatch.setattr(bf.publish, "publish_image",
+                        lambda db, **kw: calls.update(kw) or {"image_url": "u", "variation_id": 1})
+    monkeypatch.setattr(bf.drive_client, "ensure_subfolder", lambda *a: "arch")
+    monkeypatch.setattr(bf.drive_client, "move_file", lambda *a: None)
+
+    r = client.post("/api/backfill/approve", json={
+        "file_id": "f1", "productid": "BC25001", "color": "Red", "remove_watermark": True,
+    })
+    assert r.status_code == 200
+    assert calls["inpaint_in"] == b"RAW"
+    assert calls["png"] == b"CLEANED"
+
+
+def test_approve_default_skips_inpaint(client, monkeypatch):
+    calls = {}
+    monkeypatch.setattr(bf.items_repo, "transition", lambda db, **kw: True)
+    monkeypatch.setattr(bf.drive_client, "download_file", lambda fid: b"RAW")
+    monkeypatch.setattr(bf.watermark, "remove_corner_star",
+                        lambda png: (calls.__setitem__("inpaint", True), png)[1])
+    monkeypatch.setattr(bf.publish, "publish_image",
+                        lambda db, **kw: calls.update(kw) or {"image_url": "u", "variation_id": 1})
+    monkeypatch.setattr(bf.drive_client, "ensure_subfolder", lambda *a: "arch")
+    monkeypatch.setattr(bf.drive_client, "move_file", lambda *a: None)
+
+    r = client.post("/api/backfill/approve", json={"file_id": "f1", "productid": "BC25001"})
+    assert r.status_code == 200
+    assert "inpaint" not in calls
+    assert calls["png"] == b"RAW"

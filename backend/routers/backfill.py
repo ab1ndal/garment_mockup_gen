@@ -37,7 +37,7 @@ from mockup_generator.db import (
     backfill_edits_repo, backfill_items_repo as items_repo,
     mockups_repo, products_repo, variants_repo,
 )
-from mockup_generator.generation import publish
+from mockup_generator.generation import publish, watermark
 from mockup_generator.integrations import drive_client
 from mockup_generator.integrations.drive_client import DriveNotConfigured
 from mockup_generator.services import backfill_sync
@@ -156,6 +156,8 @@ def approve(req: BackfillApproveRequest,
     _claim(db, req.file_id, items_repo.PENDING, items_repo.PUBLISHED)
     try:
         png = drive_client.download_file(req.file_id)
+        if req.remove_watermark:
+            png = watermark.remove_corner_star(png)
         result = publish.publish_image(
             db, productid=req.productid, png=png, color=req.color,
             theme_name=req.theme_name, aspect_ratio=req.aspect_ratio,
