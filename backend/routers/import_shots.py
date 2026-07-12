@@ -114,7 +114,7 @@ def publish_shot(req: ImportPublishRequest, user: CurrentUser = Depends(get_curr
     webp = publish._encode_webp(_render(req.file_id, req.params))
     order = productimages_repo.next_product_shot_order(db, req.productid)
     slug = storage_client.slugify(req.color)
-    stem = "_".join(p for p in (slug, str(order)) if p)
+    stem = "_".join(p for p in (req.productid, slug, str(order)) if p)
     key = f"{stem}_{storage_client.short_hex()}"
     _path, url = storage_client.upload_mockup(
         req.productid, webp, key, ext="webp", content_type="image/webp")
