@@ -7,6 +7,7 @@ import PromptsTab from "./components/PromptsTab";
 import BackfillTab from "./components/BackfillTab";
 import QuickGenerateTab from "./components/QuickGenerateTab";
 import QuickVideoTab from "./components/QuickVideoTab";
+import ProductShotsTab from "./components/ProductShotsTab";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -104,6 +105,7 @@ const TABS = [
   { id: "quickvideo", label: "Quick Video" },
   { id: "prompts", label: "Prompts" },
   { id: "backfill", label: "Backfill" },
+  { id: "shots", label: "Product Shots" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -147,8 +149,10 @@ function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           <QuickVideoTab />
         ) : tab === "prompts" ? (
           <PromptsTab />
-        ) : (
+        ) : tab === "backfill" ? (
           <BackfillTab />
+        ) : (
+          <ProductShotsTab />
         )}
       </div>
     </div>
