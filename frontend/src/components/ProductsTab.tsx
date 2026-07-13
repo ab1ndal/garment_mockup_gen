@@ -467,6 +467,16 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
   const pickedCount = picked.size;
   const totalImages = imgs.loose.length + imgs.groups.reduce((n, g) => n + g.images.length, 0);
 
+  const openUseAsMockup = (im: ProductImage) => {
+    setUseAsMockup(im); setUseColor(color); setUseMsg(null);
+  };
+  const useSelectedAsMockup = () => {
+    const id = [...picked][0];
+    const im = imgs.loose.find((i) => i.id === id)
+      ?? imgs.groups.flatMap((g) => g.images).find((i) => i.id === id);
+    if (im) openUseAsMockup(im);
+  };
+
   return (
     <div className="card p-6 sm:p-8">
       {/* Header */}
@@ -510,7 +520,7 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
             {imgs.loose.length > 0 && (
               <ImageGrid images={imgs.loose} picked={picked} onToggle={togglePick}
                          onEnlarge={(im) => lightbox.showDrive(im.id, im.name, im.thumbnail_url)}
-                         onUseAsMockup={(im) => { setUseAsMockup(im); setUseColor(color); setUseMsg(null); }} />
+                         onUseAsMockup={openUseAsMockup} />
             )}
             {imgs.groups.map((g) => (
               <div key={g.id}>
@@ -519,9 +529,22 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
                 </p>
                 <ImageGrid images={g.images} picked={picked} onToggle={togglePick}
                            onEnlarge={(im) => lightbox.showDrive(im.id, im.name, im.thumbnail_url)}
-                           onUseAsMockup={(im) => { setUseAsMockup(im); setUseColor(color); setUseMsg(null); }} />
+                           onUseAsMockup={openUseAsMockup} />
               </div>
             ))}
+          </div>
+        )}
+        {imgState === "ready" && totalImages > 0 && !useAsMockup && (
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button type="button" disabled={pickedCount !== 1} onClick={useSelectedAsMockup}>
+              <UploadIcon size={15} strokeWidth={2} />
+              Use selected as mockup
+            </button>
+            <span className="text-sm text-muted">
+              {pickedCount === 1
+                ? "Publishes this image directly — no AI generation."
+                : "Select exactly one image to publish it directly (no AI)."}
+            </span>
           </div>
         )}
         {useAsMockup && (
