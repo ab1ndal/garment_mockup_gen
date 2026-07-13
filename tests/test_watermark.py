@@ -68,3 +68,46 @@ def test_gradient_background_reconstructed():
 def test_tiny_image_returned_unchanged():
     src = _png(Image.new("RGB", (5, 5), BG))
     assert remove_corner_star(src) == src
+
+
+def _shadow_blob() -> np.ndarray:
+    # Soft shadow falling next to the ROI, like a garment hem shadow —
+    # nonlinear and non-separable, the case that exposed a visible seam.
+    yy, xx = np.mgrid[0:H, 0:W].astype(float)
+    g = 230 - 100 * np.exp(-(((xx - 0.80 * W) / (0.08 * W)) ** 2
+                             + ((yy - 0.95 * H) / (0.06 * H)) ** 2))
+    return np.repeat(np.clip(g, 0, 255).astype(np.uint8)[:, :, None], 3, axis=2)
+
+
+def test_no_seam_on_shadowed_background():
+    # The fill must meet the surrounding pixels without a visible step on any
+    # ROI edge (JND is ~2/255 on smooth areas).
+    src = _png(Image.fromarray(_shadow_blob()))
+    out = remove_corner_star(src)
+    a = np.asarray(Image.open(BytesIO(out)).convert("RGB")).astype(float)
+    x0, x1 = int(W * ROI_X0), int(W * ROI_X1)
+    y0, y1 = int(H * ROI_Y0), int(H * ROI_Y1)
+    edges = {
+        "left": np.abs(a[y0:y1, x0] - a[y0:y1, x0 - 1]),
+        "right": np.abs(a[y0:y1, x1 - 1] - a[y0:y1, x1]),
+        "top": np.abs(a[y0, x0:x1] - a[y0 - 1, x0:x1]),
+        "bottom": np.abs(a[y1 - 1, x0:x1] - a[y1, x0:x1]),
+    }
+    for name, d in edges.items():
+        assert d.mean() <= 1.0, f"{name} edge step {d.mean():.2f}"
+
+
+def test_grain_matches_surroundings():
+    # On a noisy photo the repainted patch must carry similar grain, not be a
+    # perfectly smooth rectangle.
+    rng = np.random.default_rng(7)
+    noisy = np.clip(np.full((H, W, 3), 221.0) + rng.normal(0, 3, (H, W, 3)), 0, 255)
+    src = _png(Image.fromarray(noisy.astype(np.uint8)))
+    out = remove_corner_star(src)
+    a = np.asarray(Image.open(BytesIO(out)).convert("RGB")).astype(float).mean(axis=-1)
+    x0, x1 = int(W * ROI_X0), int(W * ROI_X1)
+    y0, y1 = int(H * ROI_Y0), int(H * ROI_Y1)
+    inside = np.abs(np.diff(a[y0 + 5:y1 - 5, x0 + 5:x1 - 5], axis=0)).mean()
+    outside = np.abs(np.diff(a[y0 - 40:y0 - 5, x0:x1], axis=0)).mean()
+    assert inside >= outside * 0.5, f"inside grain {inside:.2f} vs outside {outside:.2f}"
+    assert inside <= outside * 1.5, f"inside grain {inside:.2f} vs outside {outside:.2f}"
