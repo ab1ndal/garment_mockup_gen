@@ -59,7 +59,7 @@ Stored in `.env` (gitignored):
 ### Key Constants in `create_base.py`
 - Max input images per generation: 2 (loaded from folder sorted alphabetically)
 - Max image size: 1024×1024 (resized on load)
-- Retry attempts: 5, starting backoff: 8s, max backoff: 60s
+- Retry attempts: 8, starting backoff: 8s, max backoff: 60s
 - Safety settings: all set to `BLOCK_NONE`
 
 ### Garment Types Supported

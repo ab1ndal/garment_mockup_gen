@@ -124,7 +124,7 @@ def generate_with_retries(
     output_mime_type: str | None = None,
     output_compression_quality: int | None = None,
     thinking_level: str | None = None,
-    max_attempts: int = 5,
+    max_attempts: int = 8,
 ):
     """Call Gemini image generation with exponential backoff on 429/5xx.
 
