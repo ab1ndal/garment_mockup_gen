@@ -127,15 +127,15 @@ All take a `batch_items.id`, all use optimistic transitions (expect `ready`), al
 - **Accept** — `POST /api/batch/{id}/accept`, optional overrides `{ color?, theme_name?, aspect_ratio? }`:
   1. Download staged file from Drive (`drive_file_id`).
   2. `publish.publish_image(db, productid=, png=, color=, theme_name=, aspect_ratio=, created_by=, prompt_text=)` — uploads PNG+WEBP to the public `mockups` bucket and writes the 3 DB rows (`mockup_variations` insert, `mockups.base_mockup=true`, `productimages` insert). This is the existing canonical writer.
-  3. `drive_client.delete_file(drive_file_id)`.
+  3. Remove the staged Drive file: `delete_file` (the SA owns files it uploaded); **if deletion isn't permitted, fall back to moving the file into the `published/` archive folder** so it always leaves `_batch`.
   4. `transition(id, "ready", "published")`.
-  - Ordering: publish first, then delete Drive, then mark published. If the Drive delete fails, the publish already succeeded → mark published and surface a `warning` (orphaned Drive file), rather than failing the accept.
+  - Ordering: publish first, then remove the Drive copy, then mark published. If both delete and archive-move fail, the publish already succeeded → mark published and surface a `warning`, rather than failing the accept.
 - **Edit** — `POST /api/batch/{id}/edit`, body `{ prompt_note?, image_ids? }`:
   1. `transition(id, "ready", "queued", prompt_text=<updated>, image_ids=<updated>)` where updated prompt appends `\n\nRevision note: {prompt_note}` (same convention as `ProductsTab.composePrompt`).
   2. Delete the old staged Drive file (`drive_file_id`), clear `drive_file_id`.
   3. Ensure worker is running → it regenerates the card in place.
 - **Reject** — `POST /api/batch/{id}/reject`:
-  1. `drive_client.delete_file(drive_file_id)`.
+  1. Remove the staged Drive file (delete → fallback move to `published/`).
   2. `transition(id, "ready", "rejected")`.
 
 ## 9. API client + backend router
@@ -156,7 +156,7 @@ Clone the `BackfillTab` skeleton (`frontend/src/components/BackfillTab.tsx`).
 - **Enqueue bar:** category `<select>` (from cached `getCategories`, with an *All categories* option) + a net-new count `<input type="number" min=1 max=100>` + a **Generate** button. On submit → `enqueueBatch`, then show a toast summarizing `queued` and any `skipped[]` reasons.
 - **Status sub-tabs with count badges:** **Ready** (review queue) / **In progress** (`queued`+`generating`) / **Failed** / **History** (`published`+`rejected`). Badges from `getBatchCounts`.
 - **Cards:** paginated offset/limit = 20 (Prev/Next + "Page X of Y", the Backfill pagination). Each card shows: product id, color, source images (zoomable via `useImageLightbox.showDrive`), the generated mockup (zoomable), and — on Ready cards — **Accept / Edit / Reject** buttons. In-progress cards show a spinner/state; failed cards show the error + a **Retry** action (transition `failed→queued`).
-- **Polling:** while any `queued`/`generating` rows exist (from counts), poll `getBatchCounts` + the current page every ~4s; stop when idle.
+- **Fetching:** the card list is fetched 20 at a time **only on tab/page change, manual Refresh, or after an action** — no background polling of the list. A **Refresh** button re-fetches the current page + counts.
 - **Optimistic mutations:** reuse Backfill's `afterAction` / `run` runners (drop card locally, adjust counts, refetch a page that empties, handle **409** by re-syncing).
 - Follow the `ui-ux-pro-max` skill for the new controls (touch targets, focus states, contrast).
 
