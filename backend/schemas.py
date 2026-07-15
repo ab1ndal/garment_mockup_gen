@@ -177,6 +177,66 @@ class BackfillEditRequest(BaseModel):
     comment: str | None = None
 
 
+# --- batch generate ---
+
+class BatchEnqueueRequest(BaseModel):
+    category: str | None = None
+    count: int = Field(ge=1, le=100)
+    model: str | None = None
+    resolution: str | None = None
+    aspect_ratio: str | None = None
+
+
+class BatchSkip(BaseModel):
+    productid: str
+    reason: str
+
+
+class BatchEnqueueResponse(BaseModel):
+    batch_id: str
+    queued: int
+    skipped: list[BatchSkip]
+
+
+class BatchItemOut(BaseModel):
+    id: int
+    productid: str
+    product_name: str | None
+    color: str | None
+    status: str
+    image_ids: list[str]
+    drive_file_id: str | None
+    generated_thumb_url: str | None
+    error: str | None
+
+
+class BatchItemsResponse(BaseModel):
+    total: int
+    offset: int
+    limit: int
+    items: list[BatchItemOut]
+
+
+class BatchCountsResponse(BaseModel):
+    counts: dict[str, int]
+
+
+class BatchActionResponse(BaseModel):
+    status: str
+    warning: str | None = None
+
+
+class BatchAcceptRequest(BaseModel):
+    color: str | None = None
+    theme_name: str | None = None
+    aspect_ratio: str | None = None
+
+
+class BatchEditRequest(BaseModel):
+    prompt_note: str | None = None
+    image_ids: list[str] | None = None
+
+
 # --- product-shot import + edit presets ---
 
 class EditParamsModel(BaseModel):

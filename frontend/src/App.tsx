@@ -5,6 +5,7 @@ import { getMe, getCategories, type Me } from "./api";
 import ProductsTab from "./components/ProductsTab";
 import PromptsTab from "./components/PromptsTab";
 import BackfillTab from "./components/BackfillTab";
+import BatchTab from "./components/BatchTab";
 import QuickGenerateTab from "./components/QuickGenerateTab";
 import QuickVideoTab from "./components/QuickVideoTab";
 import ProductShotsTab from "./components/ProductShotsTab";
@@ -105,6 +106,7 @@ const TABS = [
   { id: "quickvideo", label: "Quick Video" },
   { id: "prompts", label: "Prompts" },
   { id: "backfill", label: "Backfill" },
+  { id: "batch", label: "Batch Generate" },
   { id: "shots", label: "Product Shots" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
@@ -151,6 +153,8 @@ function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           <PromptsTab />
         ) : tab === "backfill" ? (
           <BackfillTab />
+        ) : tab === "batch" ? (
+          <BatchTab />
         ) : (
           <ProductShotsTab />
         )}

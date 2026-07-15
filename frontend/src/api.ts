@@ -537,6 +537,81 @@ export const flagEditBackfill = (b: {
     body: JSON.stringify(b),
   });
 
+// --- batch generate ---
+
+export type BatchTabId = "ready" | "in_progress" | "failed" | "history";
+
+export interface BatchItem {
+  id: number;
+  productid: string;
+  product_name: string | null;
+  color: string | null;
+  status: string;
+  image_ids: string[];
+  drive_file_id: string | null;
+  generated_thumb_url: string | null;
+  error: string | null;
+}
+
+export interface BatchItems {
+  total: number;
+  offset: number;
+  limit: number;
+  items: BatchItem[];
+}
+
+export interface BatchEnqueueResult {
+  batch_id: string;
+  queued: number;
+  skipped: { productid: string; reason: string }[];
+}
+
+export interface BatchSources {
+  sources: { id: string; data_uri: string }[];
+  generated_preview: string | null;
+  colors: string[];
+  color: string | null;
+  image_ids: string[];
+}
+
+export function enqueueBatch(body: {
+  category: string | null; count: number;
+}): Promise<BatchEnqueueResult> {
+  return apiFetch<BatchEnqueueResult>("/api/batch", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function listBatchItems(p: { tab: BatchTabId; offset: number; limit: number }): Promise<BatchItems> {
+  const q = new URLSearchParams({ tab: p.tab, offset: String(p.offset), limit: String(p.limit) });
+  return apiFetch<BatchItems>(`/api/batch/items?${q}`);
+}
+
+export function getBatchCounts(): Promise<{ counts: Record<string, number> }> {
+  return apiFetch<{ counts: Record<string, number> }>("/api/batch/counts");
+}
+
+export function getBatchSources(id: number): Promise<BatchSources> {
+  return apiFetch<BatchSources>(`/api/batch/${id}/sources`);
+}
+
+export function acceptBatch(id: number, body: { color?: string | null; theme_name?: string | null; aspect_ratio?: string | null } = {}): Promise<{ status: string; warning: string | null }> {
+  return apiFetch(`/api/batch/${id}/accept`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function editBatch(id: number, body: { prompt_note?: string; image_ids?: string[] }): Promise<{ status: string; warning: string | null }> {
+  return apiFetch(`/api/batch/${id}/edit`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function rejectBatch(id: number): Promise<{ status: string; warning: string | null }> {
+  return apiFetch(`/api/batch/${id}/reject`, { method: "POST" });
+}
+
+export function retryBatch(id: number): Promise<{ status: string; warning: string | null }> {
+  return apiFetch(`/api/batch/${id}/retry`, { method: "POST" });
+}
+
 // --- product-shot import & edit pipeline ---
 
 export interface EditParams {

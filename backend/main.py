@@ -16,6 +16,7 @@ from postgrest.exceptions import APIError
 
 from backend.auth import CurrentUser, get_current_user
 from backend.routers import backfill as backfill_router
+from backend.routers import batch as batch_router
 from backend.routers import generate as generate_router
 from backend.routers import import_shots as import_router
 from backend.routers import products as products_router
@@ -37,6 +38,20 @@ async def lifespan(_app: FastAPI):
     except Exception as exc:  # noqa: BLE001 - never block startup; just report
         log.error("Supabase connectivity FAILED at startup: %s", exc)
 
+    # Resume any Batch Generate work left over from a previous process: reset
+    # rows stuck in 'generating' (a crashed worker) back to 'queued', then kick
+    # the worker if anything is pending. Never block startup on this.
+    try:
+        from backend.services import batch_worker
+        db = service_client()
+        if db is not None:
+            reset = batch_worker.reset_orphaned(db)
+            if reset:
+                log.info("batch: reset %d orphaned 'generating' rows to 'queued'", reset)
+            batch_worker.ensure_running(db)
+    except Exception as exc:  # noqa: BLE001 - batch resume is best-effort; boot must not fail
+        log.warning("batch resume skipped: %s", exc)
+
     # Optionally warm the background-removal model so the first import request
     # isn't slow. Off by default (warming downloads ~214 MB); enable via
     # REMBG_WARM=1 where the model is pre-cached/persistent.
@@ -57,6 +72,7 @@ app.include_router(products_router.router)
 app.include_router(prompts_router.router)
 app.include_router(backfill_router.router)
 app.include_router(import_router.router)
+app.include_router(batch_router.router)
 
 
 # Turn raw Supabase/PostgREST errors into clear, non-opaque responses.
