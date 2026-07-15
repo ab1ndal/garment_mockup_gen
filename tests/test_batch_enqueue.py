@@ -67,6 +67,35 @@ def test_plan_cards_one_row_per_color_and_skips(monkeypatch):
     assert "no images" in reasons["BC2"] and "drive folder" in reasons["BC3"]
 
 
+def test_plan_cards_skips_product_with_too_many_images(monkeypatch):
+    """Over the limit is left for manual generation: choosing among many shots is
+    a judgement call, and a card that guesses wastes a generation."""
+    monkeypatch.setattr(be.products_repo, "list_products",
+                        lambda db, **k: [_product("BC1"), _product("BC2")])
+    monkeypatch.setattr(be, "resolve_category_prompt", lambda db, cid: "BODY")
+    monkeypatch.setattr(be.drive_client, "extract_folder_id",
+                        lambda url: url.rsplit("/", 1)[-1])
+    limits = {}
+    # BC1 is at the limit and stays; BC2 comes back with a full slate -> over it.
+    imgs = {"FID-BC1": ["a", "b", "c", "d", "e"],
+            "FID-BC2": ["a", "b", "c", "d", "e", "f"]}
+    def fake_list(fid, limit=14):
+        limits[fid] = limit
+        return imgs[fid][:limit]
+    monkeypatch.setattr(be.drive_client, "list_folder_image_ids", fake_list)
+    monkeypatch.setattr(be.variants_repo, "list_colors", lambda db, pid: [])
+
+    rows, skipped = be.plan_cards(object(), category="SA", count=10, model="m",
+                                  resolution="2K", aspect_ratio="1:1",
+                                  batch_id="b1", created_by=None)
+    assert [r["productid"] for r in rows] == ["BC1"]
+    assert len(rows[0]["image_ids"]) == 5
+    assert [s["productid"] for s in skipped] == ["BC2"]
+    assert "manually" in skipped[0]["reason"]
+    # one over the limit is enough to prove overflow — never page the whole folder
+    assert set(limits.values()) == {be._MAX_SOURCE_IMAGES + 1}
+
+
 def test_plan_cards_colorless_product_gets_one_row(monkeypatch):
     monkeypatch.setattr(be.products_repo, "list_products", lambda db, **k: [_product("BC1")])
     monkeypatch.setattr(be, "resolve_category_prompt", lambda db, cid: "BODY")
