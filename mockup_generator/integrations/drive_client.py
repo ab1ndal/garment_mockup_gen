@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from io import BytesIO
@@ -51,6 +52,10 @@ _MAX_FILES = 100
 _MAX_SUBFOLDERS = 30  # variant subfolders scanned per product (bounds Drive list calls)
 _FOLDER_MIME = "application/vnd.google-apps.folder"
 _THUMB_WORKERS = 8  # parallel thumbnail fetches (each is a serial HTTP GET otherwise)
+
+# Per-thread Drive service. See _svc() — sharing one across threads corrupts its
+# TLS socket.
+_local = threading.local()
 
 # Reserved worklist subfolders the backfill flow writes into. Approved originals
 # are archived to ``published/``, flagged ones moved to ``rejected/``, ones sent
@@ -93,20 +98,61 @@ def parse_generated_name(name: str) -> tuple[str | None, str | None]:
 
 
 @lru_cache(maxsize=1)
-def _clients():
-    """Build (drive service, authorized session) once and cache them."""
+def _credentials():
+    """Service-account credentials, built once and shared."""
     from google.oauth2 import service_account
-    from google.auth.transport.requests import AuthorizedSession
-    from googleapiclient.discovery import build
 
     raw = settings.google_drive_sa_json
     if not raw:
         raise DriveNotConfigured("GOOGLE_DRIVE_SA_JSON is not set")
 
     info = json.loads(raw) if raw.lstrip().startswith("{") else json.load(open(raw))
-    creds = service_account.Credentials.from_service_account_info(info, scopes=_SCOPES)
-    svc = build("drive", "v3", credentials=creds, cache_discovery=False)
-    return svc, AuthorizedSession(creds)
+    return service_account.Credentials.from_service_account_info(info, scopes=_SCOPES)
+
+
+@lru_cache(maxsize=1)
+def _session():
+    """Authorized ``requests`` session, shared across threads.
+
+    Safe to share: requests dispenses a connection per request from a
+    thread-safe urllib3 pool. Unlike the discovery service below, no two threads
+    ever hold the same socket.
+    """
+    from google.auth.transport.requests import AuthorizedSession
+
+    return AuthorizedSession(_credentials())
+
+
+def _build_svc():
+    from googleapiclient.discovery import build
+
+    return build("drive", "v3", credentials=_credentials(), cache_discovery=False)
+
+
+def _svc():
+    """Drive discovery service for the calling thread.
+
+    NEVER share this across threads. googleapiclient talks through one
+    httplib2.Http, which holds a single TLS socket and is not thread-safe: two
+    threads writing to it interleave TLS records and the connection dies with
+    "[SSL] record layer failure". That is exactly what happened when the batch
+    worker's drainer pool called download_file concurrently — one drainer won
+    the socket, the rest failed, and a wedged read blocked the whole server.
+
+    One service per thread instead. Threads here are long-lived and few (the
+    drainer pool, the request threadpool), so each builds its own once and keeps
+    the connection reuse that made a shared client tempting.
+    """
+    svc = getattr(_local, "svc", None)
+    if svc is None:
+        svc = _build_svc()
+        _local.svc = svc
+    return svc
+
+
+def _clients():
+    """(drive service, authorized session) — the service is per-thread."""
+    return _svc(), _session()
 
 
 def _thumbnail_data_uri(session, link: str | None, file_id: str) -> str:

@@ -5,6 +5,8 @@ grouping logic (loose images + one group per non-empty subfolder, depth 1) is
 exercised without touching Google or the network.
 """
 
+import threading
+
 from mockup_generator.integrations import drive_client
 
 _FOLDER = drive_client._FOLDER_MIME
@@ -97,6 +99,40 @@ def test_list_folder_images_flat(monkeypatch):
     out = drive_client.list_folder_images("F")
     assert [i["id"] for i in out] == ["x", "y"]
     assert out[0]["thumbnail_url"] == "data:thumb:x"
+
+
+def test_svc_is_per_thread_and_session_is_shared(monkeypatch):
+    """googleapiclient talks through one httplib2.Http holding a single TLS
+    socket, and httplib2 is not thread-safe. Sharing the service across the batch
+    drainer pool interleaved TLS records on that socket: every concurrent card
+    died with "[SSL] record layer failure" and a wedged read hung the server.
+    The session is requests-backed (thread-safe pool) and stays shared.
+    """
+    monkeypatch.setattr(drive_client, "_build_svc", lambda: object())
+    monkeypatch.setattr(drive_client, "_session", lambda: "SESSION")
+    monkeypatch.setattr(drive_client, "_local", threading.local())
+
+    seen = []  # holds the services themselves: ids of dead objects get reused
+    def grab():
+        seen.append(drive_client._clients())
+
+    threads = [threading.Thread(target=grab) for _ in range(4)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    assert len({id(svc) for svc, _ in seen}) == 4, "each thread must get its own Drive service"
+    assert {sess for _, sess in seen} == {"SESSION"}, "the session is shared on purpose"
+
+
+def test_svc_is_reused_within_one_thread(monkeypatch):
+    """Per-thread must not mean per-call: rebuilding drops connection reuse."""
+    builds = []
+    monkeypatch.setattr(drive_client, "_build_svc", lambda: builds.append(1) or object())
+    monkeypatch.setattr(drive_client, "_session", lambda: "SESSION")
+    monkeypatch.setattr(drive_client, "_local", threading.local())
+    first, _ = drive_client._clients()
+    second, _ = drive_client._clients()
+    assert first is second and len(builds) == 1
 
 
 def test_thumbnails_for_ids_keeps_input_order(monkeypatch):
