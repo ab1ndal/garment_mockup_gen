@@ -19,10 +19,10 @@ def client():
     app.dependency_overrides.clear()
 
 
-def _row(id=1, status="ready", drv="drv1"):
+def _row(id=1, status="ready", drv="BC25001/batch-1.png"):
     return BatchRow(id=id, batch_id="b1", productid="BC25001", color="Red",
                     image_ids=["a", "b"], prompt_text="p", status=status,
-                    drive_file_id=drv, thumbnail_link=f"l-{id}", error=None,
+                    storage_path=drv, error=None,
                     model="m", resolution="4K", aspect_ratio="1:1")
 
 
@@ -51,13 +51,19 @@ def test_items_ready_tab_enriches(client, monkeypatch):
     monkeypatch.setattr(bx.items_repo, "page",
                         lambda db, *, statuses, offset, limit: ([_row()], 1))
     monkeypatch.setattr(bx.products_repo, "names_for", lambda db, pids: {"BC25001": "Saree"})
-    monkeypatch.setattr(bx.drive_client, "thumbnails_for",
-                        lambda items: {i["file_id"]: f"data:{i['file_id']}" for i in items})
+    signed = {}
+    def fake_sign(path, *, bucket, **k):
+        signed.update({"path": path, "bucket": bucket})
+        return f"https://signed/{path}"
+    monkeypatch.setattr(bx.storage_client, "signed_url", fake_sign)
     r = client.get("/api/batch/items?tab=ready&offset=0&limit=20")
     assert r.status_code == 200
     it = r.json()["items"][0]
-    assert it["product_name"] == "Saree" and it["generated_thumb_url"] == "data:drv1"
+    assert it["product_name"] == "Saree"
+    assert it["generated_thumb_url"] == "https://signed/BC25001/batch-1.png"
     assert it["color"] == "Red"
+    # staged thumbs are signed from the private temp bucket, never public
+    assert signed["bucket"] == bx.storage_client.TEMP_BUCKET
 
 
 def test_items_in_progress_tab_queries_two_statuses(client, monkeypatch):
@@ -67,7 +73,6 @@ def test_items_in_progress_tab_queries_two_statuses(client, monkeypatch):
         return [], 0
     monkeypatch.setattr(bx.items_repo, "page", fake_page)
     monkeypatch.setattr(bx.products_repo, "names_for", lambda db, pids: {})
-    monkeypatch.setattr(bx.drive_client, "thumbnails_for", lambda items: {})
     r = client.get("/api/batch/items?tab=in_progress")
     assert r.status_code == 200
     assert set(seen["statuses"]) == {"queued", "generating"}
@@ -85,19 +90,29 @@ def test_counts(client, monkeypatch):
     assert r.status_code == 200 and r.json()["counts"]["ready"] == 2
 
 
-def test_accept_publishes_deletes_drive_and_marks_published(client, monkeypatch):
+def test_accept_publishes_from_temp_deletes_staged_and_marks_published(client, monkeypatch):
     monkeypatch.setattr(bx.items_repo, "get", lambda db, i: _row(id=i))
     monkeypatch.setattr(bx.items_repo, "transition",
                         lambda db, *, item_id, expect, to, **f: True)
-    monkeypatch.setattr(bx.drive_client, "download_file", lambda fid: b"PNG")
+    downloaded = {}
+    def fake_dl(path, *, bucket, **k):
+        downloaded.update({"path": path, "bucket": bucket})
+        return b"PNG"
+    monkeypatch.setattr(bx.storage_client, "download_mockup", fake_dl)
     published = {}
     monkeypatch.setattr(bx.publish, "publish_image",
                         lambda db, **k: published.update(k) or {"image_url": "u", "variation_id": 7})
     deleted = {}
-    monkeypatch.setattr(bx.drive_client, "delete_file", lambda fid: deleted.setdefault("id", fid))
+    def fake_rm(path, *, bucket, **k): deleted.update({"path": path, "bucket": bucket})
+    monkeypatch.setattr(bx.storage_client, "delete_object", fake_rm)
     r = client.post("/api/batch/1/accept", json={})
     assert r.status_code == 200 and r.json()["status"] == "ok"
-    assert deleted["id"] == "drv1" and published["color"] == "Red"
+    # read from temp, published via the unchanged publish path, temp copy removed
+    assert downloaded["path"] == "BC25001/batch-1.png"
+    assert downloaded["bucket"] == bx.storage_client.TEMP_BUCKET
+    assert published["color"] == "Red"
+    assert deleted["path"] == "BC25001/batch-1.png"
+    assert deleted["bucket"] == bx.storage_client.TEMP_BUCKET
 
 
 def test_accept_conflict_when_not_ready(client, monkeypatch):
@@ -108,31 +123,32 @@ def test_accept_conflict_when_not_ready(client, monkeypatch):
     assert r.status_code == 409
 
 
-def test_reject_deletes_drive_and_marks_rejected(client, monkeypatch):
+def test_reject_deletes_staged_and_marks_rejected(client, monkeypatch):
     monkeypatch.setattr(bx.items_repo, "get", lambda db, i: _row(id=i))
     moved = {"to": None}
     monkeypatch.setattr(bx.items_repo, "transition",
                         lambda db, *, item_id, expect, to, **f: moved.__setitem__("to", to) or True)
     deleted = {}
-    monkeypatch.setattr(bx.drive_client, "delete_file", lambda fid: deleted.setdefault("id", fid))
+    monkeypatch.setattr(bx.storage_client, "delete_object",
+                        lambda path, *, bucket, **k: deleted.update({"path": path}))
     r = client.post("/api/batch/1/reject")
-    assert r.status_code == 200 and moved["to"] == "rejected" and deleted["id"] == "drv1"
+    assert r.status_code == 200 and moved["to"] == "rejected"
+    assert deleted["path"] == "BC25001/batch-1.png"
 
 
-def test_accept_archives_when_delete_forbidden(client, monkeypatch):
+def test_accept_still_succeeds_with_warning_when_staged_delete_fails(client, monkeypatch):
+    """The publish already happened; a leftover temp object is an orphan to clean
+    up, not a reason to fail the reviewer's action."""
     monkeypatch.setattr(bx.items_repo, "get", lambda db, i: _row(id=i))
     monkeypatch.setattr(bx.items_repo, "transition", lambda db, *, item_id, expect, to, **f: True)
-    monkeypatch.setattr(bx.drive_client, "download_file", lambda fid: b"PNG")
+    monkeypatch.setattr(bx.storage_client, "download_mockup", lambda path, *, bucket, **k: b"PNG")
     monkeypatch.setattr(bx.publish, "publish_image",
                         lambda db, **k: {"image_url": "u", "variation_id": 7})
-    def _forbidden(fid): raise PermissionError("no delete rights")
-    monkeypatch.setattr(bx.drive_client, "delete_file", _forbidden)
-    monkeypatch.setattr(bx.drive_client, "ensure_subfolder", lambda parent, name: "pubfolder")
-    moved = {}
-    monkeypatch.setattr(bx.drive_client, "move_file", lambda fid, parent: moved.update({"fid": fid, "to": parent}))
+    def _boom(path, *, bucket, **k): raise RuntimeError("storage refused")
+    monkeypatch.setattr(bx.storage_client, "delete_object", _boom)
     r = client.post("/api/batch/1/accept", json={})
-    assert r.status_code == 200 and r.json()["warning"] is None  # archived cleanly
-    assert moved["fid"] == "drv1" and moved["to"] == "pubfolder"
+    assert r.status_code == 200 and r.json()["status"] == "ok"
+    assert "could not be removed" in r.json()["warning"]
 
 
 def test_edit_requeues_with_note_and_clears_drive(client, monkeypatch):
@@ -140,13 +156,13 @@ def test_edit_requeues_with_note_and_clears_drive(client, monkeypatch):
     captured = {}
     monkeypatch.setattr(bx.items_repo, "transition",
                         lambda db, *, item_id, expect, to, **f: captured.update({"to": to, **f}) or True)
-    monkeypatch.setattr(bx.drive_client, "delete_file", lambda fid: None)
+    monkeypatch.setattr(bx.storage_client, "delete_object", lambda path, *, bucket, **k: None)
     started = {"n": 0}
     monkeypatch.setattr(bx.worker, "ensure_running", lambda db: started.__setitem__("n", 1))
     r = client.post("/api/batch/1/edit", json={"prompt_note": "brighter", "image_ids": ["a"]})
     assert r.status_code == 200
     assert captured["to"] == "queued" and "brighter" in captured["prompt_text"]
-    assert captured["image_ids"] == ["a"] and captured["drive_file_id"] is None
+    assert captured["image_ids"] == ["a"] and captured["storage_path"] is None
     assert started["n"] == 1
 
 

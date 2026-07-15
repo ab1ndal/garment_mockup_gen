@@ -205,7 +205,7 @@ class BatchItemOut(BaseModel):
     color: str | None
     status: str
     image_ids: list[str]
-    drive_file_id: str | None
+    storage_path: str | None
     generated_thumb_url: str | None
     error: str | None
 

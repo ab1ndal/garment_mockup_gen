@@ -2,10 +2,13 @@
 
 A single worker thread drains ``queued`` rows one at a time: claim (queued ->
 generating), download the product's source images, generate one mockup, stage
-the PNG in the ``_batch`` Drive folder, and mark the row ``ready`` (or ``failed``
-with the error). Sequential by design — the generator already retries rate
-limits. Resumable: a crash leaves rows ``generating``; ``reset_orphaned`` (called
-at startup) returns them to ``queued`` for the next sweep.
+the PNG in the private ``mockups-temp`` bucket, and mark the row ``ready`` (or
+``failed`` with the error). Sequential by design — the generator already retries
+rate limits. Resumable: a crash leaves rows ``generating``; ``reset_orphaned``
+(called at startup) returns them to ``queued`` for the next sweep.
+
+Staging is Supabase Storage, not Drive: a service account has no storage quota,
+so creating a file in a My Drive folder fails with 403 storageQuotaExceeded.
 """
 
 from __future__ import annotations
@@ -17,10 +20,9 @@ from io import BytesIO
 from PIL import Image
 from supabase import Client
 
-from mockup_generator.config import settings
 from mockup_generator.db import batch_items_repo as repo
 from mockup_generator.generation import service
-from mockup_generator.integrations import drive_client
+from mockup_generator.integrations import drive_client, storage_client
 
 log = logging.getLogger(__name__)
 
@@ -31,11 +33,6 @@ _running = False
 def _spawn(fn, *args) -> None:
     """Run ``fn`` off the request thread. Overridden in tests to run inline."""
     threading.Thread(target=fn, args=args, daemon=True).start()
-
-
-def _staging_name(row: repo.BatchRow) -> str:
-    color = (row.color or "nocolor").strip().lower().replace(" ", "-") or "nocolor"
-    return f"{row.productid}_{color}_{row.id}.png"
 
 
 def run_one(db: Client) -> bool:
@@ -49,11 +46,12 @@ def run_one(db: Client) -> bool:
             images, row.prompt_text, model=row.model,
             resolution=row.resolution, aspect_ratio=row.aspect_ratio,
         )
-        folder = drive_client.ensure_subfolder(
-            settings.generated_mockups_folder_id, drive_client.BATCH_STAGING_FOLDER)
-        file_id, thumb = drive_client.upload_image(folder, _staging_name(row), png)
+        # Keyed by item id, so a re-generated card (edit -> queued -> ready)
+        # overwrites its own staged object instead of orphaning one.
+        path, _ = storage_client.upload_mockup(
+            row.productid, png, f"batch-{row.id}", bucket=storage_client.TEMP_BUCKET)
         repo.transition(db, item_id=row.id, expect=repo.GENERATING, to=repo.READY,
-                        drive_file_id=file_id, thumbnail_link=thumb, error=None)
+                        storage_path=path, error=None)
     except Exception as exc:  # noqa: BLE001 - record the failure on the card and continue
         log.warning("batch item %s generation failed: %s", row.id, exc)
         repo.transition(db, item_id=row.id, expect=repo.GENERATING, to=repo.FAILED,

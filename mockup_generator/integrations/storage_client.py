@@ -14,6 +14,12 @@ from mockup_generator.integrations.supabase_client import service_client
 
 _BUCKET = "mockups"
 
+# Unreviewed Batch Generate mockups live here until accepted. Private: these are
+# unapproved images, so they get short-lived signed URLs rather than public ones.
+# Staging cannot use Drive — a service account has no storage quota of its own, so
+# creating a file in a My Drive folder fails with 403 storageQuotaExceeded.
+TEMP_BUCKET = "mockups-temp"
+
 
 class StorageNotConfigured(RuntimeError):
     """Raised when no service client is available (SUPABASE_SECRET_KEY unset)."""
@@ -54,6 +60,19 @@ def download_mockup(object_path: str, *, bucket: str = _BUCKET) -> bytes:
     if client is None:
         raise StorageNotConfigured("SUPABASE_SECRET_KEY is required to download mockups")
     return client.storage.from_(bucket).download(object_path)
+
+
+def signed_url(object_path: str, *, bucket: str = _BUCKET, expires_in: int = 3600) -> str:
+    """Time-limited URL for one object in a private bucket.
+
+    Used for staged batch mockups, which must not be publicly readable before a
+    reviewer accepts them. The link expires, so it is generated per read rather
+    than persisted.
+    """
+    client = service_client()
+    if client is None:
+        raise StorageNotConfigured("SUPABASE_SECRET_KEY is required to sign object URLs")
+    return client.storage.from_(bucket).create_signed_url(object_path, expires_in)["signedURL"]
 
 
 def slugify(text: str | None) -> str:

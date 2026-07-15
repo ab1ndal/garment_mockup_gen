@@ -31,7 +31,7 @@ class FakeClient:
 def _raw(id=1, status="queued"):
     return {"id": id, "batch_id": "b1", "productid": "BC25001", "color": "Red",
             "image_ids": ["f1", "f2"], "prompt_text": "p", "status": status,
-            "drive_file_id": None, "thumbnail_link": None, "error": None,
+            "storage_path": None, "error": None,
             "model": "m", "resolution": "4K", "aspect_ratio": "1:1"}
 
 
@@ -47,12 +47,11 @@ def test_page_filters_by_statuses_and_returns_total():
 def test_transition_guards_on_expected_status_and_merges_fields():
     c = FakeClient(FakeResp([{"id": 1}]))
     assert repo.transition(c, item_id=1, expect=repo.GENERATING, to=repo.READY,
-                           drive_file_id="drv", thumbnail_link="lnk") is True
+                           storage_path="p/1.png") is True
     assert ("eq", "id", 1) in c.sink
     assert ("eq", "status", repo.GENERATING) in c.sink
     upd = next(p for tag, p in [(s[0], s[1]) for s in c.sink if s[0] == "update"])
-    assert upd["status"] == repo.READY and upd["drive_file_id"] == "drv"
-    assert upd["thumbnail_link"] == "lnk"
+    assert upd["status"] == repo.READY and upd["storage_path"] == "p/1.png"
 
 
 def test_transition_returns_false_when_no_row():
