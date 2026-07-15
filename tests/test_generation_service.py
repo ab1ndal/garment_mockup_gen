@@ -257,6 +257,53 @@ def test_generate_with_retries_gives_up_on_persistent_429(monkeypatch):
     assert calls["n"] == 4
 
 
+# --- refusals (no image part) ---
+#
+# Both shapes below are real: a 100-product batch hit them when the model
+# answered NO_IMAGE, and `candidates[0].content.parts` raised a bare
+# "'NoneType' object is not iterable" onto the card — which named neither the
+# prompt nor the reason.
+
+class _NoCandidates:
+    candidates = None
+    prompt_feedback = "BLOCKED"
+
+
+def _refusal(reason="NO_IMAGE", ratings=None):
+    content = type("Ct", (), {"parts": None})()
+    candidate = type("C", (), {"content": content, "finish_reason": reason,
+                               "finish_message": None, "safety_ratings": ratings})()
+    return type("R", (), {"candidates": [candidate], "prompt_feedback": None})()
+
+
+@pytest.mark.parametrize("response", [_NoCandidates(), _refusal()])
+def test_first_image_bytes_returns_none_on_refusal(response):
+    """A refusal is an outcome to report, not a TypeError to crash on."""
+    assert common.first_image_bytes(response) is None
+
+
+def test_no_image_reason_names_finish_reason():
+    assert "NO_IMAGE" in common.no_image_reason(_refusal())
+
+
+def test_no_image_reason_includes_safety_ratings_when_present():
+    msg = common.no_image_reason(_refusal(reason="SAFETY", ratings="HARM_CATEGORY_X: HIGH"))
+    assert "SAFETY" in msg and "HARM_CATEGORY_X: HIGH" in msg
+
+
+def test_no_image_reason_handles_absent_candidates():
+    msg = common.no_image_reason(_NoCandidates())
+    assert "no candidates" in msg and "BLOCKED" in msg
+
+
+def test_generate_mockup_bytes_raises_with_reason_on_refusal(monkeypatch):
+    """The card's error text must say why, so a reviewer can fix the prompt."""
+    monkeypatch.setattr(service, "generate_with_retries", lambda *a, **k: _refusal())
+
+    with pytest.raises(service.NoImageReturned, match="NO_IMAGE"):
+        service.generate_mockup_bytes([_png_image()], "p")
+
+
 def test_first_image_bytes_preserves_jpeg():
     from io import BytesIO as _B
     buf = _B()
