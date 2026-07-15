@@ -10,6 +10,8 @@ from io import BytesIO
 import pytest
 from PIL import Image
 
+from google.genai import errors
+
 from mockup_generator.generation import common, service
 
 
@@ -192,6 +194,114 @@ def test_generate_with_retries_omits_output_options_and_thinking_by_default(monk
     ic = captured["config"].image_config
     assert ic.image_output_options is None
     assert captured["config"].thinking_config is None
+
+
+# --- 429 backoff ---
+#
+# These build a real ``errors.ClientError`` rather than a stub: the retry guard
+# used to test ``e.status_code``, an attribute the SDK's exception does not carry
+# (it stores ``code``), so every 429 re-raised on the first attempt and a whole
+# batch failed against a transient rate limit. A hand-rolled fake with a
+# ``status_code`` on it would pass while production burned.
+
+def _client_error(code: int, status: str) -> errors.ClientError:
+    response_json = {"error": {"code": code, "message": "Resource has been exhausted "
+                                                        "(e.g. check quota).", "status": status}}
+    return errors.ClientError(code, response_json, None)
+
+
+def _failing_client(monkeypatch, exc, *, succeed_on: int):
+    """Client that raises ``exc`` until attempt ``succeed_on``, then returns an image."""
+    calls = {"n": 0}
+
+    class _FakeModels:
+        def generate_content(self, *, model, contents, config):
+            calls["n"] += 1
+            if calls["n"] < succeed_on:
+                raise exc
+            return _FakeResponse([_FakePart(_png_image())])
+
+    monkeypatch.setattr(common, "get_genai_client",
+                        lambda: type("C", (), {"models": _FakeModels()})())
+    return calls
+
+
+def test_generate_with_retries_backs_off_on_429(monkeypatch):
+    """A transient 429 must be retried, not surfaced as a failed card."""
+    monkeypatch.setattr(common.time, "sleep", lambda _s: None)
+    calls = _failing_client(monkeypatch, _client_error(429, "RESOURCE_EXHAUSTED"), succeed_on=3)
+
+    common.generate_with_retries("m", ["p"])
+
+    assert calls["n"] == 3  # two 429s ridden out, third attempt returned the image
+
+
+def test_generate_with_retries_reraises_non_429_client_error(monkeypatch):
+    """A 400 is a bad request — retrying it just burns wall-clock."""
+    monkeypatch.setattr(common.time, "sleep", lambda _s: None)
+    calls = _failing_client(monkeypatch, _client_error(400, "INVALID_ARGUMENT"), succeed_on=99)
+
+    with pytest.raises(errors.ClientError):
+        common.generate_with_retries("m", ["p"])
+
+    assert calls["n"] == 1  # no backoff on a permanent error
+
+
+def test_generate_with_retries_gives_up_on_persistent_429(monkeypatch):
+    monkeypatch.setattr(common.time, "sleep", lambda _s: None)
+    calls = _failing_client(monkeypatch, _client_error(429, "RESOURCE_EXHAUSTED"), succeed_on=99)
+
+    with pytest.raises(errors.ClientError):
+        common.generate_with_retries("m", ["p"], max_attempts=4)
+
+    assert calls["n"] == 4
+
+
+# --- refusals (no image part) ---
+#
+# Both shapes below are real: a 100-product batch hit them when the model
+# answered NO_IMAGE, and `candidates[0].content.parts` raised a bare
+# "'NoneType' object is not iterable" onto the card — which named neither the
+# prompt nor the reason.
+
+class _NoCandidates:
+    candidates = None
+    prompt_feedback = "BLOCKED"
+
+
+def _refusal(reason="NO_IMAGE", ratings=None):
+    content = type("Ct", (), {"parts": None})()
+    candidate = type("C", (), {"content": content, "finish_reason": reason,
+                               "finish_message": None, "safety_ratings": ratings})()
+    return type("R", (), {"candidates": [candidate], "prompt_feedback": None})()
+
+
+@pytest.mark.parametrize("response", [_NoCandidates(), _refusal()])
+def test_first_image_bytes_returns_none_on_refusal(response):
+    """A refusal is an outcome to report, not a TypeError to crash on."""
+    assert common.first_image_bytes(response) is None
+
+
+def test_no_image_reason_names_finish_reason():
+    assert "NO_IMAGE" in common.no_image_reason(_refusal())
+
+
+def test_no_image_reason_includes_safety_ratings_when_present():
+    msg = common.no_image_reason(_refusal(reason="SAFETY", ratings="HARM_CATEGORY_X: HIGH"))
+    assert "SAFETY" in msg and "HARM_CATEGORY_X: HIGH" in msg
+
+
+def test_no_image_reason_handles_absent_candidates():
+    msg = common.no_image_reason(_NoCandidates())
+    assert "no candidates" in msg and "BLOCKED" in msg
+
+
+def test_generate_mockup_bytes_raises_with_reason_on_refusal(monkeypatch):
+    """The card's error text must say why, so a reviewer can fix the prompt."""
+    monkeypatch.setattr(service, "generate_with_retries", lambda *a, **k: _refusal())
+
+    with pytest.raises(service.NoImageReturned, match="NO_IMAGE"):
+        service.generate_mockup_bytes([_png_image()], "p")
 
 
 def test_first_image_bytes_preserves_jpeg():

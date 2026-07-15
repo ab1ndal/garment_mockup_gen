@@ -15,6 +15,7 @@ from mockup_generator.generation.common import (
     MAX_SIDE,
     first_image_bytes,
     generate_with_retries,
+    no_image_reason,
     part_from_pil,
 )
 
@@ -60,5 +61,7 @@ def generate_mockup_bytes(
     )
     data = first_image_bytes(response)
     if data is None:
-        raise NoImageReturned("Gemini returned no image part")
+        # The card records this verbatim, so it has to name the cause: a refused
+        # prompt and a transient glitch are the same sentence otherwise.
+        raise NoImageReturned(no_image_reason(response))
     return data

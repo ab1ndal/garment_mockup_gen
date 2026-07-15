@@ -17,7 +17,7 @@ Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a men�
 The final output MUST be indistinguishable from a professional 4K photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury menswear brand’s e-commerce catalog and high-resolution social media (Instagram, WhatsApp).  
 
 Absolute Priority: Every garment detail visible in the [UPLOADED IMAGE HERE] must be an exact, perfect, pixel-for-pixel replication of the reference. This includes the precise fabric weave, collar roll, cuff folds, button sheen, and any visible embellishments or patterns. DO NOT HALLUCINATE ANY NEW GARMENTS, LAYERS, PATTERNS, OR ELEMENTS NOT PRESENT IN THE REFERENCE. Avoid generic substitutes or deviations. No changes to print, color, or weave are allowed.  
-Preserve any logos or design elements that are part of the shirt itself, but remove all external product tags, price tags, or branding labels not intrinsic to the garment.  
+Preserve any logos or design elements that are part of the shirt itself; the shirt carries no external product tags, price tags, or branding labels that are not intrinsic to the garment.
 
 Model & Pose: A refined young **Indian origin male model**, with head fully visible, authentic and natural body language, and a confident, approachable presence. Expression must be genuine, happy, and realistic. **Framing must be belt-up (waist to head)**. The shirt must be neatly tucked in, with a visible smart belt that complements the shirt’s design for a polished catalog look. The model may be engaged in subtle lifestyle activities (e.g., adjusting a cuff, buttoning the shirt, holding a coffee cup, using a phone, walking casually, light conversation), but the **shirt must remain the clear focal point** of the mockup.  
 
@@ -131,7 +131,7 @@ Technical & Aesthetic Requirements: 4K resolution, with razor-sharp, hyper-detai
 Lighting: Exquisite, soft, professional editorial studio lighting. Artfully sculpted light to emphasize fabric textures, the graceful drape flow, and the subtle sparkle/sheen of any embellishments. Employ subtle rim lighting to enhance contours. Absolutely avoid harsh shadows or flat lighting.
 Background: Impeccably clean, seamless white or neutral-toned studio backdrop, creating depth separation and allowing the saree to be the absolute focal point. No distracting elements.
 Depth of Field: Shallow depth of field to subtly blur the background, making the model and saree pop, consistent with prime lens photography.
-Final Cleanup: Ensure that the product tags (including the yellow tag) are removed from the final output."""
+Final Cleanup: The saree carries no product tags of any kind — no yellow hanging tag, no price tag, no pins, clips, stands, or labels. None of these are present anywhere in the photograph."""
 
 
 KURTI_PROMPT = """
@@ -144,7 +144,7 @@ KURTI_PROMPT = """
     Fit: The kurti should have a snug, tailored fit. It MUST appear perfectly ironed, smooth, and entirely wrinkle-free, with a pristine fabric surface.
     Bottom Wear: The model must be wearing complementary colored plazzo underneath the kurti.
     Accessories: Style with minimal, classy accessories: elegant earrings and smart Juti shoes.
-    Exclusions: Do not add any belt or other elements not present in the original reference image. Remove any background elements in the reference image or any product tags in the image.
+    Exclusions: Do not add any belt or other elements not present in the original reference image. The kurti carries no product tags, and the background elements of the reference image are absent from the photograph.
     Technical & Aesthetic Requirements:
     Overall Look: The image must be rich, polished, and photorealistic. Avoid any artificial or "AI-generated" appearance.
     Image Quality: The output must be extremely sharp and hyper-detailed. Render in 4K resolution with crisp focus. Emulate a shot taken on a high-end DSLR camera with a prime lens.
@@ -172,7 +172,7 @@ Technical & Aesthetic Requirements (Priority):
 - Lighting: Professional editorial soft lighting with gentle rim lighting to emphasize contours and garment depth. Avoid harsh shadows.
 - Background: Clean, seamless, neutral-toned studio backdrop that emphasizes the garments and walking pose.
 - Depth of Field: Shallow background blur (prime-lens effect), with model and garments in tack-sharp focus.
-- Ensure removal of all product tags or distracting elements.
+- The garment carries no product tags, and no distracting elements are present in the photograph.
 """
 
 VIDEO_PROMPT = """
@@ -228,7 +228,7 @@ Technical & Aesthetic Requirements:
 - Background: Immaculate seamless white or neutral-toned backdrop to ensure the cord set is the sole focus.
 - Depth of Field: Shallow background blur, with model and garment in crisp prime-lens focus.
 Final Requirement:
-Completely remove all product tags, yellow hanging tags, and labels from the final output."""
+The garment carries no product tags, yellow hanging tags, or labels. None of these are present anywhere in the photograph."""
 
 GOWN_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a ladies gown, based on the [UPLOADED GOWN IMAGE HERE]. 
 The final output MUST be indistinguishable from a professional 4K photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens 
@@ -270,7 +270,7 @@ Background: A pristine, seamless white or neutral-toned studio backdrop that pro
 
 Depth of Field: Shallow depth of field consistent with prime lens photography. The model and gown remain razor-sharp, while the background is subtly blurred to create cinematic focus.
 
-Final Cleanup: Ensure product tags, pins, stands, or supports visible in the reference image are completely removed in the final output.
+Final Cleanup: The gown carries no product tags, pins, stands, or supports; any such items visible in the reference image are absent from the styled garment.
 """
 
 LEHENGA_PROMPT = """
@@ -284,7 +284,7 @@ Lighting: Professional editorial studio lighting. Use soft, sculpted light to em
 Background: A pristine, seamless white or neutral-toned studio backdrop that provides depth and separation.
 Depth of Field: Shallow depth of field; the model and lehenga must remain razor-sharp from head to toe, while the background has a soft, professional blur.
 Resolution: 4K resolution, capturing every fine stitch and weave with maximum clarity.
-Final Cleanup: Ensure all product tags, pins, or support stands from the reference image are removed. The final image must be a clean, ready-to-post professional marketing asset.
+Final Cleanup: The lehenga carries no product tags, pins, or support stands; any such items visible in the reference image are absent from the styled garment. The photograph is a clean, ready-to-post professional marketing asset.
 """
 
 
@@ -294,7 +294,7 @@ Dupatta: Only include a dupatta if it is clearly visible in the reference. If pr
 Full-Length Model: A graceful young Indian female model, alive and natural — realistic skin texture, organic posture, natural hair flow, subtle confident expression. No mannequins, no doll-like faces, no stiff limbs. Full head-to-toe, front-facing or three-quarter stance that shows the complete set.
 Accessories: Minimal and tasteful — subtle earrings, bangles, a maang tikka or ring consistent with the reference styling. They must enhance, never distract from the garment.
 Technical & Aesthetic: 4K ultra-sharp, capturing every thread and embroidery detail. Professional editorial studio lighting — soft yet sculpted with subtle rim light; no flat or harsh shadows. Pristine seamless white or neutral backdrop. Shallow depth of field with the model and garment razor-sharp.
-Final Cleanup: Completely remove all product tags, yellow hanging tags, pins, stands, and labels from the final output."""
+Final Cleanup: The garment carries no product tags of any kind — no yellow hanging tags, pins, stands, or labels. None of these are present anywhere in the photograph."""
 
 MENS_FORMAL_SUIT_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a men's western formal suit, based on the [UPLOADED SUIT IMAGE HERE]. The final output MUST be indistinguishable from a professional 4K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury menswear brand's magazine and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: The suit must be replicated exactly, pixel-for-pixel, from the uploaded reference — fabric texture and weave, color, lapel style, button stance, pocket detail, and stitching. DO NOT invent or hallucinate patterns, change the cut, or alter the color.
@@ -302,7 +302,7 @@ Waistcoat: Include the waistcoat/vest only if it is clearly visible in the refer
 Full-Length Model: A confident young Indian male model, alive and natural — realistic skin texture, organic posture, well-groomed, poised expression. No mannequins, no doll-like features, no stiff limbs. Full head-to-toe, front-facing stance that shows the complete suit, jacket buttoned as in the reference.
 Accessories: Minimal and tasteful — a sleek tie or pocket square and formal leather shoes consistent with the reference. They must enhance, never distract from the suit.
 Technical & Aesthetic: 4K ultra-sharp, capturing every weave and seam. Professional editorial studio lighting — soft yet sculpted with subtle rim light; no flat or harsh shadows. Pristine seamless white or neutral backdrop. Shallow depth of field with the model and garment razor-sharp.
-Final Cleanup: Completely remove all product tags, yellow hanging tags, pins, stands, and labels from the final output."""
+Final Cleanup: The garment carries no product tags of any kind — no yellow hanging tags, pins, stands, or labels. None of these are present anywhere in the photograph."""
 
 JODHPURI_SUIT_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a men's Jodhpuri (bandhgala) suit, based on the [UPLOADED JODHPURI SUIT IMAGE HERE]. The final output MUST be indistinguishable from a professional 4K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury Indian ethnicwear brand's magazine and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: The bandhgala jacket and trouser must be replicated exactly, pixel-for-pixel, from the uploaded reference — fabric, color, the closed mandarin (bandhgala) collar, button placement, and any embroidery, brooch, or zari work. DO NOT invent or hallucinate motifs or alter the cut.
@@ -310,21 +310,21 @@ Waistcoat / layers: Include any waistcoat or additional layer only if clearly vi
 Full-Length Model: A confident young Indian male model, alive and natural — realistic skin texture, organic posture, well-groomed, regal yet approachable expression. No mannequins, no doll-like features, no stiff limbs. Full head-to-toe, front-facing stance showing the complete suit with the collar fastened as in the reference.
 Accessories: Minimal and tasteful — a subtle brooch or pocket square and formal mojari/leather shoes consistent with the reference. They must enhance, never distract from the suit.
 Technical & Aesthetic: 4K ultra-sharp, capturing every weave, embroidery, and metallic sparkle. Professional editorial studio lighting — soft yet sculpted with subtle rim light; no flat or harsh shadows. Pristine seamless white or neutral backdrop. Shallow depth of field with the model and garment razor-sharp.
-Final Cleanup: Completely remove all product tags, yellow hanging tags, pins, stands, and labels from the final output."""
+Final Cleanup: The garment carries no product tags of any kind — no yellow hanging tags, pins, stands, or labels. None of these are present anywhere in the photograph."""
 
 FORMAL_TROUSER_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of men's tailored formal trousers, based on the [UPLOADED TROUSER IMAGE HERE]. The final output MUST be indistinguishable from a professional 4K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a premium menswear brand's catalog and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: The trousers must be replicated exactly, pixel-for-pixel, from the uploaded reference — fabric texture and weave, color, pleat/flat-front style, crease, pocket detail, and hem. DO NOT invent patterns, change the cut, or alter the color.
 Full Model: A confident young Indian male model, alive and natural — realistic skin texture, organic posture, well-groomed. No mannequins, no doll-like features, no stiff limbs. Frame the lower body prominently to showcase the trouser fit, drape, and break at the shoe, with a clean neutral upper styling (a simple tucked formal shirt) that does not compete with the trousers.
 Accessories: Minimal — a slim leather belt and formal leather shoes consistent with the reference. They must enhance, never distract from the trousers.
 Technical & Aesthetic: 4K ultra-sharp, capturing every weave and crease. Professional editorial studio lighting — soft yet sculpted with subtle rim light; no flat or harsh shadows. Pristine seamless white or neutral backdrop. Shallow depth of field with the garment razor-sharp.
-Final Cleanup: Completely remove all product tags, yellow hanging tags, pins, stands, and labels from the final output."""
+Final Cleanup: The garment carries no product tags of any kind — no yellow hanging tags, pins, stands, or labels. None of these are present anywhere in the photograph."""
 
 BLAZER_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a men's blazer, based on the [UPLOADED BLAZER IMAGE HERE]. The final output MUST be indistinguishable from a professional 4K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury menswear brand's magazine and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: The blazer must be replicated exactly, pixel-for-pixel, from the uploaded reference — fabric texture and weave, color, single- or double-breasted button configuration, lapel style and width, pocket and vent detail, and stitching. DO NOT invent patterns, change the cut, or alter the color.
 Full-Length Model: A confident young Indian male model, alive and natural — realistic skin texture, organic posture, well-groomed, poised expression. No mannequins, no doll-like features, no stiff limbs. Full head-to-toe, front-facing stance with the blazer worn open or buttoned exactly as shown in the reference, styled over a clean neutral shirt and trousers that do not compete with the blazer.
 Accessories: Minimal and tasteful — an optional pocket square and formal shoes consistent with the reference. They must enhance, never distract from the blazer.
 Technical & Aesthetic: 4K ultra-sharp, capturing every weave and seam. Professional editorial studio lighting — soft yet sculpted with subtle rim light; no flat or harsh shadows. Pristine seamless white or neutral backdrop. Shallow depth of field with the model and garment razor-sharp.
-Final Cleanup: Completely remove all product tags, yellow hanging tags, pins, stands, and labels from the final output."""
+Final Cleanup: The garment carries no product tags of any kind — no yellow hanging tags, pins, stands, or labels. None of these are present anywhere in the photograph."""
 
 SHERWANI_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a men's sherwani, based on the [UPLOADED SHERWANI IMAGE HERE]. The final output MUST be indistinguishable from a professional 4K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury Indian ethnicwear brand's magazine and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: The long sherwani coat and its bottom (churidar or trouser) must be replicated exactly, pixel-for-pixel, from the uploaded reference — fabric, color, collar, button placket, length, and every embroidery, zari, or stonework motif. DO NOT invent or hallucinate motifs, alter the length, or simplify any section.
@@ -332,7 +332,7 @@ Dupatta / stole: Include a dupatta or stole only if clearly visible in the refer
 Full-Length Model: A confident young Indian male model, alive and natural — realistic skin texture, organic posture, well-groomed, regal yet approachable expression. No mannequins, no doll-like features, no stiff limbs. Full head-to-toe, front-facing stance showing the complete sherwani, fastened as in the reference.
 Accessories: Minimal and tasteful — an optional brooch, safa/turban, or mojari consistent with the reference styling. They must enhance, never distract from the sherwani.
 Technical & Aesthetic: 4K ultra-sharp, capturing every weave, embroidery, and metallic sparkle. Professional editorial studio lighting — soft yet sculpted with subtle rim light; no flat or harsh shadows. Pristine seamless white or neutral backdrop. Shallow depth of field with the model and garment razor-sharp.
-Final Cleanup: Completely remove all product tags, yellow hanging tags, pins, stands, and labels from the final output."""
+Final Cleanup: The garment carries no product tags of any kind — no yellow hanging tags, pins, stands, or labels. None of these are present anywhere in the photograph."""
 
 DUPATTA_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of an Indian dupatta (long scarf), based on the [UPLOADED DUPATTA IMAGE HERE]. The final output MUST be indistinguishable from a professional 4K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury Indian ethnicwear brand's magazine and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: The dupatta must be replicated exactly, pixel-for-pixel, from the uploaded reference — fabric (chiffon, silk, georgette, etc.), color, print, every border, motif, embroidery, and tassel detail. DO NOT invent or hallucinate patterns or alter the color.
@@ -340,14 +340,14 @@ Styling: Drape the dupatta elegantly over a graceful young Indian female model s
 Model: Alive and natural — realistic skin texture, organic posture, natural hair flow, subtle confident expression. No mannequins, no doll-like faces, no stiff limbs. Full head-to-toe, front-facing or three-quarter stance.
 Accessories: Minimal — subtle earrings or bangles. They must enhance, never distract from the dupatta.
 Technical & Aesthetic: 4K ultra-sharp, capturing every thread, border, and embroidery detail. Professional editorial studio lighting — soft yet sculpted with subtle rim light that reveals the fabric's sheen and translucency; no flat or harsh shadows. Pristine seamless white or neutral backdrop. Shallow depth of field with the model and dupatta razor-sharp.
-Final Cleanup: Completely remove all product tags, yellow hanging tags, pins, stands, and labels from the final output."""
+Final Cleanup: The garment carries no product tags of any kind — no yellow hanging tags, pins, stands, or labels. None of these are present anywhere in the photograph."""
 
 JEANS_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of casual denim jeans, based on the [UPLOADED JEANS IMAGE HERE]. The final output MUST be indistinguishable from a professional 4K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a premium apparel brand's catalog and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: The jeans must be replicated exactly, pixel-for-pixel, from the uploaded reference — denim wash and fade, color, fit (skinny, straight, bootcut, etc.), rips/distressing, stitching, pocket design, and rivets. DO NOT invent washes, change the fit, or alter the distressing pattern.
 Model & gender: A young Indian fashion model whose gender presentation matches the jeans shown in the reference. The model must look alive and natural — realistic skin texture, organic posture, natural hair flow. No mannequins, no doll-like features, no stiff limbs. Frame the lower body prominently to showcase the fit and drape, with a clean neutral solid top that does not compete with the jeans.
 Accessories: Minimal — a simple belt and casual footwear (sneakers or heels) consistent with the reference. They must enhance, never distract from the jeans.
 Technical & Aesthetic: 4K ultra-sharp, capturing every weave, fade, and stitch. Professional editorial studio lighting — soft yet sculpted with subtle rim light; no flat or harsh shadows. Pristine seamless white or neutral backdrop. Shallow depth of field with the garment razor-sharp.
-Final Cleanup: Completely remove all product tags, yellow hanging tags, pins, stands, and labels from the final output."""
+Final Cleanup: The garment carries no product tags of any kind — no yellow hanging tags, pins, stands, or labels. None of these are present anywhere in the photograph."""
 
 SHAWL_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a shawl (woolen or silk wrap), based on the [UPLOADED SHAWL IMAGE HERE]. The final output MUST be indistinguishable from a professional 4K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury Indian ethnicwear brand's magazine and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: The shawl must be replicated exactly, pixel-for-pixel, from the uploaded reference — fabric (pashmina, wool, silk), color, weave, every border, motif, embroidery (e.g. kani/sozni), and fringe detail. DO NOT invent or hallucinate patterns or alter the color.
@@ -355,21 +355,21 @@ Styling: Drape the shawl elegantly over the shoulders of a graceful young Indian
 Model: Alive and natural — realistic skin texture, organic posture, natural hair flow, subtle confident expression. No mannequins, no doll-like faces, no stiff limbs. Full head-to-toe or three-quarter, front-facing stance.
 Accessories: Minimal — subtle, refined pieces that never distract from the shawl.
 Technical & Aesthetic: 4K ultra-sharp, capturing every thread, border, and embroidery detail. Professional editorial studio lighting — soft yet sculpted with subtle rim light that reveals the fabric's texture and sheen; no flat or harsh shadows. Pristine seamless white or neutral backdrop. Shallow depth of field with the model and shawl razor-sharp.
-Final Cleanup: Completely remove all product tags, yellow hanging tags, pins, stands, and labels from the final output."""
+Final Cleanup: The garment carries no product tags of any kind — no yellow hanging tags, pins, stands, or labels. None of these are present anywhere in the photograph."""
 
 DRESS_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a women's dress (one-piece), based on the [UPLOADED DRESS IMAGE HERE]. The final output MUST be indistinguishable from a professional 4K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury fashion brand's magazine and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: The dress must be replicated exactly, pixel-for-pixel, from the uploaded reference — fabric texture, color, print, neckline, sleeve style, waistline, and hem length. DO NOT invent patterns, add a slit unless clearly visible, change the length, or alter the silhouette. Replicate the length precisely as shown (mini, knee, midi, or maxi).
 Full-Length Model: A graceful young Indian female model, alive and natural — realistic skin texture, organic posture, natural hair flow, confident subtle expression. No mannequins, no doll-like faces, no stiff limbs. Full head-to-toe, front-facing or three-quarter stance that highlights the dress's silhouette and defining features.
 Accessories: Minimal and tasteful — subtle earrings, a delicate bracelet, and footwear consistent with the reference styling. They must enhance, never distract from the dress.
 Technical & Aesthetic: 4K ultra-sharp, capturing every thread and print detail. Professional editorial studio lighting — soft yet sculpted with subtle rim light; no flat or harsh shadows. Pristine seamless white or neutral backdrop. Shallow depth of field with the model and garment razor-sharp.
-Final Cleanup: Completely remove all product tags, yellow hanging tags, pins, stands, and labels from the final output."""
+Final Cleanup: The garment carries no product tags of any kind — no yellow hanging tags, pins, stands, or labels. None of these are present anywhere in the photograph."""
 
 CHILD_SUIT_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a boy's five-piece formal suit, based on the [UPLOADED CHILD SUIT IMAGE HERE]. The final output MUST be indistinguishable from a professional 4K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury kidswear brand's magazine and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: The full set (jacket, waistcoat, shirt, trouser, and tie/bow as present) must be replicated exactly, pixel-for-pixel, from the uploaded reference — fabric, color, lapel, button stance, and every detail. DO NOT invent patterns, omit a visible piece, or alter the cut. Include only the pieces visible in the reference.
 Full-Length Model: A cheerful young Indian boy child model, alive and natural — realistic child skin texture, age-appropriate proportions, organic posture, natural hair, a warm genuine expression. No mannequins, no doll-like faces, no stiff or adult-like poses. Full head-to-toe, front-facing stance showing the complete set, jacket buttoned as in the reference.
 Accessories: Minimal — a tie or bow tie and formal shoes consistent with the reference. They must enhance, never distract from the suit.
 Technical & Aesthetic: 4K ultra-sharp, capturing every weave and seam. Professional editorial studio lighting — soft yet sculpted with subtle rim light; no flat or harsh shadows. Pristine seamless white or neutral backdrop. Shallow depth of field with the model and garment razor-sharp.
-Final Cleanup: Completely remove all product tags, yellow hanging tags, pins, stands, and labels from the final output."""
+Final Cleanup: The garment carries no product tags of any kind — no yellow hanging tags, pins, stands, or labels. None of these are present anywhere in the photograph."""
 
 SHORT_KURTA_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a men's short kurta, based on the [UPLOADED SHORT KURTA IMAGE HERE]. The final output MUST be indistinguishable from a professional 4K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a premium Indian fusion-wear brand's magazine and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: The short kurta must be replicated exactly, pixel-for-pixel, from the uploaded reference — fabric texture, color, print, neckline/placket, sleeve length, and the (above-knee) hemline. DO NOT invent motifs, lengthen the kurta, or alter the color.
@@ -377,21 +377,21 @@ Bottom: Pair it with the bottom shown in the reference (jeans or trousers); if n
 Full-Length Model: A confident young Indian male model, alive and natural — realistic skin texture, organic posture, well-groomed, relaxed approachable expression. No mannequins, no doll-like features, no stiff limbs. Full head-to-toe, front-facing or three-quarter stance showing the complete look.
 Accessories: Minimal and tasteful — casual footwear (loafers or sneakers) consistent with the reference. They must enhance, never distract from the kurta.
 Technical & Aesthetic: 4K ultra-sharp, capturing every thread and print detail. Professional editorial studio lighting — soft yet sculpted with subtle rim light; no flat or harsh shadows. Pristine seamless white or neutral backdrop. Shallow depth of field with the model and garment razor-sharp.
-Final Cleanup: Completely remove all product tags, yellow hanging tags, pins, stands, and labels from the final output."""
+Final Cleanup: The garment carries no product tags of any kind — no yellow hanging tags, pins, stands, or labels. None of these are present anywhere in the photograph."""
 
 INDO_WESTERN_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of an Indo-Western fusion outfit, based on the [UPLOADED INDO-WESTERN IMAGE HERE]. The final output MUST be indistinguishable from a professional 4K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury fusion-wear brand's magazine and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: The complete Indo-Western outfit must be replicated exactly, pixel-for-pixel, from the uploaded reference — every layer and piece, fabric, color, drape, asymmetric cut, and all embroidery or embellishment. DO NOT invent patterns, omit a visible layer, or alter the silhouette. Render only the pieces visible in the reference.
 Model & gender: A graceful young Indian model whose gender presentation matches the outfit shown. Alive and natural — realistic skin texture, organic posture, natural hair flow, confident subtle expression. No mannequins, no doll-like faces, no stiff limbs. Full head-to-toe, front-facing or three-quarter stance that highlights the fusion silhouette and layering.
 Accessories: Minimal and contemporary — refined pieces consistent with the reference styling. They must enhance, never distract from the outfit.
 Technical & Aesthetic: 4K ultra-sharp, capturing every thread, embroidery, and metallic detail. Professional editorial studio lighting — soft yet sculpted with subtle rim light; no flat or harsh shadows. Pristine seamless white or neutral backdrop. Shallow depth of field with the model and garment razor-sharp.
-Final Cleanup: Completely remove all product tags, yellow hanging tags, pins, stands, and labels from the final output."""
+Final Cleanup: The garment carries no product tags of any kind — no yellow hanging tags, pins, stands, or labels. None of these are present anywhere in the photograph."""
 
 T_SHIRT_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a casual t-shirt, based on the [UPLOADED T-SHIRT IMAGE HERE]. The final output MUST be indistinguishable from a professional 4K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a premium apparel brand's catalog and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: The t-shirt must be replicated exactly, pixel-for-pixel, from the uploaded reference — fabric, color, neckline (crew or V-neck), sleeve length, fit, and any print, graphic, or text on it. DO NOT invent graphics, change the color, alter any printed text, or modify the fit.
 Model & gender: A young Indian fashion model whose gender presentation matches the t-shirt shown. Alive and natural — realistic skin texture, organic posture, natural hair, relaxed approachable expression. No mannequins, no doll-like features, no stiff limbs. Frame the upper body prominently to showcase the fit and any print, paired with clean neutral bottoms that do not compete with the t-shirt.
 Accessories: Minimal — casual pieces consistent with the reference. They must enhance, never distract from the t-shirt.
 Technical & Aesthetic: 4K ultra-sharp, capturing every weave and print detail. Professional editorial studio lighting — soft yet sculpted with subtle rim light; no flat or harsh shadows. Pristine seamless white or neutral backdrop. Shallow depth of field with the garment razor-sharp.
-Final Cleanup: Completely remove all product tags, yellow hanging tags, pins, stands, and labels from the final output."""
+Final Cleanup: The garment carries no product tags of any kind — no yellow hanging tags, pins, stands, or labels. None of these are present anywhere in the photograph."""
 
 SHARARA_PROMPT = """Generate an ultra-realistic, hyper-detailed, high-end editorial mockup of a women's sharara set (kurta with wide-legged sharara), based on the [UPLOADED SHARARA IMAGE HERE]. The final output MUST be indistinguishable from a professional 4K fashion photograph, as if captured by a high-end full-frame DSLR camera with a fast prime lens (e.g., 85mm f/1.4), suitable for a luxury Indian ethnicwear brand's magazine and high-resolution social media (Instagram, WhatsApp).
 Absolute Priority: The kurta and the flared wide-legged sharara must be replicated exactly, pixel-for-pixel, from the uploaded reference — fabric, color, print, neckline, sleeve length, the sharara's flare and pleating, and every border, motif, and embroidery. DO NOT invent or hallucinate motifs, alter the flare, or simplify any section.
@@ -399,7 +399,7 @@ Dupatta: Include a dupatta only if clearly visible in the reference, draped exac
 Full-Length Model: A graceful young Indian female model, alive and natural — realistic skin texture, organic posture, natural hair flow, subtle confident expression. No mannequins, no doll-like faces, no stiff limbs. Full head-to-toe, front-facing stance that showcases the full volume and flow of the sharara.
 Accessories: Minimal and tasteful — statement earrings, bangles, or a maang tikka consistent with the reference styling. They must enhance, never distract from the set.
 Technical & Aesthetic: 4K ultra-sharp, capturing every thread, embroidery, and metallic sparkle. Professional editorial studio lighting — soft yet sculpted with subtle rim light; no flat or harsh shadows. Pristine seamless white or neutral backdrop. Shallow depth of field with the model and garment razor-sharp.
-Final Cleanup: Completely remove all product tags, yellow hanging tags, pins, stands, and labels from the final output."""
+Final Cleanup: The garment carries no product tags of any kind — no yellow hanging tags, pins, stands, or labels. None of these are present anywhere in the photograph."""
 
 
 # Map Supabase `categories.categoryid` -> default prompt for that garment type.

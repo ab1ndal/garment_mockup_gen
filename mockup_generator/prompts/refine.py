@@ -118,7 +118,8 @@ def _generate_text(contents: str, temperature: float) -> str:
             )
             return getattr(resp, "text", "") or ""
         except errors.ClientError as e:
-            if getattr(e, "status_code", None) == 429 and attempt < _MAX_ATTEMPTS:
+            # ``code``, not ``status_code`` — see generation/common.py.
+            if getattr(e, "code", None) == 429 and attempt < _MAX_ATTEMPTS:
                 time.sleep(wait)
                 wait = min(wait * 2, 60)
                 continue

@@ -85,10 +85,45 @@ def load_images_from_folder(
     return imgs
 
 
+def no_image_reason(response) -> str:
+    """Why a response carries no image, in words a reviewer can act on.
+
+    A refusal is a normal outcome, not a malformed response: the model answers
+    with a candidate whose ``finish_reason`` says NO_IMAGE / a safety verdict and
+    whose ``content.parts`` is None — or with no candidates at all. Reach for
+    ``candidates[0].content.parts`` directly and that shape raises ``'NoneType'
+    object is not iterable``, which tells a reviewer nothing about the cause.
+    """
+    candidates = getattr(response, "candidates", None)
+    if not candidates:
+        feedback = getattr(response, "prompt_feedback", None)
+        return f"the model returned no candidates (prompt_feedback: {feedback})"
+    candidate = candidates[0]
+    reason = getattr(candidate, "finish_reason", None)
+    detail = getattr(candidate, "finish_message", None)
+    ratings = getattr(candidate, "safety_ratings", None)
+    parts = [f"the model returned no image (finish_reason: {reason})"]
+    if detail:
+        parts.append(str(detail))
+    if ratings:
+        parts.append(f"safety_ratings: {ratings}")
+    return "; ".join(parts)
+
+
+def _image_parts(response):
+    """The response's parts, or an empty list when the model returned no image."""
+    candidates = getattr(response, "candidates", None)
+    if not candidates:
+        return []
+    content = getattr(candidates[0], "content", None)
+    return getattr(content, "parts", None) or []
+
+
 def first_image_bytes(response) -> bytes | None:
     """Return image bytes of the first image part, preserving the model's
-    format (JPEG stays JPEG, everything else normalized to PNG)."""
-    for part in response.candidates[0].content.parts:
+    format (JPEG stays JPEG, everything else normalized to PNG). Returns None
+    when the response carries no image at all — see ``no_image_reason``."""
+    for part in _image_parts(response):
         blob = getattr(part, "inline_data", None)
         data = getattr(blob, "data", None)
         if not data:
@@ -177,7 +212,10 @@ def generate_with_retries(
                 ),
             )
         except errors.ClientError as e:
-            if getattr(e, "status_code", None) == 429 and attempt < max_attempts:
+            # The SDK's APIError carries the HTTP status as ``code``; ``status_code``
+            # is only a local in errors.py and never reaches the exception, so
+            # reading it here silently made every 429 permanent.
+            if getattr(e, "code", None) == 429 and attempt < max_attempts:
                 time.sleep(wait)
                 wait = min(wait * 2, 60)
                 continue
