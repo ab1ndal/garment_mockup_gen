@@ -16,6 +16,7 @@ from postgrest.exceptions import APIError
 
 from backend.auth import CurrentUser, get_current_user
 from backend.routers import backfill as backfill_router
+from backend.routers import batch as batch_router
 from backend.routers import generate as generate_router
 from backend.routers import import_shots as import_router
 from backend.routers import products as products_router
@@ -57,6 +58,7 @@ app.include_router(products_router.router)
 app.include_router(prompts_router.router)
 app.include_router(backfill_router.router)
 app.include_router(import_router.router)
+app.include_router(batch_router.router)
 
 
 # Turn raw Supabase/PostgREST errors into clear, non-opaque responses.
