@@ -135,3 +135,65 @@ def card_sources(item_id: int,
             log.warning("batch generated %s could not load: %s", row.drive_file_id, exc)
     return {"sources": sources, "generated_preview": generated,
             "colors": colors, "color": row.color, "image_ids": row.image_ids}
+
+
+@router.post("/{item_id}/accept", response_model=BatchActionResponse)
+def accept(item_id: int, req: BatchAcceptRequest,
+           user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
+    row = items_repo.get(db, item_id)
+    if row is None or not row.drive_file_id:
+        raise HTTPException(status_code=404, detail="Card not found or not ready.")
+    # Reserve the row so a second reviewer can't also publish it.
+    _claim(db, item_id, items_repo.READY, items_repo.PUBLISHED)
+    try:
+        png = drive_client.download_file(row.drive_file_id)
+        result = publish.publish_image(
+            db, productid=row.productid, png=png,
+            color=req.color if req.color is not None else row.color,
+            theme_name=req.theme_name,
+            aspect_ratio=req.aspect_ratio or row.aspect_ratio,
+            created_by=user.id, prompt_text=row.prompt_text,
+        )
+    except Exception as exc:  # noqa: BLE001 - revert the claim so the card returns for retry
+        items_repo.transition(db, item_id=item_id, expect=items_repo.PUBLISHED, to=items_repo.READY)
+        raise HTTPException(status_code=502, detail=f"Could not publish the mockup: {exc}") from exc
+
+    warning = _discard_drive_file(row.drive_file_id)
+    log.info("batch %s published as %s", item_id, result["image_url"])
+    return BatchActionResponse(status="ok", warning=warning)
+
+
+@router.post("/{item_id}/reject", response_model=BatchActionResponse)
+def reject(item_id: int,
+           user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
+    row = items_repo.get(db, item_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Card not found.")
+    _claim(db, item_id, items_repo.READY, items_repo.REJECTED)
+    warning = _discard_drive_file(row.drive_file_id) if row.drive_file_id else None
+    return BatchActionResponse(status="ok", warning=warning)
+
+
+@router.post("/{item_id}/edit", response_model=BatchActionResponse)
+def edit(item_id: int, req: BatchEditRequest,
+         user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
+    row = items_repo.get(db, item_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Card not found.")
+    note = (req.prompt_note or "").strip()
+    prompt_text = f"{row.prompt_text}\n\nRevision note: {note}" if note else row.prompt_text
+    image_ids = req.image_ids if req.image_ids else row.image_ids
+    # ready -> queued with the updated prompt/images; clear the stale staged file id.
+    _claim(db, item_id, items_repo.READY, items_repo.QUEUED,
+           prompt_text=prompt_text, image_ids=image_ids, drive_file_id=None, error=None)
+    warning = _discard_drive_file(row.drive_file_id) if row.drive_file_id else None
+    worker.ensure_running(db)
+    return BatchActionResponse(status="ok", warning=warning)
+
+
+@router.post("/{item_id}/retry", response_model=BatchActionResponse)
+def retry(item_id: int,
+          user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
+    _claim(db, item_id, items_repo.FAILED, items_repo.QUEUED, error=None)
+    worker.ensure_running(db)
+    return BatchActionResponse(status="ok", warning=None)

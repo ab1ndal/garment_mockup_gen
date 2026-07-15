@@ -83,3 +83,78 @@ def test_counts(client, monkeypatch):
                                     "failed": 0, "published": 3, "rejected": 1})
     r = client.get("/api/batch/counts")
     assert r.status_code == 200 and r.json()["counts"]["ready"] == 2
+
+
+def test_accept_publishes_deletes_drive_and_marks_published(client, monkeypatch):
+    monkeypatch.setattr(bx.items_repo, "get", lambda db, i: _row(id=i))
+    monkeypatch.setattr(bx.items_repo, "transition",
+                        lambda db, *, item_id, expect, to, **f: True)
+    monkeypatch.setattr(bx.drive_client, "download_file", lambda fid: b"PNG")
+    published = {}
+    monkeypatch.setattr(bx.publish, "publish_image",
+                        lambda db, **k: published.update(k) or {"image_url": "u", "variation_id": 7})
+    deleted = {}
+    monkeypatch.setattr(bx.drive_client, "delete_file", lambda fid: deleted.setdefault("id", fid))
+    r = client.post("/api/batch/1/accept", json={})
+    assert r.status_code == 200 and r.json()["status"] == "ok"
+    assert deleted["id"] == "drv1" and published["color"] == "Red"
+
+
+def test_accept_conflict_when_not_ready(client, monkeypatch):
+    monkeypatch.setattr(bx.items_repo, "get", lambda db, i: _row(id=i))
+    monkeypatch.setattr(bx.items_repo, "transition",
+                        lambda db, *, item_id, expect, to, **f: False)  # lost the row
+    r = client.post("/api/batch/1/accept", json={})
+    assert r.status_code == 409
+
+
+def test_reject_deletes_drive_and_marks_rejected(client, monkeypatch):
+    monkeypatch.setattr(bx.items_repo, "get", lambda db, i: _row(id=i))
+    moved = {"to": None}
+    monkeypatch.setattr(bx.items_repo, "transition",
+                        lambda db, *, item_id, expect, to, **f: moved.__setitem__("to", to) or True)
+    deleted = {}
+    monkeypatch.setattr(bx.drive_client, "delete_file", lambda fid: deleted.setdefault("id", fid))
+    r = client.post("/api/batch/1/reject")
+    assert r.status_code == 200 and moved["to"] == "rejected" and deleted["id"] == "drv1"
+
+
+def test_accept_archives_when_delete_forbidden(client, monkeypatch):
+    monkeypatch.setattr(bx.items_repo, "get", lambda db, i: _row(id=i))
+    monkeypatch.setattr(bx.items_repo, "transition", lambda db, *, item_id, expect, to, **f: True)
+    monkeypatch.setattr(bx.drive_client, "download_file", lambda fid: b"PNG")
+    monkeypatch.setattr(bx.publish, "publish_image",
+                        lambda db, **k: {"image_url": "u", "variation_id": 7})
+    def _forbidden(fid): raise PermissionError("no delete rights")
+    monkeypatch.setattr(bx.drive_client, "delete_file", _forbidden)
+    monkeypatch.setattr(bx.drive_client, "ensure_subfolder", lambda parent, name: "pubfolder")
+    moved = {}
+    monkeypatch.setattr(bx.drive_client, "move_file", lambda fid, parent: moved.update({"fid": fid, "to": parent}))
+    r = client.post("/api/batch/1/accept", json={})
+    assert r.status_code == 200 and r.json()["warning"] is None  # archived cleanly
+    assert moved["fid"] == "drv1" and moved["to"] == "pubfolder"
+
+
+def test_edit_requeues_with_note_and_clears_drive(client, monkeypatch):
+    monkeypatch.setattr(bx.items_repo, "get", lambda db, i: _row(id=i))
+    captured = {}
+    monkeypatch.setattr(bx.items_repo, "transition",
+                        lambda db, *, item_id, expect, to, **f: captured.update({"to": to, **f}) or True)
+    monkeypatch.setattr(bx.drive_client, "delete_file", lambda fid: None)
+    started = {"n": 0}
+    monkeypatch.setattr(bx.worker, "ensure_running", lambda db: started.__setitem__("n", 1))
+    r = client.post("/api/batch/1/edit", json={"prompt_note": "brighter", "image_ids": ["a"]})
+    assert r.status_code == 200
+    assert captured["to"] == "queued" and "brighter" in captured["prompt_text"]
+    assert captured["image_ids"] == ["a"] and captured["drive_file_id"] is None
+    assert started["n"] == 1
+
+
+def test_retry_requeues_failed(client, monkeypatch):
+    monkeypatch.setattr(bx.items_repo, "get", lambda db, i: _row(id=i, status="failed", drv=None))
+    captured = {}
+    monkeypatch.setattr(bx.items_repo, "transition",
+                        lambda db, *, item_id, expect, to, **f: captured.update({"expect": expect, "to": to}) or True)
+    monkeypatch.setattr(bx.worker, "ensure_running", lambda db: None)
+    r = client.post("/api/batch/1/retry")
+    assert r.status_code == 200 and captured["expect"] == "failed" and captured["to"] == "queued"
