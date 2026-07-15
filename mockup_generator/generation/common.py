@@ -177,7 +177,10 @@ def generate_with_retries(
                 ),
             )
         except errors.ClientError as e:
-            if getattr(e, "status_code", None) == 429 and attempt < max_attempts:
+            # The SDK's APIError carries the HTTP status as ``code``; ``status_code``
+            # is only a local in errors.py and never reaches the exception, so
+            # reading it here silently made every 429 permanent.
+            if getattr(e, "code", None) == 429 and attempt < max_attempts:
                 time.sleep(wait)
                 wait = min(wait * 2, 60)
                 continue

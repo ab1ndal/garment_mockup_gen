@@ -2,6 +2,7 @@
 from types import SimpleNamespace
 
 import pytest
+from google.genai import errors
 
 from mockup_generator.prompts import refine
 
@@ -24,6 +25,28 @@ def _patch_client(monkeypatch, text="REFINED PROMPT BODY"):
     sink = []
     monkeypatch.setattr(refine, "get_genai_client", lambda: _FakeClient(text, sink))
     return sink
+
+
+def test_refine_backs_off_on_429(monkeypatch):
+    """Same guard as generation/common.py: the SDK error carries ``code``, not
+    ``status_code``, so reading the latter made every 429 permanent."""
+    calls = {"n": 0}
+    err = errors.ClientError(
+        429, {"error": {"code": 429, "message": "exhausted", "status": "RESOURCE_EXHAUSTED"}}, None)
+
+    class _Flaky:
+        def generate_content(self, *, model, contents, config):
+            calls["n"] += 1
+            if calls["n"] < 2:
+                raise err
+            return SimpleNamespace(text="OK")
+
+    monkeypatch.setattr(refine, "get_genai_client",
+                        lambda: SimpleNamespace(models=_Flaky()))
+    monkeypatch.setattr(refine.time, "sleep", lambda _s: None)
+
+    assert refine.refine_prompt("make it pop", kind="image") == "OK"
+    assert calls["n"] == 2
 
 
 # --- meta-prompt builders -------------------------------------------------
