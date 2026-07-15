@@ -73,3 +73,58 @@ def _tiny_png() -> bytes:
     from io import BytesIO
     from PIL import Image
     buf = BytesIO(); Image.new("RGB", (2, 2)).save(buf, "PNG"); return buf.getvalue()
+
+
+def test_ensure_running_starts_a_pool_of_drainers(monkeypatch):
+    """Throughput: the pool runs `batch_concurrency` drainers, not one."""
+    monkeypatch.setattr(bw, "_active", 0)
+    monkeypatch.setattr(bw, "_concurrency", lambda: 3)
+    spawned = []
+    # record instead of running, so the pool stays "full" for the assertions
+    monkeypatch.setattr(bw, "_spawn", lambda fn, *a: spawned.append(fn))
+    bw.ensure_running(object())
+    assert len(spawned) == 3
+
+
+def test_ensure_running_tops_up_without_exceeding_concurrency(monkeypatch):
+    """A second caller while drainers are live must not stack a second pool."""
+    monkeypatch.setattr(bw, "_active", 0)
+    monkeypatch.setattr(bw, "_concurrency", lambda: 3)
+    spawned = []
+    monkeypatch.setattr(bw, "_spawn", lambda fn, *a: spawned.append(fn))
+    bw.ensure_running(object())   # -> 3 drainers
+    bw.ensure_running(object())   # pool already full -> no new drainers
+    assert len(spawned) == 3
+    assert bw._active == 3
+
+
+def test_drainer_releases_its_slot_when_queue_empties(monkeypatch):
+    monkeypatch.setattr(bw, "_active", 2)
+    monkeypatch.setattr(bw.repo, "claim_next_queued", lambda db: None)
+    bw.run_worker(object())
+    assert bw._active == 1
+
+
+def test_pool_refills_after_draining(monkeypatch):
+    """Once drainers exit, a later enqueue can start a fresh pool."""
+    monkeypatch.setattr(bw, "_active", 0)
+    monkeypatch.setattr(bw, "_concurrency", lambda: 2)
+    monkeypatch.setattr(bw.repo, "claim_next_queued", lambda db: None)
+    monkeypatch.setattr(bw, "_spawn", lambda fn, *a: fn(*a))  # run inline -> drains + exits
+    bw.ensure_running(object())
+    assert bw._active == 0
+    bw.ensure_running(object())
+    assert bw._active == 0
+
+
+def test_concurrency_reads_settings_with_sane_fallback(monkeypatch):
+    """Exercises the real settings read. The pool tests stub _concurrency, so
+    without this an import/config error here would ship green."""
+    monkeypatch.delenv("BATCH_CONCURRENCY", raising=False)
+    assert bw._concurrency() == 3
+    monkeypatch.setenv("BATCH_CONCURRENCY", "5")
+    assert bw._concurrency() == 5
+    monkeypatch.setenv("BATCH_CONCURRENCY", "not-a-number")
+    assert bw._concurrency() == 3
+    monkeypatch.setenv("BATCH_CONCURRENCY", "0")
+    assert bw._concurrency() == 1  # never zero drainers

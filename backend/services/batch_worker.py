@@ -20,14 +20,33 @@ from io import BytesIO
 from PIL import Image
 from supabase import Client
 
+from mockup_generator.config import settings
 from mockup_generator.db import batch_items_repo as repo
 from mockup_generator.generation import service
 from mockup_generator.integrations import drive_client, storage_client
 
 log = logging.getLogger(__name__)
 
+_DEFAULT_CONCURRENCY = 3
+
 _lock = threading.Lock()
-_running = False
+_active = 0  # live drainers; guarded by _lock
+
+
+def _concurrency() -> int:
+    """How many cards to generate at once. Generation is a slow network call, so
+    threads (not processes) are the right shape even on a small box.
+
+    The real ceiling is the image model's rate limit, not the CPU: too many
+    drainers turn into 429s, which the generator answers with backoff — spending
+    wall-clock rather than saving it. Tune with ``BATCH_CONCURRENCY``.
+    """
+    raw = settings.batch_concurrency
+    try:
+        return max(1, int(raw))
+    except (TypeError, ValueError):
+        log.warning("BATCH_CONCURRENCY=%r is not an int; using %d", raw, _DEFAULT_CONCURRENCY)
+        return _DEFAULT_CONCURRENCY
 
 
 def _spawn(fn, *args) -> None:
@@ -60,26 +79,39 @@ def run_one(db: Client) -> bool:
 
 
 def run_worker(db: Client) -> None:
-    """Drain the queue. Single-instance: a second call returns immediately."""
-    global _running
-    with _lock:
-        if _running:
-            return
-        _running = True
+    """Drain the queue until it runs dry, then release this drainer's slot.
+
+    Concurrency-safe by construction: every card is taken via
+    ``claim_next_queued``, a conditional ``queued -> generating`` update, so two
+    drainers racing the same row means one wins and the other moves on.
+
+    Its slot is accounted for by ``ensure_running``, which reserves before
+    spawning; call it through ``ensure_running``, never directly, or the pool
+    count will drift.
+    """
+    global _active
     try:
         while run_one(db):
             pass
     finally:
         with _lock:
-            _running = False
+            _active -= 1
 
 
 def ensure_running(db: Client) -> None:
-    """Start the worker off-thread if it isn't already draining."""
+    """Top the drainer pool back up to ``_concurrency()``.
+
+    Slots are reserved under the lock *before* spawning, so concurrent callers
+    (two enqueues landing together) can't both see an empty pool and stack two.
+    """
+    global _active
     with _lock:
-        if _running:
+        want = _concurrency() - _active
+        if want <= 0:
             return
-    _spawn(run_worker, db)
+        _active += want
+    for _ in range(want):
+        _spawn(run_worker, db)
 
 
 def reset_orphaned(db: Client) -> int:
