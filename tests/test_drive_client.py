@@ -99,6 +99,40 @@ def test_list_folder_images_flat(monkeypatch):
     assert out[0]["thumbnail_url"] == "data:thumb:x"
 
 
+def test_thumbnails_for_ids_keeps_input_order(monkeypatch):
+    """Sources are fanned out across threads, so the results must be re-ordered
+    back to the caller's ids — a review card's checkboxes are keyed on them."""
+    monkeypatch.setattr(drive_client, "_clients", lambda: (object(), object()))
+    monkeypatch.setattr(drive_client, "_thumbnail_link", lambda session, fid: f"link-{fid}")
+    monkeypatch.setattr(drive_client, "_thumbnail_data_uri",
+                        lambda session, link, fid: f"data:{link}")
+    out = drive_client.thumbnails_for_ids(["a", "b", "c"])
+    assert [t["id"] for t in out] == ["a", "b", "c"]
+    assert out[1]["thumbnail_url"] == "data:link-b"
+
+
+def test_thumbnails_for_ids_falls_back_when_metadata_fails(monkeypatch):
+    """One unreadable file must not take down the whole review card."""
+    monkeypatch.setattr(drive_client, "_clients", lambda: (object(), object()))
+    def flaky(session, fid):
+        if fid == "bad":
+            raise RuntimeError("404")
+        return f"link-{fid}"
+    monkeypatch.setattr(drive_client, "_thumbnail_link", flaky)
+    monkeypatch.setattr(drive_client, "_thumbnail_data_uri",
+                        lambda session, link, fid: f"data:{link}" if link else f"public:{fid}")
+    out = drive_client.thumbnails_for_ids(["ok", "bad"])
+    assert out[0]["thumbnail_url"] == "data:link-ok"
+    assert out[1]["thumbnail_url"] == "public:bad"
+
+
+def test_thumbnails_for_ids_empty_makes_no_calls(monkeypatch):
+    """ThreadPoolExecutor(max_workers=0) raises — the empty case must short-circuit."""
+    def boom(): raise AssertionError("no Drive client needed for an empty list")
+    monkeypatch.setattr(drive_client, "_clients", boom)
+    assert drive_client.thumbnails_for_ids([]) == []
+
+
 class _FakeDownloader:
     """Stand-in for MediaIoBaseDownload: writes the file's bytes in two chunks."""
 

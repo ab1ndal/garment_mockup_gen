@@ -127,6 +127,44 @@ def _thumbnail_data_uri(session, link: str | None, file_id: str) -> str:
         return public
 
 
+def _thumbnail_link(session, file_id: str) -> str | None:
+    """Fetch one file's ``thumbnailLink`` over the authorized session.
+
+    Uses the REST endpoint rather than the discovery client because callers fan
+    this out across threads: ``requests`` sessions are thread-safe, the
+    googleapiclient service object is not (it holds one httplib2 connection).
+    """
+    resp = session.get(
+        f"https://www.googleapis.com/drive/v3/files/{file_id}",
+        params={"fields": "thumbnailLink", "supportsAllDrives": "true"},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json().get("thumbnailLink")
+
+
+def thumbnails_for_ids(file_ids: list[str]) -> list[dict]:
+    """``{id, thumbnail_url}`` per file id, fetched in parallel.
+
+    For callers that hold ids but no folder listing (a batch card's sources).
+    Each id costs a metadata GET plus a thumbnail GET, so the whole set is
+    fanned out; serially this is the slowest part of opening a review card.
+    """
+    if not file_ids:
+        return []
+    _, session = _clients()
+
+    def one(file_id: str) -> dict:
+        try:
+            link = _thumbnail_link(session, file_id)
+        except Exception:  # noqa: BLE001 - fall back to the public thumbnail URL
+            link = None
+        return {"id": file_id, "thumbnail_url": _thumbnail_data_uri(session, link, file_id)}
+
+    with ThreadPoolExecutor(max_workers=min(_THUMB_WORKERS, len(file_ids))) as ex:
+        return list(ex.map(one, file_ids))
+
+
 def large_image_data_uri(file_id: str, size: int = 1600) -> str:
     """Browser-renderable enlarged preview for a Drive file, as a data URI.
 
