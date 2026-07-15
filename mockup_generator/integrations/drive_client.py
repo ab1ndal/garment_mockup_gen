@@ -24,7 +24,7 @@ from functools import lru_cache
 from io import BytesIO
 
 import pillow_heif
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
 from mockup_generator.config import settings
 
@@ -61,7 +61,8 @@ ARCHIVE_FOLDER = "published"
 REJECTED_FOLDER = "rejected"
 EDIT_FOLDER = "edit"
 SKIPPED_FOLDER = "skipped"
-_RESERVED_SUBFOLDERS = {ARCHIVE_FOLDER, REJECTED_FOLDER, EDIT_FOLDER, SKIPPED_FOLDER}
+BATCH_STAGING_FOLDER = "_batch"  # unapproved Batch Generate mockups; excluded from the backfill scan
+_RESERVED_SUBFOLDERS = {ARCHIVE_FOLDER, REJECTED_FOLDER, EDIT_FOLDER, SKIPPED_FOLDER, BATCH_STAGING_FOLDER}
 
 
 class DriveNotConfigured(RuntimeError):
@@ -225,6 +226,45 @@ def download_file(file_id: str) -> bytes:
     while not done:
         _, done = downloader.next_chunk()
     return buf.getvalue()
+
+
+def upload_image(folder_id: str, name: str, data: bytes, mime: str = "image/png") -> tuple[str, str | None]:
+    """Upload ``data`` as a new file ``name`` into ``folder_id``. Returns
+    ``(file_id, thumbnail_link)``. The service account owns files it creates,
+    so these can later be deleted with ``delete_file`` (unlike human-owned files)."""
+    svc, _ = _clients()
+    media = MediaIoBaseUpload(BytesIO(data), mimetype=mime, resumable=False)
+    created = svc.files().create(
+        body={"name": name, "parents": [folder_id]},
+        media_body=media, fields="id,thumbnailLink", supportsAllDrives=True,
+    ).execute()
+    return created["id"], created.get("thumbnailLink")
+
+
+def list_folder_image_ids(folder_id: str, limit: int = 14) -> list[str]:
+    """Return image file ids in ``folder_id`` (loose + one level of subfolders),
+    capped at ``limit``. Ids only — no thumbnails fetched, so this is cheap enough
+    to call per product during batch enqueue."""
+    svc, _ = _clients()
+    ids: list[str] = []
+    subfolders: list[str] = []
+    top = _paged_files(
+        svc, f"'{folder_id}' in parents and trashed = false", "files(id,name,mimeType)",
+    )
+    for f in top:
+        if f.get("mimeType") == _FOLDER_MIME:
+            subfolders.append(f["id"])
+        elif (f.get("mimeType") or "").startswith("image/"):
+            ids.append(f["id"])
+    for sub in subfolders:
+        if len(ids) >= limit:
+            break
+        for f in _paged_files(
+            svc, f"'{sub}' in parents and mimeType contains 'image/' and trashed = false",
+            "files(id,name,mimeType)",
+        ):
+            ids.append(f["id"])
+    return ids[:limit]
 
 
 def delete_file(file_id: str) -> None:
