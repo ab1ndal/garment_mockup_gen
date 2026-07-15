@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ApiError, getCategories,
+  ApiError, getCategories, getGenerationOptions,
   enqueueBatch, listBatchItems, getBatchCounts, getBatchSources,
   acceptBatch, editBatch, rejectBatch, retryBatch,
-  type BatchItem, type BatchTabId, type BatchSources, type Category,
+  type BatchItem, type BatchTabId, type BatchSources, type Category, type GenOptions,
 } from "../api";
 import { useImageLightbox } from "./Lightbox";
 
 const PAGE = 20;
+const POLL_MS = 5000;
+
+const RES_LABEL: Record<string, string> = {
+  "512px": "0.5K", "1K": "1K", "2K": "2K · web", "4K": "4K · print",
+};
+const ASPECT_LABEL: Record<string, string> = {
+  "1:1": "1:1 · square", "3:4": "3:4 · portrait", "4:3": "4:3 · landscape",
+};
 
 const TABS: { id: BatchTabId; label: string; statuses: string[] }[] = [
   { id: "ready", label: "Ready", statuses: ["ready"] },
@@ -38,6 +46,10 @@ export default function BatchTab() {
   const [cats, setCats] = useState<Category[]>([]);
   const [category, setCategory] = useState<string>("");
   const [count, setCount] = useState<number>(10);
+  const [opts, setOpts] = useState<GenOptions | null>(null);
+  const [model, setModel] = useState("");
+  const [resolution, setResolution] = useState("");
+  const [aspect, setAspect] = useState("");
   const [enqueuing, setEnqueuing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,29 +67,55 @@ export default function BatchTab() {
 
   useEffect(() => { getCategories().then(setCats).catch(() => {}); }, []);
 
+  useEffect(() => {
+    getGenerationOptions().then((o) => {
+      setOpts(o);
+      setModel(o.defaults.model);
+      setResolution(o.defaults.resolution);
+      setAspect(o.defaults.aspect_ratio);
+    }).catch(() => {});
+  }, []);
+
   const loadCounts = useCallback(() => {
     getBatchCounts().then((r) => setCounts(r.counts)).catch(() => {});
   }, []);
 
-  const load = useCallback((t: BatchTabId, off: number) => {
-    setLoading(true);
-    setError(null);
+  // `quiet` swaps the page contents in place, without the loading state — a
+  // background poll must not blank the grid the reviewer is looking at.
+  const load = useCallback((t: BatchTabId, off: number, quiet = false) => {
+    if (!quiet) { setLoading(true); setError(null); }
     listBatchItems({ tab: t, offset: off, limit: PAGE })
       .then((r) => { setItems(r.items); setTotal(r.total); setOffset(r.offset); })
-      .catch((e) => setError(e instanceof ApiError ? e.message : "Failed to load."))
-      .finally(() => setLoading(false));
+      .catch((e) => { if (!quiet) setError(e instanceof ApiError ? e.message : "Failed to load."); })
+      .finally(() => { if (!quiet) setLoading(false); });
   }, []);
 
-  // Items are fetched 20 at a time, ONLY on tab/page change (and manual refresh
-  // or after an action) — no background polling of the list.
+  // Items are fetched 20 at a time on tab/page change, manual refresh, or after
+  // an action.
   useEffect(() => { load(tab, 0); loadCounts(); }, [tab, load, loadCounts]);
 
   const refresh = () => { load(tab, offset); loadCounts(); };
 
+  // Cards move queued -> generating -> ready on a background worker, so a static
+  // page goes stale on its own. Poll while anything is still in flight, and stop
+  // once the queue drains. Paused while a card is open for review or mid-action:
+  // a reload must not swap the card out from under the reviewer.
+  const inFlight = countFor("in_progress", counts);
+  useEffect(() => {
+    if (inFlight === 0 || review || busyId !== null) return;
+    const t = setInterval(() => { load(tab, offset, true); loadCounts(); }, POLL_MS);
+    return () => clearInterval(t);
+  }, [inFlight, review, busyId, tab, offset, load, loadCounts]);
+
   async function onEnqueue() {
     setEnqueuing(true); setNotice(null); setError(null);
     try {
-      const r = await enqueueBatch({ category: category || null, count });
+      const r = await enqueueBatch({
+        category: category || null, count,
+        model: model || undefined,
+        resolution: resolution || undefined,
+        aspect_ratio: aspect || undefined,
+      });
       const skips = r.skipped.length ? ` · skipped ${r.skipped.length}` : "";
       setNotice(`Queued ${r.queued} card(s)${skips}.`);
       setTab("in_progress"); loadCounts();
@@ -132,6 +170,28 @@ export default function BatchTab() {
           <input id="batch-count" type="number" min={1} max={100} value={count}
                  onChange={(e) => setCount(Math.max(1, Math.min(100, Number(e.target.value) || 1)))} />
         </div>
+        {opts && (
+          <>
+            <div className="field">
+              <label htmlFor="batch-model">Model</label>
+              <select id="batch-model" value={model} onChange={(e) => setModel(e.target.value)}>
+                {opts.models.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="batch-resolution">Quality</label>
+              <select id="batch-resolution" value={resolution} onChange={(e) => setResolution(e.target.value)}>
+                {opts.resolutions.map((r) => <option key={r} value={r}>{RES_LABEL[r] ?? r}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="batch-aspect">Aspect ratio</label>
+              <select id="batch-aspect" value={aspect} onChange={(e) => setAspect(e.target.value)}>
+                {opts.aspect_ratios.map((a) => <option key={a} value={a}>{ASPECT_LABEL[a] ?? a}</option>)}
+              </select>
+            </div>
+          </>
+        )}
         <button className="btn-primary" onClick={onEnqueue} disabled={enqueuing}>
           {enqueuing ? "Queuing…" : "Generate"}
         </button>
@@ -164,36 +224,35 @@ export default function BatchTab() {
           <p className="muted">{EMPTY_COPY[tab]}</p>
         ) : (
           <>
-            <div style={gridStyle}>
-              {items.map((it) => (
-                <Card key={it.id} item={it}
-                      onEnlarge={() => it.generated_thumb_url
-                        && lightbox.show(it.generated_thumb_url, it.productid)}>
-                  {it.status === "ready" && (
-                    <>
-                      <button className="btn-primary" disabled={busyId === it.id}
-                              onClick={() => setReview(it)}>Review</button>
+            {tab === "history" ? <HistoryTable items={items} /> : (
+              <div style={gridStyle}>
+                {items.map((it) => (
+                  <Card key={it.id} item={it}
+                        onEnlarge={() => it.generated_thumb_url
+                          && lightbox.show(it.generated_thumb_url, it.productid)}>
+                    {it.status === "ready" && (
+                      <>
+                        <button className="btn-primary" disabled={busyId === it.id}
+                                onClick={() => setReview(it)}>Review</button>
+                        <button disabled={busyId === it.id}
+                                onClick={() => run(it.id, () => acceptBatch(it.id))}>Accept</button>
+                        <button className="btn-danger" disabled={busyId === it.id}
+                                onClick={() => run(it.id, () => rejectBatch(it.id))}>Reject</button>
+                      </>
+                    )}
+                    {it.status === "failed" && (
                       <button disabled={busyId === it.id}
-                              onClick={() => run(it.id, () => acceptBatch(it.id))}>Accept</button>
-                      <button className="btn-danger" disabled={busyId === it.id}
-                              onClick={() => run(it.id, () => rejectBatch(it.id))}>Reject</button>
-                    </>
-                  )}
-                  {it.status === "failed" && (
-                    <button disabled={busyId === it.id}
-                            onClick={() => run(it.id, () => retryBatch(it.id))}>
-                      {busyId === it.id ? "Retrying…" : "Retry"}
-                    </button>
-                  )}
-                  {(it.status === "queued" || it.status === "generating") && (
-                    <span className="pill pill-pending">{it.status}</span>
-                  )}
-                  {(it.status === "published" || it.status === "rejected") && (
-                    <span className="pill">{it.status}</span>
-                  )}
-                </Card>
-              ))}
-            </div>
+                              onClick={() => run(it.id, () => retryBatch(it.id))}>
+                        {busyId === it.id ? "Retrying…" : "Retry"}
+                      </button>
+                    )}
+                    {(it.status === "queued" || it.status === "generating") && (
+                      <span className="pill pill-pending">{it.status}</span>
+                    )}
+                  </Card>
+                ))}
+              </div>
+            )}
 
             {total > PAGE && (
               <div className="toolbar" style={{ justifyContent: "center", alignItems: "center", gap: "var(--sp-3)" }}>
@@ -222,6 +281,37 @@ export default function BatchTab() {
       )}
 
       {lightbox.node}
+    </div>
+  );
+}
+
+// Handled cards keep no image — accept and reject both discard the staged file —
+// so History is a plain record of what happened to each card, not a thumbnail grid.
+function HistoryTable({ items }: { items: BatchItem[] }) {
+  return (
+    <div className="table-wrap">
+      <table className="data is-static">
+        <thead>
+          <tr>
+            <th scope="col">Product ID</th>
+            <th scope="col">Color</th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it) => (
+            <tr key={it.id}>
+              <td className="mono">{it.productid}</td>
+              <td>{it.color || <span className="muted">—</span>}</td>
+              <td>
+                <span className={`pill ${it.status === "published" ? "pill-done" : ""}`}>
+                  {it.status}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -339,9 +429,9 @@ function ReviewModal(props: {
                 {src.sources.map((s) => (
                   <div key={s.id} className={`batch-src ${picked.has(s.id) ? "is-selected" : ""}`}>
                     <button type="button" className="img-frame img-zoom"
-                            onClick={() => lightbox.show(s.data_uri, s.id)}
+                            onClick={() => lightbox.showDrive(s.id, `Source ${s.id}`, s.thumb_url)}
                             aria-label={`Enlarge source ${s.id}`}>
-                      <img src={s.data_uri} alt="source" loading="lazy" />
+                      <img src={s.thumb_url} alt="source" loading="lazy" />
                     </button>
                     <label className="check batch-src-check">
                       <input type="checkbox" checked={picked.has(s.id)} onChange={() => toggle(s.id)} />
@@ -354,11 +444,11 @@ function ReviewModal(props: {
           </div>
           <div className="stack-sm">
             <span className="section-label">Generated</span>
-            {src?.generated_preview ? (
+            {item.generated_thumb_url ? (
               <button type="button" className="img-frame img-zoom"
-                      onClick={() => lightbox.show(src.generated_preview!, "generated mockup")}
+                      onClick={() => lightbox.show(item.generated_thumb_url!, "generated mockup")}
                       aria-label="Enlarge generated mockup">
-                <img src={src.generated_preview} alt="generated mockup" />
+                <img src={item.generated_thumb_url} alt="generated mockup" />
               </button>
             ) : <p className="muted">No preview.</p>}
           </div>

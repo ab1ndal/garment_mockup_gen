@@ -435,6 +435,10 @@ table.data tbody tr {
 table.data tbody tr:last-child td {
   border-bottom: none;
 }
+/* Read-only rows: keep the row-tracking hover, drop the click affordance. */
+table.data.is-static tbody tr {
+  cursor: default;
+}
 table.data tbody tr:hover {
   background: var(--surface-2);
 }

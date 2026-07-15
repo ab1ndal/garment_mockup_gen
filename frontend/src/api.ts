@@ -567,8 +567,7 @@ export interface BatchEnqueueResult {
 }
 
 export interface BatchSources {
-  sources: { id: string; data_uri: string }[];
-  generated_preview: string | null;
+  sources: { id: string; thumb_url: string }[];
   colors: string[];
   color: string | null;
   image_ids: string[];
@@ -576,6 +575,7 @@ export interface BatchSources {
 
 export function enqueueBatch(body: {
   category: string | null; count: number;
+  model?: string; resolution?: string; aspect_ratio?: string;
 }): Promise<BatchEnqueueResult> {
   return apiFetch<BatchEnqueueResult>("/api/batch", {
     method: "POST",
