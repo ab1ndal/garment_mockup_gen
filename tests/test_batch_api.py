@@ -158,3 +158,11 @@ def test_retry_requeues_failed(client, monkeypatch):
     monkeypatch.setattr(bx.worker, "ensure_running", lambda db: None)
     r = client.post("/api/batch/1/retry")
     assert r.status_code == 200 and captured["expect"] == "failed" and captured["to"] == "queued"
+
+
+def test_router_is_mounted(client):
+    # /counts requires the router to be registered; 200 (not 404) proves it.
+    import backend.routers.batch as bx2
+    from unittest.mock import patch
+    with patch.object(bx2.items_repo, "counts", lambda db: {s: 0 for s in bx2.items_repo.ALL_STATUSES}):
+        assert client.get("/api/batch/counts").status_code == 200
