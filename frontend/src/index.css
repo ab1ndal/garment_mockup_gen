@@ -1012,3 +1012,23 @@ td.mono,
     to   { opacity: 1; transform: translateY(0); }
   }
 }
+
+/* Batch Generate — selectable source thumbnails in the review modal. The frame
+   gets a colored ring when its checkbox is on, so the operator can see at a
+   glance which sources will be re-sent on Edit → regenerate. */
+.batch-src {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.batch-src .img-frame {
+  border: 2px solid var(--border-strong);
+}
+.batch-src.is-selected .img-frame {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.batch-src-check {
+  min-height: 32px;
+  font-size: var(--fs-xs);
+}
