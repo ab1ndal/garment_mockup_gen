@@ -23,7 +23,7 @@ ALL_STATUSES = [QUEUED, GENERATING, READY, FAILED, PUBLISHED, REJECTED]
 
 _COLS = (
     "id, batch_id, productid, color, image_ids, prompt_text, status, "
-    "drive_file_id, thumbnail_link, error, model, resolution, aspect_ratio"
+    "storage_path, error, model, resolution, aspect_ratio"
 )
 
 
@@ -36,8 +36,7 @@ class BatchRow:
     image_ids: list[str]
     prompt_text: str
     status: str
-    drive_file_id: str | None
-    thumbnail_link: str | None
+    storage_path: str | None
     error: str | None
     model: str
     resolution: str
@@ -53,8 +52,7 @@ def _row(r: dict) -> BatchRow:
         image_ids=list(r.get("image_ids") or []),
         prompt_text=r["prompt_text"],
         status=r["status"],
-        drive_file_id=r.get("drive_file_id"),
-        thumbnail_link=r.get("thumbnail_link"),
+        storage_path=r.get("storage_path"),
         error=r.get("error"),
         model=r["model"],
         resolution=r["resolution"],

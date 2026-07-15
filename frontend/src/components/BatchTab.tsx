@@ -167,8 +167,8 @@ export default function BatchTab() {
             <div style={gridStyle}>
               {items.map((it) => (
                 <Card key={it.id} item={it}
-                      onEnlarge={() => it.generated_thumb_url && it.drive_file_id
-                        && lightbox.showDrive(it.drive_file_id, it.productid, it.generated_thumb_url ?? "")}>
+                      onEnlarge={() => it.generated_thumb_url
+                        && lightbox.show(it.generated_thumb_url, it.productid)}>
                   {it.status === "ready" && (
                     <>
                       <button className="btn-primary" disabled={busyId === it.id}

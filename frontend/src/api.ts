@@ -548,7 +548,7 @@ export interface BatchItem {
   color: string | null;
   status: string;
   image_ids: string[];
-  drive_file_id: string | null;
+  storage_path: string | null;
   generated_thumb_url: string | null;
   error: string | null;
 }

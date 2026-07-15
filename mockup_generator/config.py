@@ -82,6 +82,13 @@ class Settings:
         return _get("GEMINI_IMAGE_MODEL", default="gemini-3-pro-image")  # type: ignore[return-value]
 
     @property
+    def batch_concurrency(self) -> str:
+        """How many Batch Generate cards to generate at once. Bounded by the image
+        model's rate limit rather than the box: past that, extra workers only earn
+        429s and backoff. Raise carefully."""
+        return _get("BATCH_CONCURRENCY", default="3")  # type: ignore[return-value]
+
+    @property
     def rembg_model(self) -> str:
         """BiRefNet session name for rembg background removal (product-shot import).
         Lite model (~214 MB) by default; set to 'birefnet-general' for the ~928 MB

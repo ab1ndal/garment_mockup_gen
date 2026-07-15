@@ -19,7 +19,7 @@ from mockup_generator.config import settings
 from mockup_generator.db import batch_items_repo as items_repo
 from mockup_generator.db import products_repo, variants_repo
 from mockup_generator.generation import publish
-from mockup_generator.integrations import drive_client
+from mockup_generator.integrations import drive_client, storage_client
 from mockup_generator.integrations.drive_client import DriveNotConfigured
 from mockup_generator.services import batch_enqueue as enqueue
 from backend.services import batch_worker as worker
@@ -43,25 +43,29 @@ def _claim(db: Client, item_id: int, expect: str, to: str, **fields) -> None:
         raise HTTPException(status_code=409, detail=_ALREADY_HANDLED)
 
 
-def _discard_drive_file(file_id: str) -> str | None:
-    """Remove a staged batch file from the staging area. Delete it (the SA owns
-    files it uploaded); if deletion isn't permitted (e.g. a Shared Drive role
-    without delete rights), fall back to moving it into the ``published/`` archive
-    folder so it still leaves ``_batch``. Returns a warning or None."""
-    try:
-        drive_client.delete_file(file_id)
+def _staged_url(storage_path: str | None) -> str | None:
+    """Signed URL for a staged mockup, or None. The temp bucket is private, so the
+    link is minted per read and expires; a signing failure must not fail the whole
+    page, so the card just renders without its thumbnail."""
+    if not storage_path:
         return None
-    except Exception as exc:  # noqa: BLE001 - fall back to archiving instead
-        log.warning("batch staged %s delete failed, moving to %s: %s",
-                    file_id, drive_client.ARCHIVE_FOLDER, exc)
     try:
-        archive = drive_client.ensure_subfolder(
-            settings.generated_mockups_folder_id, drive_client.ARCHIVE_FOLDER)
-        drive_client.move_file(file_id, archive)
+        return storage_client.signed_url(storage_path, bucket=storage_client.TEMP_BUCKET)
+    except Exception as exc:  # noqa: BLE001 - one missing thumb shouldn't 500 the list
+        log.warning("batch staged %s could not be signed: %s", storage_path, exc)
         return None
-    except Exception as exc:  # noqa: BLE001 - neither delete nor archive worked
-        log.warning("batch staged %s could not be deleted or archived: %s", file_id, exc)
-        return "Done, but the staged Drive file could not be removed."
+
+
+def _discard_staged(storage_path: str) -> str | None:
+    """Remove a staged mockup from the private temp bucket. Returns a warning or
+    None. We own the bucket outright, so there is no permission fallback to make —
+    a failure here only leaves an orphaned object, never a wrong review outcome."""
+    try:
+        storage_client.delete_object(storage_path, bucket=storage_client.TEMP_BUCKET)
+        return None
+    except Exception as exc:  # noqa: BLE001 - the card's outcome already stands
+        log.warning("batch staged %s could not be removed: %s", storage_path, exc)
+        return "Done, but the staged file could not be removed from temp storage."
 
 
 @router.post("", response_model=BatchEnqueueResponse)
@@ -89,15 +93,12 @@ def list_items(tab: str = "ready", offset: int = 0, limit: int = 20,
         raise HTTPException(status_code=400, detail=f"Unknown tab: {tab}")
     rows, total = items_repo.page(db, statuses=statuses, offset=offset, limit=limit)
     names = products_repo.names_for(db, [r.productid for r in rows])
-    thumb_src = [{"file_id": r.drive_file_id, "thumbnail_link": r.thumbnail_link}
-                 for r in rows if r.drive_file_id]
-    thumbs = drive_client.thumbnails_for(thumb_src) if thumb_src else {}
     items = [
         BatchItemOut(
             id=r.id, productid=r.productid, product_name=names.get(r.productid),
             color=r.color, status=r.status, image_ids=r.image_ids,
-            drive_file_id=r.drive_file_id,
-            generated_thumb_url=thumbs.get(r.drive_file_id) if r.drive_file_id else None,
+            storage_path=r.storage_path,
+            generated_thumb_url=_staged_url(r.storage_path),
             error=r.error,
         )
         for r in rows
@@ -127,12 +128,12 @@ def card_sources(item_id: int,
         except Exception as exc:  # noqa: BLE001 - a missing source shouldn't break the card
             log.warning("batch source %s could not load: %s", fid, exc)
     generated = None
-    if row.drive_file_id:
+    if row.storage_path:
         try:
-            g = drive_client.download_file(row.drive_file_id)
+            g = storage_client.download_mockup(row.storage_path, bucket=storage_client.TEMP_BUCKET)
             generated = "data:image/png;base64," + base64.b64encode(g).decode()
-        except Exception as exc:  # noqa: BLE001
-            log.warning("batch generated %s could not load: %s", row.drive_file_id, exc)
+        except Exception as exc:  # noqa: BLE001 - review can proceed without the preview
+            log.warning("batch generated %s could not load: %s", row.storage_path, exc)
     return {"sources": sources, "generated_preview": generated,
             "colors": colors, "color": row.color, "image_ids": row.image_ids}
 
@@ -141,12 +142,12 @@ def card_sources(item_id: int,
 def accept(item_id: int, req: BatchAcceptRequest,
            user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
     row = items_repo.get(db, item_id)
-    if row is None or not row.drive_file_id:
+    if row is None or not row.storage_path:
         raise HTTPException(status_code=404, detail="Card not found or not ready.")
     # Reserve the row so a second reviewer can't also publish it.
     _claim(db, item_id, items_repo.READY, items_repo.PUBLISHED)
     try:
-        png = drive_client.download_file(row.drive_file_id)
+        png = storage_client.download_mockup(row.storage_path, bucket=storage_client.TEMP_BUCKET)
         result = publish.publish_image(
             db, productid=row.productid, png=png,
             color=req.color if req.color is not None else row.color,
@@ -158,7 +159,7 @@ def accept(item_id: int, req: BatchAcceptRequest,
         items_repo.transition(db, item_id=item_id, expect=items_repo.PUBLISHED, to=items_repo.READY)
         raise HTTPException(status_code=502, detail=f"Could not publish the mockup: {exc}") from exc
 
-    warning = _discard_drive_file(row.drive_file_id)
+    warning = _discard_staged(row.storage_path)
     log.info("batch %s published as %s", item_id, result["image_url"])
     return BatchActionResponse(status="ok", warning=warning)
 
@@ -170,7 +171,7 @@ def reject(item_id: int,
     if row is None:
         raise HTTPException(status_code=404, detail="Card not found.")
     _claim(db, item_id, items_repo.READY, items_repo.REJECTED)
-    warning = _discard_drive_file(row.drive_file_id) if row.drive_file_id else None
+    warning = _discard_staged(row.storage_path) if row.storage_path else None
     return BatchActionResponse(status="ok", warning=warning)
 
 
@@ -185,8 +186,8 @@ def edit(item_id: int, req: BatchEditRequest,
     image_ids = req.image_ids if req.image_ids else row.image_ids
     # ready -> queued with the updated prompt/images; clear the stale staged file id.
     _claim(db, item_id, items_repo.READY, items_repo.QUEUED,
-           prompt_text=prompt_text, image_ids=image_ids, drive_file_id=None, error=None)
-    warning = _discard_drive_file(row.drive_file_id) if row.drive_file_id else None
+           prompt_text=prompt_text, image_ids=image_ids, storage_path=None, error=None)
+    warning = _discard_staged(row.storage_path) if row.storage_path else None
     worker.ensure_running(db)
     return BatchActionResponse(status="ok", warning=warning)
 
