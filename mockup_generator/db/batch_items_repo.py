@@ -12,6 +12,8 @@ from dataclasses import dataclass
 
 from supabase import Client
 
+from .product_ids import product_key
+
 QUEUED = "queued"
 GENERATING = "generating"
 READY = "ready"
@@ -67,7 +69,50 @@ def insert_many(client: Client, rows: list[dict]) -> int:
     return len(resp.data or [])
 
 
-def page(client: Client, *, statuses: list[str], offset: int, limit: int) -> tuple[list[BatchRow], int]:
+_FETCH_CHUNK = 1000
+
+
+def _product_sort_key(r: dict) -> tuple[bool, int, str, int]:
+    """Order rows by product id (BC25s before BC26s, then by sequence), keeping a
+    product's colour variants adjacent. Equivalent to stripping ``BC``, padding
+    the sequence to a fixed width, and sorting numerically. Malformed ids sort
+    last; colour then row id break ties for a stable order."""
+    key = product_key(r.get("productid"))
+    return (key is None, key or 0, r.get("color") or "", int(r["id"]))
+
+
+def _fetch_all(client: Client, statuses: list[str]) -> list[dict]:
+    """Every row in ``statuses``, walked in chunks past PostgREST's per-request
+    row cap so in-memory sorting sees the whole set."""
+    out: list[dict] = []
+    start = 0
+    while True:
+        resp = (
+            client.table("batch_items").select(_COLS)
+            .in_("status", statuses)
+            .range(start, start + _FETCH_CHUNK - 1)
+            .execute()
+        )
+        batch = resp.data or []
+        out.extend(batch)
+        if len(batch) < _FETCH_CHUNK:
+            return out
+        start += _FETCH_CHUNK
+
+
+def page(
+    client: Client, *, statuses: list[str], offset: int, limit: int,
+    sort_by_product: bool = False,
+) -> tuple[list[BatchRow], int]:
+    # Product-key order can't be expressed in the query: it's a parsed expression,
+    # and lexical id order breaks across the 3/4-digit sequence boundary. So fetch
+    # the full (small) status set, sort in memory, and slice the page.
+    if sort_by_product:
+        all_rows = _fetch_all(client, statuses)
+        all_rows.sort(key=_product_sort_key)
+        window = all_rows[offset:offset + limit]
+        return [_row(r) for r in window], len(all_rows)
+
     resp = (
         client.table("batch_items").select(_COLS, count="exact")
         .in_("status", statuses)

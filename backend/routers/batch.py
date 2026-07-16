@@ -109,7 +109,10 @@ def list_items(tab: str = "ready", offset: int = 0, limit: int = 20,
     statuses = _TABS.get(tab)
     if statuses is None:
         raise HTTPException(status_code=400, detail=f"Unknown tab: {tab}")
-    rows, total = items_repo.page(db, statuses=statuses, offset=offset, limit=limit)
+    rows, total = items_repo.page(
+        db, statuses=statuses, offset=offset, limit=limit,
+        sort_by_product=(tab == "ready"),
+    )
     names = products_repo.names_for(db, [r.productid for r in rows])
     items = [
         BatchItemOut(
