@@ -63,6 +63,11 @@ export default function BatchTab() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [review, setReview] = useState<BatchItem | null>(null);
 
+  // The page the reviewer intends to view. Updated synchronously on navigation
+  // so the background poll always refetches the current page and a late response
+  // for a page we've since left can be dropped.
+  const offsetRef = useRef(0);
+
   const lightbox = useImageLightbox();
 
   useEffect(() => { getCategories().then(setCats).catch(() => {}); }, []);
@@ -83,9 +88,25 @@ export default function BatchTab() {
   // `quiet` swaps the page contents in place, without the loading state — a
   // background poll must not blank the grid the reviewer is looking at.
   const load = useCallback((t: BatchTabId, off: number, quiet = false) => {
-    if (!quiet) { setLoading(true); setError(null); }
+    if (!quiet) { offsetRef.current = off; setLoading(true); setError(null); }
     listBatchItems({ tab: t, offset: off, limit: PAGE })
-      .then((r) => { setItems(r.items); setTotal(r.total); setOffset(r.offset); })
+      .then((r) => {
+        // Drop a response for a page the reviewer has since navigated away from,
+        // so a slow poll can't clobber a fresh page change.
+        if (r.offset !== offsetRef.current) return;
+        // Staged thumbnails are signed per read, so each poll returns a fresh URL
+        // for the same image. Reuse the URL a card already rendered with — the
+        // bytes never change once staged — so the browser doesn't re-download
+        // every thumbnail on each poll.
+        setItems((prev) => {
+          const seen = new Map(prev.map((x) => [x.id, x.generated_thumb_url]));
+          return r.items.map((it) => {
+            const kept = seen.get(it.id);
+            return kept ? { ...it, generated_thumb_url: kept } : it;
+          });
+        });
+        setTotal(r.total); setOffset(r.offset);
+      })
       .catch((e) => { if (!quiet) setError(e instanceof ApiError ? e.message : "Failed to load."); })
       .finally(() => { if (!quiet) setLoading(false); });
   }, []);
@@ -103,9 +124,9 @@ export default function BatchTab() {
   const inFlight = countFor("in_progress", counts);
   useEffect(() => {
     if (inFlight === 0 || review || busyId !== null) return;
-    const t = setInterval(() => { load(tab, offset, true); loadCounts(); }, POLL_MS);
+    const t = setInterval(() => { load(tab, offsetRef.current, true); loadCounts(); }, POLL_MS);
     return () => clearInterval(t);
-  }, [inFlight, review, busyId, tab, offset, load, loadCounts]);
+  }, [inFlight, review, busyId, tab, load, loadCounts]);
 
   async function onEnqueue() {
     setEnqueuing(true); setNotice(null); setError(null);
