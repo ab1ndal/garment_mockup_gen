@@ -53,7 +53,7 @@ def test_resolve_prompt_none_when_absent(monkeypatch):
 
 def test_plan_cards_one_row_per_color_and_skips(monkeypatch):
     monkeypatch.setattr(be.products_repo, "list_products",
-                        lambda db, **k: [_product("BC1"), _product("BC2"), _product("BC3", url=None)])
+                        lambda db, *, offset=0, **k: [_product("BC1"), _product("BC2"), _product("BC3", url=None)] if offset == 0 else [])
     monkeypatch.setattr(be, "resolve_category_prompt", lambda db, cid: "BODY")
     monkeypatch.setattr(be.drive_client, "extract_folder_id",
                         lambda url: url.rsplit("/", 1)[-1] if url else None)
@@ -78,7 +78,7 @@ def test_plan_cards_skips_product_with_too_many_images(monkeypatch):
     """Over the limit is left for manual generation: choosing among many shots is
     a judgement call, and a card that guesses wastes a generation."""
     monkeypatch.setattr(be.products_repo, "list_products",
-                        lambda db, **k: [_product("BC1"), _product("BC2")])
+                        lambda db, *, offset=0, **k: [_product("BC1"), _product("BC2")] if offset == 0 else [])
     monkeypatch.setattr(be, "resolve_category_prompt", lambda db, cid: "BODY")
     monkeypatch.setattr(be.drive_client, "extract_folder_id",
                         lambda url: url.rsplit("/", 1)[-1])
@@ -104,7 +104,8 @@ def test_plan_cards_skips_product_with_too_many_images(monkeypatch):
 
 
 def test_plan_cards_colorless_product_gets_one_row(monkeypatch):
-    monkeypatch.setattr(be.products_repo, "list_products", lambda db, **k: [_product("BC1")])
+    monkeypatch.setattr(be.products_repo, "list_products",
+                        lambda db, *, offset=0, **k: [_product("BC1")] if offset == 0 else [])
     monkeypatch.setattr(be, "resolve_category_prompt", lambda db, cid: "BODY")
     monkeypatch.setattr(be.drive_client, "extract_folder_id", lambda url: "FID")
     monkeypatch.setattr(be.drive_client, "list_folder_image_ids", lambda fid, limit=14: ["a"])
@@ -118,7 +119,7 @@ def test_plan_cards_colorless_product_gets_one_row(monkeypatch):
 
 def test_plan_cards_skips_product_with_no_prompt(monkeypatch):
     monkeypatch.setattr(be.products_repo, "list_products",
-                        lambda db, **k: [_product("BC1", cat="ZZZ")])
+                        lambda db, *, offset=0, **k: [_product("BC1", cat="ZZZ")] if offset == 0 else [])
     monkeypatch.setattr(be, "resolve_category_prompt", lambda db, cid: None)
     rows, skipped = be.plan_cards(object(), category="ZZZ", count=10, model="m",
                                   resolution="4K", aspect_ratio="1:1",
@@ -131,7 +132,7 @@ def test_plan_cards_skips_product_with_unreviewed_card(monkeypatch):
     """A product that already has an un-reviewed card (queued/generating/ready) is
     skipped, so re-running the batch never duplicates a pending generation."""
     monkeypatch.setattr(be.products_repo, "list_products",
-                        lambda db, **k: [_product("BC1"), _product("BC2")])
+                        lambda db, *, offset=0, **k: [_product("BC1"), _product("BC2")] if offset == 0 else [])
     monkeypatch.setattr(be, "resolve_category_prompt", lambda db, cid: "BODY")
     monkeypatch.setattr(be.drive_client, "extract_folder_id", lambda url: "FID")
     monkeypatch.setattr(be.drive_client, "list_folder_image_ids", lambda fid, limit=14: ["a"])
@@ -144,3 +145,39 @@ def test_plan_cards_skips_product_with_unreviewed_card(monkeypatch):
     assert [r["productid"] for r in rows] == ["BC2"]
     reasons = {s["productid"]: s["reason"] for s in skipped}
     assert "awaiting review" in reasons["BC1"]
+
+
+def test_plan_cards_backfills_past_skips_to_reach_count(monkeypatch):
+    """Skipped products don't consume a slot: the planner pages further down the
+    pending list until it has ``count`` products enqueued."""
+    # Two pages of three. BC1 has an active card, BC3 has no images -> both skip.
+    pages = {
+        0: [_product("BC1"), _product("BC2"), _product("BC3")],
+        3: [_product("BC4"), _product("BC5"), _product("BC6")],
+    }
+    seen_offsets = []
+
+    def fake_list(db, *, offset=0, **k):
+        seen_offsets.append(offset)
+        return pages.get(offset, [])
+
+    monkeypatch.setattr(be.products_repo, "list_products", fake_list)
+    monkeypatch.setattr(be, "resolve_category_prompt", lambda db, cid: "BODY")
+    # _product embeds the id in the folder url (…/FID-BC3); hand back that id so
+    # image lookups can vary per product.
+    monkeypatch.setattr(be.drive_client, "extract_folder_id", lambda url: url.rsplit("-", 1)[-1])
+    monkeypatch.setattr(be.drive_client, "list_folder_image_ids",
+                        lambda fid, limit=14: [] if fid == "BC3" else ["a"])
+    monkeypatch.setattr(be.variants_repo, "list_colors", lambda db, pid: [])
+    monkeypatch.setattr(be.repo, "active_productids", lambda db, pids: {"BC1"} & set(pids))
+
+    rows, skipped = be.plan_cards(object(), category="SA", count=3, model="m",
+                                  resolution="4K", aspect_ratio="1:1",
+                                  batch_id="b1", created_by=None)
+    # BC1 active, BC3 no images -> skipped; BC2, BC4, BC5 fill the count of 3.
+    assert [r["productid"] for r in rows] == ["BC2", "BC4", "BC5"]
+    reasons = {s["productid"]: s["reason"] for s in skipped}
+    assert "awaiting review" in reasons["BC1"] and "no images" in reasons["BC3"]
+    # Paged into the second page to backfill, and stopped before BC6.
+    assert seen_offsets[:2] == [0, 3]
+    assert "BC6" not in [r["productid"] for r in rows]

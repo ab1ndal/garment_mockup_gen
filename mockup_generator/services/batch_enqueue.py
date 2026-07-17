@@ -35,54 +35,83 @@ def resolve_category_prompt(db, categoryid: str) -> str | None:
     return prompt_for_category(categoryid)
 
 
+def _card_rows(
+    db, p, *, model: str, resolution: str, aspect_ratio: str,
+    batch_id: str, created_by: str | None,
+) -> tuple[list[dict], str | None]:
+    """Cards for one product (one per colour), or ``([], reason)`` if it can't be
+    generated. Does not check for an existing un-reviewed card — the caller does
+    that in a batched query."""
+    body = resolve_category_prompt(db, p.categoryid)
+    if not body:
+        return [], f"no prompt for category {p.categoryid}"
+    folder_id = drive_client.extract_folder_id(p.producturl)
+    if not folder_id:
+        return [], "no drive folder"
+    # Ask for one more than allowed: a full slate proves the product is over the
+    # limit without paging the whole folder, and anything short of it is already
+    # the complete set to generate from.
+    image_ids = drive_client.list_folder_image_ids(folder_id, limit=_MAX_SOURCE_IMAGES + 1)
+    if not image_ids:
+        return [], "no images"
+    if len(image_ids) > _MAX_SOURCE_IMAGES:
+        return [], f"more than {_MAX_SOURCE_IMAGES} images — generate manually"
+    colors = variants_repo.list_colors(db, p.productid) or [None]
+    return [
+        {
+            "batch_id": batch_id,
+            "productid": p.productid,
+            "color": color,
+            "image_ids": image_ids,
+            "prompt_text": compose_prompt(color, body),
+            "status": repo.QUEUED,
+            "model": model,
+            "resolution": resolution,
+            "aspect_ratio": aspect_ratio,
+            "created_by": created_by,
+        }
+        for color in colors
+    ], None
+
+
 def plan_cards(
     db, *, category: str | None, count: int, model: str, resolution: str,
     aspect_ratio: str, batch_id: str, created_by: str | None,
 ) -> tuple[list[dict], list[dict]]:
-    products = products_repo.list_products(db, category=category, pending=True, limit=count)
+    """Plan cards for up to ``count`` products. Products with an un-reviewed card
+    (queued/generating/ready) or that can't be generated are skipped, and the
+    next pending products are pulled in to backfill the target — so re-running a
+    batch keeps making forward progress instead of stalling on the same rows."""
     rows: list[dict] = []
     skipped: list[dict] = []
+    enqueued = 0
+    offset = 0
+    # Page wide enough that a run of skips doesn't cost one query per product.
+    page_size = max(count, 20)
 
-    # Don't regenerate a product that already has an un-reviewed card waiting in
-    # the queue or in Ready — accept or reject it first.
-    active = repo.active_productids(db, [p.productid for p in products])
+    while enqueued < count:
+        products = products_repo.list_products(
+            db, category=category, pending=True, limit=page_size, offset=offset)
+        if not products:
+            break  # pending pool exhausted before reaching count
+        offset += len(products)
+        # Don't regenerate a product that already has an un-reviewed card waiting
+        # in the queue or in Ready — accept or reject it first.
+        active = repo.active_productids(db, [p.productid for p in products])
 
-    for p in products:
-        if p.productid in active:
-            skipped.append({"productid": p.productid, "reason": "already queued or awaiting review"})
-            continue
-        body = resolve_category_prompt(db, p.categoryid)
-        if not body:
-            skipped.append({"productid": p.productid, "reason": f"no prompt for category {p.categoryid}"})
-            continue
-        folder_id = drive_client.extract_folder_id(p.producturl)
-        if not folder_id:
-            skipped.append({"productid": p.productid, "reason": "no drive folder"})
-            continue
-        # Ask for one more than allowed: a full slate proves the product is over
-        # the limit without paging the whole folder, and anything short of it is
-        # already the complete set to generate from.
-        image_ids = drive_client.list_folder_image_ids(folder_id, limit=_MAX_SOURCE_IMAGES + 1)
-        if not image_ids:
-            skipped.append({"productid": p.productid, "reason": "no images"})
-            continue
-        if len(image_ids) > _MAX_SOURCE_IMAGES:
-            skipped.append({"productid": p.productid,
-                            "reason": f"more than {_MAX_SOURCE_IMAGES} images — generate manually"})
-            continue
-        colors = variants_repo.list_colors(db, p.productid) or [None]
-        for color in colors:
-            rows.append({
-                "batch_id": batch_id,
-                "productid": p.productid,
-                "color": color,
-                "image_ids": image_ids,
-                "prompt_text": compose_prompt(color, body),
-                "status": repo.QUEUED,
-                "model": model,
-                "resolution": resolution,
-                "aspect_ratio": aspect_ratio,
-                "created_by": created_by,
-            })
+        for p in products:
+            if enqueued >= count:
+                break
+            if p.productid in active:
+                skipped.append({"productid": p.productid, "reason": "already queued or awaiting review"})
+                continue
+            product_rows, reason = _card_rows(
+                db, p, model=model, resolution=resolution, aspect_ratio=aspect_ratio,
+                batch_id=batch_id, created_by=created_by)
+            if reason:
+                skipped.append({"productid": p.productid, "reason": reason})
+                continue
+            rows.extend(product_rows)
+            enqueued += 1
 
     return rows, skipped
