@@ -68,7 +68,8 @@ export default function BatchTab() {
   const [offset, setOffset] = useState(0);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [summary, setSummary] = useState<BatchCategorySummary[]>([]);
-  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [categoryFilters, setCategoryFilters] = useState<string[]>([]); // OR-matched set
+  const [panelOpen, setPanelOpen] = useState(false);   // controlled so a poll re-render can't collapse it
   const [search, setSearch] = useState("");            // raw input
   const [searchApplied, setSearchApplied] = useState(""); // debounced, drives the query
   const [loading, setLoading] = useState(false);
@@ -82,9 +83,9 @@ export default function BatchTab() {
   // so the background poll always refetches the current page and a late response
   // for a page we've since left can be dropped.
   const offsetRef = useRef(0);
-  // Active category filter, mirrored to a ref so the background poll's load
-  // closure always filters by the category currently on screen.
-  const categoryFilterRef = useRef<string | null>(null);
+  // Active category filter set, mirrored to a ref so the background poll's load
+  // closure always filters by the categories currently on screen.
+  const categoryFiltersRef = useRef<string[]>([]);
   // Active (debounced) product-id search, mirrored to a ref for the poll.
   const searchRef = useRef<string>("");
   // Last counts fingerprint the page was rendered against. The poll compares
@@ -120,7 +121,8 @@ export default function BatchTab() {
   const load = useCallback((t: BatchTabId, off: number, quiet = false) => {
     if (!quiet) { offsetRef.current = off; setLoading(true); setError(null); }
     listBatchItems({ tab: t, offset: off, limit: PAGE,
-                     categoryid: categoryFilterRef.current, productid: searchRef.current || null })
+                     categoryid: categoryFiltersRef.current.join(",") || null,
+                     productid: searchRef.current || null })
       .then((r) => {
         // Drop a response for a page the reviewer has since navigated away from,
         // so a slow poll can't clobber a fresh page change.
@@ -157,10 +159,10 @@ export default function BatchTab() {
   // refresh, or after an action. Changing tab, category, or search resets to the
   // first page.
   useEffect(() => {
-    categoryFilterRef.current = categoryFilter;
+    categoryFiltersRef.current = categoryFilters;
     searchRef.current = searchApplied;
     load(tab, 0); loadCounts(); loadSummary();
-  }, [tab, categoryFilter, searchApplied, load, loadCounts, loadSummary]);
+  }, [tab, categoryFilters, searchApplied, load, loadCounts, loadSummary]);
 
   // Refresh in place: reuse the quiet path so the grid is swapped without a
   // loading teardown. Tearing the grid down unmounts every card and forces the
@@ -296,36 +298,42 @@ export default function BatchTab() {
       {error && <p className="alert alert-error" role="alert">{error}</p>}
 
       {summary.length > 0 && (
-        <details className="cat-review">
+        <details className="cat-review" open={panelOpen}
+                 onToggle={(e) => setPanelOpen(e.currentTarget.open)}>
           <summary>
             Review by category
-            {categoryFilter && (
+            {categoryFilters.length > 0 && (
               <span className="cat-active-badge">
-                {summary.find((c) => c.categoryid === categoryFilter)?.name ?? categoryFilter}
+                {categoryFilters.length} selected
               </span>
             )}
           </summary>
-          <div className="cat-list" role="listbox" aria-label="Filter review queue by category">
-            <button type="button" className={`cat-row${categoryFilter === null ? " active" : ""}`}
-                    aria-pressed={categoryFilter === null} onClick={() => setCategoryFilter(null)}>
+          <div className="cat-list" role="listbox" aria-multiselectable="true"
+               aria-label="Filter review queue by category">
+            <button type="button" className={`cat-row${categoryFilters.length === 0 ? " active" : ""}`}
+                    aria-pressed={categoryFilters.length === 0} onClick={() => setCategoryFilters([])}>
               <span className="cat-name">All categories</span>
             </button>
-            {summary.map((c) => (
-              <button key={c.categoryid} type="button"
-                      className={`cat-row${categoryFilter === c.categoryid ? " active" : ""}`}
-                      aria-pressed={categoryFilter === c.categoryid}
-                      onClick={() => setCategoryFilter(categoryFilter === c.categoryid ? null : c.categoryid)}>
-                <span className="cat-name">{c.name ?? c.categoryid}</span>
-                <span className="cat-counts">
-                  <span className="cat-chip chip-unpub" title="Unpublished products — no mockup yet">{c.unpublished}</span>
-                  <span className="cat-chip chip-ready" title="Ready to review">{c.ready}</span>
-                  <span className="cat-chip chip-queued" title="Queued or generating">{c.queued}</span>
-                </span>
-              </button>
-            ))}
+            {summary.map((c) => {
+              const on = categoryFilters.includes(c.categoryid);
+              return (
+                <button key={c.categoryid} type="button"
+                        className={`cat-row${on ? " active" : ""}`}
+                        aria-pressed={on}
+                        onClick={() => setCategoryFilters((prev) =>
+                          on ? prev.filter((x) => x !== c.categoryid) : [...prev, c.categoryid])}>
+                  <span className="cat-name">{c.name ?? c.categoryid}</span>
+                  <span className="cat-counts">
+                    <span className="cat-chip chip-unpub" title="Unpublished products — no mockup yet">{c.unpublished}</span>
+                    <span className="cat-chip chip-ready" title="Ready to review">{c.ready}</span>
+                    <span className="cat-chip chip-queued" title="Queued or generating">{c.queued}</span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
           <p className="muted cat-legend">
-            Per category: <b>unpublished</b> products · <b>ready</b> to review · <b>queued</b> or generating
+            Select one or more categories. Per category: <b>unpublished</b> products · <b>ready</b> to review · <b>queued</b> or generating
           </p>
         </details>
       )}

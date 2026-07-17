@@ -114,9 +114,11 @@ def list_items(tab: str = "ready", offset: int = 0, limit: int = 20,
     # Product ids are alphanumeric + hyphen; strip anything else so the search
     # prefix can't smuggle LIKE wildcards (%/_) into the ilike filter.
     pid = "".join(c for c in (productid or "") if c.isalnum() or c == "-") or None
+    # categoryid is a comma-separated set (multi-select); keep only real ids.
+    cats = [c.strip() for c in (categoryid or "").split(",") if c.strip()] or None
     rows, total = items_repo.page(
         db, statuses=statuses, offset=offset, limit=limit,
-        sort_by_product=(tab == "ready"), categoryid=categoryid or None,
+        sort_by_product=(tab == "ready"), categoryids=cats,
         productid=pid,
     )
     names = products_repo.names_for(db, [r.productid for r in rows])
