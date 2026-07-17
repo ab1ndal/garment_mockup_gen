@@ -380,31 +380,23 @@ export default function BatchTab() {
           </p>
         ) : (
           <>
-            {tab === "history" ? <HistoryTable items={items} /> : (
+            {tab === "history" ? <HistoryTable items={items} />
+             : tab === "in_progress" ? <InProgressTable items={items} />
+             : tab === "failed" ? (
+              <FailedTable items={items} busyId={busyId}
+                           onRetry={(id) => run(id, () => retryBatch(id))} />
+             ) : (
               <div style={gridStyle}>
                 {items.map((it) => (
                   <Card key={it.id} item={it}
                         onEnlarge={() => it.generated_thumb_url
                           && lightbox.show(it.generated_thumb_url, it.productid)}>
-                    {it.status === "ready" && (
-                      <>
-                        <button className="btn-primary" disabled={busyId === it.id}
-                                onClick={() => setReview(it)}>Review</button>
-                        <button disabled={busyId === it.id}
-                                onClick={() => run(it.id, () => acceptBatch(it.id))}>Accept</button>
-                        <button className="btn-danger" disabled={busyId === it.id}
-                                onClick={() => run(it.id, () => rejectBatch(it.id))}>Reject</button>
-                      </>
-                    )}
-                    {it.status === "failed" && (
-                      <button disabled={busyId === it.id}
-                              onClick={() => run(it.id, () => retryBatch(it.id))}>
-                        {busyId === it.id ? "Retrying…" : "Retry"}
-                      </button>
-                    )}
-                    {(it.status === "queued" || it.status === "generating") && (
-                      <span className="pill pill-pending">{it.status}</span>
-                    )}
+                    <button className="btn-primary" disabled={busyId === it.id}
+                            onClick={() => setReview(it)}>Review</button>
+                    <button disabled={busyId === it.id}
+                            onClick={() => run(it.id, () => acceptBatch(it.id))}>Accept</button>
+                    <button className="btn-danger" disabled={busyId === it.id}
+                            onClick={() => run(it.id, () => rejectBatch(it.id))}>Reject</button>
                   </Card>
                 ))}
               </div>
@@ -483,6 +475,68 @@ function HistoryTable({ items }: { items: BatchItem[] }) {
                 <span className={`pill ${it.status === "published" ? "pill-done" : ""}`}>
                   {it.status}
                 </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function InProgressTable({ items }: { items: BatchItem[] }) {
+  return (
+    <div className="table-wrap">
+      <table className="data is-static">
+        <thead>
+          <tr>
+            <th scope="col">Product ID</th>
+            <th scope="col">Product</th>
+            <th scope="col">Color</th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it) => (
+            <tr key={it.id}>
+              <td className="mono">{it.productid}</td>
+              <td>{it.product_name || <span className="muted">—</span>}</td>
+              <td>{it.color || <span className="muted">—</span>}</td>
+              <td><span className="pill pill-pending">{it.status}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function FailedTable({ items, busyId, onRetry }: {
+  items: BatchItem[]; busyId: number | null; onRetry: (id: number) => void;
+}) {
+  return (
+    <div className="table-wrap">
+      <table className="data">
+        <thead>
+          <tr>
+            <th scope="col">Product ID</th>
+            <th scope="col">Product</th>
+            <th scope="col">Color</th>
+            <th scope="col">Reason</th>
+            <th scope="col"><span className="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it) => (
+            <tr key={it.id}>
+              <td className="mono">{it.productid}</td>
+              <td>{it.product_name || <span className="muted">—</span>}</td>
+              <td>{it.color || <span className="muted">—</span>}</td>
+              <td className="fail-reason">{it.error || <span className="muted">Unknown error</span>}</td>
+              <td>
+                <button disabled={busyId === it.id} onClick={() => onRetry(it.id)}>
+                  {busyId === it.id ? "Retrying…" : "Retry"}
+                </button>
               </td>
             </tr>
           ))}

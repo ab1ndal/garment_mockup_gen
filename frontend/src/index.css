@@ -1111,3 +1111,22 @@ td.mono,
   padding: 0 var(--sp-3) var(--sp-2);
   font-size: var(--fs-sm);
 }
+
+/* Batch: failed-tab reason cell + visually-hidden helper */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.fail-reason {
+  max-width: 460px;
+  white-space: normal;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
