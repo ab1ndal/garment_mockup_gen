@@ -88,18 +88,17 @@ def _product_sort_key(r: dict) -> tuple[bool, int, str, int]:
     return (key is None, key or 0, r.get("color") or "", int(r["id"]))
 
 
-def _fetch_all(client: Client, statuses: list[str]) -> list[dict]:
+def _fetch_all(client: Client, statuses: list[str],
+               categoryid: str | None = None) -> list[dict]:
     """Every row in ``statuses``, walked in chunks past PostgREST's per-request
     row cap so in-memory sorting sees the whole set."""
     out: list[dict] = []
     start = 0
     while True:
-        resp = (
-            client.table("batch_items").select(_COLS)
-            .in_("status", statuses)
-            .range(start, start + _FETCH_CHUNK - 1)
-            .execute()
-        )
+        q = client.table("batch_items").select(_COLS).in_("status", statuses)
+        if categoryid:
+            q = q.eq("categoryid", categoryid)
+        resp = q.range(start, start + _FETCH_CHUNK - 1).execute()
         batch = resp.data or []
         out.extend(batch)
         if len(batch) < _FETCH_CHUNK:
@@ -109,38 +108,61 @@ def _fetch_all(client: Client, statuses: list[str]) -> list[dict]:
 
 def page(
     client: Client, *, statuses: list[str], offset: int, limit: int,
-    sort_by_product: bool = False,
+    sort_by_product: bool = False, categoryid: str | None = None,
 ) -> tuple[list[BatchRow], int]:
     # Product-key order can't be expressed in the query: it's a parsed expression,
     # and lexical id order breaks across the 3/4-digit sequence boundary. So fetch
     # the full (small) status set, sort in memory, and slice the page.
     if sort_by_product:
-        all_rows = _fetch_all(client, statuses)
+        all_rows = _fetch_all(client, statuses, categoryid)
         all_rows.sort(key=_product_sort_key)
         window = all_rows[offset:offset + limit]
         return [_row(r) for r in window], len(all_rows)
 
-    resp = (
-        client.table("batch_items").select(_COLS, count="exact")
-        .in_("status", statuses)
-        .order("id", desc=False)
-        .range(offset, offset + limit - 1)
-        .execute()
-    )
+    q = client.table("batch_items").select(_COLS, count="exact").in_("status", statuses)
+    if categoryid:
+        q = q.eq("categoryid", categoryid)
+    resp = q.order("id", desc=False).range(offset, offset + limit - 1).execute()
     rows = [_row(r) for r in (resp.data or [])]
     total = resp.count if resp.count is not None else len(rows)
     return rows, total
 
 
-def counts(client: Client) -> dict[str, int]:
-    out: dict[str, int] = {}
-    for s in ALL_STATUSES:
-        resp = (
-            client.table("batch_items").select("id", count="exact")
-            .eq("status", s).limit(1).execute()
+@dataclass
+class CategorySummary:
+    categoryid: str
+    name: str | None
+    unpublished: int
+    ready: int
+    queued: int
+
+
+def category_summary(client: Client) -> list[CategorySummary]:
+    """Per-category review backlog via the batch_category_summary() SQL function:
+    ``unpublished`` products (no published mockup — includes failed and
+    never-queued), plus ``ready`` and ``queued`` (incl. generating) card counts.
+    One round-trip; sorted most-unpublished first."""
+    resp = client.rpc("batch_category_summary").execute()
+    rows = [
+        CategorySummary(
+            categoryid=r["categoryid"], name=r.get("name"),
+            unpublished=int(r["unpublished"]), ready=int(r["ready"]),
+            queued=int(r["queued"]),
         )
-        out[s] = resp.count or 0
-    return out
+        for r in (resp.data or [])
+    ]
+    rows.sort(key=lambda s: (-s.unpublished, -s.ready, s.name or s.categoryid))
+    return rows
+
+
+def counts(client: Client) -> dict[str, int]:
+    # One grouped round-trip via the batch_status_counts() SQL function instead of
+    # one exact-count query per status. The counts endpoint is polled every few
+    # seconds, so collapsing 6 round-trips into 1 is the win. Statuses with no rows
+    # are absent from the result, so fill them to keep the full-status contract.
+    resp = client.rpc("batch_status_counts").execute()
+    seen = {r["status"]: int(r["n"]) for r in (resp.data or [])}
+    return {s: seen.get(s, 0) for s in ALL_STATUSES}
 
 
 def active_productids(client: Client, productids: list[str]) -> set[str]:

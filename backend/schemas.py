@@ -221,6 +221,18 @@ class BatchCountsResponse(BaseModel):
     counts: dict[str, int]
 
 
+class BatchCategorySummaryOut(BaseModel):
+    categoryid: str
+    name: str | None
+    unpublished: int          # products with no published mockup (incl. failed / never-queued)
+    ready: int                # cards awaiting review
+    queued: int               # cards queued or generating
+
+
+class BatchCategorySummaryResponse(BaseModel):
+    categories: list[BatchCategorySummaryOut]
+
+
 class BatchActionResponse(BaseModel):
     status: str
     warning: str | None = None

@@ -11,7 +11,8 @@ from supabase import Client
 from backend.auth import CurrentUser, get_current_user
 from backend.deps import get_db
 from backend.schemas import (
-    BatchAcceptRequest, BatchActionResponse, BatchCountsResponse, BatchEditRequest,
+    BatchAcceptRequest, BatchActionResponse, BatchCategorySummaryOut,
+    BatchCategorySummaryResponse, BatchCountsResponse, BatchEditRequest,
     BatchEnqueueRequest, BatchEnqueueResponse, BatchItemOut, BatchItemsResponse,
 )
 from mockup_generator.config import settings
@@ -105,13 +106,14 @@ def enqueue_batch(req: BatchEnqueueRequest,
 
 @router.get("/items", response_model=BatchItemsResponse)
 def list_items(tab: str = "ready", offset: int = 0, limit: int = 20,
+               categoryid: str | None = None,
                user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
     statuses = _TABS.get(tab)
     if statuses is None:
         raise HTTPException(status_code=400, detail=f"Unknown tab: {tab}")
     rows, total = items_repo.page(
         db, statuses=statuses, offset=offset, limit=limit,
-        sort_by_product=(tab == "ready"),
+        sort_by_product=(tab == "ready"), categoryid=categoryid or None,
     )
     names = products_repo.names_for(db, [r.productid for r in rows])
     items = [
@@ -130,6 +132,17 @@ def list_items(tab: str = "ready", offset: int = 0, limit: int = 20,
 @router.get("/counts", response_model=BatchCountsResponse)
 def counts(user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
     return BatchCountsResponse(counts=items_repo.counts(db))
+
+
+@router.get("/category-summary", response_model=BatchCategorySummaryResponse)
+def category_summary(user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
+    return BatchCategorySummaryResponse(categories=[
+        BatchCategorySummaryOut(
+            categoryid=s.categoryid, name=s.name, unpublished=s.unpublished,
+            ready=s.ready, queued=s.queued,
+        )
+        for s in items_repo.category_summary(db)
+    ])
 
 
 @router.get("/{item_id}/sources")

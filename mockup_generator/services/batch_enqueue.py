@@ -61,6 +61,7 @@ def _card_rows(
         {
             "batch_id": batch_id,
             "productid": p.productid,
+            "categoryid": p.categoryid,
             "color": color,
             "image_ids": image_ids,
             "prompt_text": compose_prompt(color, body),
