@@ -80,7 +80,7 @@ def test_enqueue_rejects_unsupported_generation_options(client):
 
 def test_items_ready_tab_enriches(client, monkeypatch):
     monkeypatch.setattr(bx.items_repo, "page",
-                        lambda db, *, statuses, offset, limit, sort_by_product=False, categoryid=None: ([_row()], 1))
+                        lambda db, *, statuses, offset, limit, sort_by_product=False, categoryid=None, productid=None: ([_row()], 1))
     monkeypatch.setattr(bx.products_repo, "names_for", lambda db, pids: {"BC25001": "Saree"})
     signed = {}
     def fake_sign(path, *, bucket, **k):
@@ -112,9 +112,10 @@ def test_items_handled_card_never_signs_a_deleted_staged_file(client, monkeypatc
 
 def test_items_in_progress_tab_queries_two_statuses(client, monkeypatch):
     seen = {}
-    def fake_page(db, *, statuses, offset, limit, sort_by_product=False, categoryid=None):
+    def fake_page(db, *, statuses, offset, limit, sort_by_product=False, categoryid=None, productid=None):
         seen["statuses"] = statuses
         seen["categoryid"] = categoryid
+        seen["productid"] = productid
         return [], 0
     monkeypatch.setattr(bx.items_repo, "page", fake_page)
     monkeypatch.setattr(bx.products_repo, "names_for", lambda db, pids: {})

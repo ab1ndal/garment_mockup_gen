@@ -69,6 +69,8 @@ export default function BatchTab() {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [summary, setSummary] = useState<BatchCategorySummary[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [search, setSearch] = useState("");            // raw input
+  const [searchApplied, setSearchApplied] = useState(""); // debounced, drives the query
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [review, setReview] = useState<BatchItem | null>(null);
@@ -83,6 +85,8 @@ export default function BatchTab() {
   // Active category filter, mirrored to a ref so the background poll's load
   // closure always filters by the category currently on screen.
   const categoryFilterRef = useRef<string | null>(null);
+  // Active (debounced) product-id search, mirrored to a ref for the poll.
+  const searchRef = useRef<string>("");
   // Last counts fingerprint the page was rendered against. The poll compares
   // against this to decide whether a refetch is actually needed.
   const lastCountsSigRef = useRef("");
@@ -115,7 +119,8 @@ export default function BatchTab() {
   // background poll must not blank the grid the reviewer is looking at.
   const load = useCallback((t: BatchTabId, off: number, quiet = false) => {
     if (!quiet) { offsetRef.current = off; setLoading(true); setError(null); }
-    listBatchItems({ tab: t, offset: off, limit: PAGE, categoryid: categoryFilterRef.current })
+    listBatchItems({ tab: t, offset: off, limit: PAGE,
+                     categoryid: categoryFilterRef.current, productid: searchRef.current || null })
       .then((r) => {
         // Drop a response for a page the reviewer has since navigated away from,
         // so a slow poll can't clobber a fresh page change.
@@ -141,12 +146,21 @@ export default function BatchTab() {
   // moves for any reason other than the user typing in it.
   useEffect(() => { setPageInput(String(Math.floor(offset / PAGE) + 1)); }, [offset]);
 
-  // Items are fetched 20 at a time on tab/category/page change, manual refresh,
-  // or after an action. Changing tab or category resets to the first page.
+  // Debounce the raw search box into the applied term (~300ms) so a burst of
+  // keystrokes issues one query, not one per character.
+  useEffect(() => {
+    const t = setTimeout(() => setSearchApplied(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Items are fetched 20 at a time on tab/category/search/page change, manual
+  // refresh, or after an action. Changing tab, category, or search resets to the
+  // first page.
   useEffect(() => {
     categoryFilterRef.current = categoryFilter;
+    searchRef.current = searchApplied;
     load(tab, 0); loadCounts(); loadSummary();
-  }, [tab, categoryFilter, load, loadCounts, loadSummary]);
+  }, [tab, categoryFilter, searchApplied, load, loadCounts, loadSummary]);
 
   // Refresh in place: reuse the quiet path so the grid is swapped without a
   // loading teardown. Tearing the grid down unmounts every card and forces the
@@ -329,14 +343,33 @@ export default function BatchTab() {
       </div>
 
       <div role="tabpanel" className="stack">
-        <span className="muted">
-          {loading ? "Loading…" : total === 0 ? "0 items" : `${start}–${end} of ${total}`}
-        </span>
+        <div className="toolbar" style={{ justifyContent: "space-between", alignItems: "center", gap: "var(--sp-3)" }}>
+          <span className="muted">
+            {loading ? "Loading…" : total === 0 ? "0 items" : `${start}–${end} of ${total}`}
+          </span>
+          <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+            <input type="search" inputMode="text" value={search}
+                   aria-label="Search cards by product id"
+                   placeholder="Search product id…"
+                   onChange={(e) => setSearch(e.target.value)}
+                   style={{ width: "min(15rem, 60vw)", paddingRight: search ? "2rem" : undefined }} />
+            {search && (
+              <button type="button" aria-label="Clear search"
+                      onClick={() => setSearch("")}
+                      style={{ position: "absolute", right: 4, minHeight: "auto", height: 28, width: 28,
+                               padding: 0, border: "none", background: "transparent" }}>
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
 
         {loading ? (
           <p className="muted">Loading cards…</p>
         ) : items.length === 0 ? (
-          <p className="muted">{EMPTY_COPY[tab]}</p>
+          <p className="muted">
+            {searchApplied ? `No cards match "${searchApplied}" in ${TABS.find((t) => t.id === tab)?.label}.` : EMPTY_COPY[tab]}
+          </p>
         ) : (
           <>
             {tab === "history" ? <HistoryTable items={items} /> : (

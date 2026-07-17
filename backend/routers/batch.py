@@ -106,14 +106,18 @@ def enqueue_batch(req: BatchEnqueueRequest,
 
 @router.get("/items", response_model=BatchItemsResponse)
 def list_items(tab: str = "ready", offset: int = 0, limit: int = 20,
-               categoryid: str | None = None,
+               categoryid: str | None = None, productid: str | None = None,
                user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
     statuses = _TABS.get(tab)
     if statuses is None:
         raise HTTPException(status_code=400, detail=f"Unknown tab: {tab}")
+    # Product ids are alphanumeric + hyphen; strip anything else so the search
+    # prefix can't smuggle LIKE wildcards (%/_) into the ilike filter.
+    pid = "".join(c for c in (productid or "") if c.isalnum() or c == "-") or None
     rows, total = items_repo.page(
         db, statuses=statuses, offset=offset, limit=limit,
         sort_by_product=(tab == "ready"), categoryid=categoryid or None,
+        productid=pid,
     )
     names = products_repo.names_for(db, [r.productid for r in rows])
     items = [

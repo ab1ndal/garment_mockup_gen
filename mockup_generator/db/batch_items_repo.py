@@ -88,16 +88,26 @@ def _product_sort_key(r: dict) -> tuple[bool, int, str, int]:
     return (key is None, key or 0, r.get("color") or "", int(r["id"]))
 
 
+def _apply_filters(q, categoryid: str | None, productid: str | None):
+    """Shared category + product-id-prefix filters for the list queries.
+    ``productid`` is a prefix (already sanitised by the caller to the product-id
+    charset, so it carries no LIKE wildcards) matched case-insensitively."""
+    if categoryid:
+        q = q.eq("categoryid", categoryid)
+    if productid:
+        q = q.ilike("productid", f"{productid}%")
+    return q
+
+
 def _fetch_all(client: Client, statuses: list[str],
-               categoryid: str | None = None) -> list[dict]:
+               categoryid: str | None = None, productid: str | None = None) -> list[dict]:
     """Every row in ``statuses``, walked in chunks past PostgREST's per-request
     row cap so in-memory sorting sees the whole set."""
     out: list[dict] = []
     start = 0
     while True:
         q = client.table("batch_items").select(_COLS).in_("status", statuses)
-        if categoryid:
-            q = q.eq("categoryid", categoryid)
+        q = _apply_filters(q, categoryid, productid)
         resp = q.range(start, start + _FETCH_CHUNK - 1).execute()
         batch = resp.data or []
         out.extend(batch)
@@ -109,19 +119,19 @@ def _fetch_all(client: Client, statuses: list[str],
 def page(
     client: Client, *, statuses: list[str], offset: int, limit: int,
     sort_by_product: bool = False, categoryid: str | None = None,
+    productid: str | None = None,
 ) -> tuple[list[BatchRow], int]:
     # Product-key order can't be expressed in the query: it's a parsed expression,
     # and lexical id order breaks across the 3/4-digit sequence boundary. So fetch
     # the full (small) status set, sort in memory, and slice the page.
     if sort_by_product:
-        all_rows = _fetch_all(client, statuses, categoryid)
+        all_rows = _fetch_all(client, statuses, categoryid, productid)
         all_rows.sort(key=_product_sort_key)
         window = all_rows[offset:offset + limit]
         return [_row(r) for r in window], len(all_rows)
 
     q = client.table("batch_items").select(_COLS, count="exact").in_("status", statuses)
-    if categoryid:
-        q = q.eq("categoryid", categoryid)
+    q = _apply_filters(q, categoryid, productid)
     resp = q.order("id", desc=False).range(offset, offset + limit - 1).execute()
     rows = [_row(r) for r in (resp.data or [])]
     total = resp.count if resp.count is not None else len(rows)

@@ -584,10 +584,11 @@ export function enqueueBatch(body: {
 }
 
 export function listBatchItems(
-  p: { tab: BatchTabId; offset: number; limit: number; categoryid?: string | null },
+  p: { tab: BatchTabId; offset: number; limit: number; categoryid?: string | null; productid?: string | null },
 ): Promise<BatchItems> {
   const q = new URLSearchParams({ tab: p.tab, offset: String(p.offset), limit: String(p.limit) });
   if (p.categoryid) q.set("categoryid", p.categoryid);
+  if (p.productid) q.set("productid", p.productid);
   return apiFetch<BatchItems>(`/api/batch/items?${q}`);
 }
 
