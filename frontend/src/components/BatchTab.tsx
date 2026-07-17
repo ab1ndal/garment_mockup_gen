@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError, getCategories, getGenerationOptions,
-  enqueueBatch, listBatchItems, getBatchCounts, getBatchSources,
+  enqueueBatch, listBatchItems, getBatchCounts, getBatchSources, getBatchCategorySummary,
   acceptBatch, editBatch, rejectBatch, retryBatch,
   type BatchItem, type BatchTabId, type BatchSources, type Category, type GenOptions,
+  type BatchCategorySummary,
 } from "../api";
 import { useImageLightbox } from "./Lightbox";
 
@@ -42,6 +43,13 @@ function countFor(tabId: BatchTabId, counts: Record<string, number>): number {
   return t.statuses.reduce((n, s) => n + (counts[s] || 0), 0);
 }
 
+// A stable fingerprint of the per-status counts. Only the background worker
+// mutates cards while polling, and every status change shifts a count, so an
+// unchanged fingerprint means nothing on any page has changed.
+function countsSig(counts: Record<string, number>): string {
+  return Object.keys(counts).sort().map((k) => `${k}:${counts[k]}`).join(",");
+}
+
 export default function BatchTab() {
   const [cats, setCats] = useState<Category[]>([]);
   const [category, setCategory] = useState<string>("");
@@ -59,14 +67,25 @@ export default function BatchTab() {
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [summary, setSummary] = useState<BatchCategorySummary[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [review, setReview] = useState<BatchItem | null>(null);
+  // Draft page-number for the jump-to-page input; synced to the live page below
+  // so external navigation (Prev/Next/tab change/poll) keeps the field accurate.
+  const [pageInput, setPageInput] = useState("1");
 
   // The page the reviewer intends to view. Updated synchronously on navigation
   // so the background poll always refetches the current page and a late response
   // for a page we've since left can be dropped.
   const offsetRef = useRef(0);
+  // Active category filter, mirrored to a ref so the background poll's load
+  // closure always filters by the category currently on screen.
+  const categoryFilterRef = useRef<string | null>(null);
+  // Last counts fingerprint the page was rendered against. The poll compares
+  // against this to decide whether a refetch is actually needed.
+  const lastCountsSigRef = useRef("");
 
   const lightbox = useImageLightbox();
 
@@ -82,14 +101,21 @@ export default function BatchTab() {
   }, []);
 
   const loadCounts = useCallback(() => {
-    getBatchCounts().then((r) => setCounts(r.counts)).catch(() => {});
+    getBatchCounts().then((r) => {
+      setCounts(r.counts);
+      lastCountsSigRef.current = countsSig(r.counts);
+    }).catch(() => {});
+  }, []);
+
+  const loadSummary = useCallback(() => {
+    getBatchCategorySummary().then((r) => setSummary(r.categories)).catch(() => {});
   }, []);
 
   // `quiet` swaps the page contents in place, without the loading state — a
   // background poll must not blank the grid the reviewer is looking at.
   const load = useCallback((t: BatchTabId, off: number, quiet = false) => {
     if (!quiet) { offsetRef.current = off; setLoading(true); setError(null); }
-    listBatchItems({ tab: t, offset: off, limit: PAGE })
+    listBatchItems({ tab: t, offset: off, limit: PAGE, categoryid: categoryFilterRef.current })
       .then((r) => {
         // Drop a response for a page the reviewer has since navigated away from,
         // so a slow poll can't clobber a fresh page change.
@@ -111,11 +137,22 @@ export default function BatchTab() {
       .finally(() => { if (!quiet) setLoading(false); });
   }, []);
 
-  // Items are fetched 20 at a time on tab/page change, manual refresh, or after
-  // an action.
-  useEffect(() => { load(tab, 0); loadCounts(); }, [tab, load, loadCounts]);
+  // Keep the jump-to-page field showing the current page whenever the offset
+  // moves for any reason other than the user typing in it.
+  useEffect(() => { setPageInput(String(Math.floor(offset / PAGE) + 1)); }, [offset]);
 
-  const refresh = () => { load(tab, offset); loadCounts(); };
+  // Items are fetched 20 at a time on tab/category/page change, manual refresh,
+  // or after an action. Changing tab or category resets to the first page.
+  useEffect(() => {
+    categoryFilterRef.current = categoryFilter;
+    load(tab, 0); loadCounts(); loadSummary();
+  }, [tab, categoryFilter, load, loadCounts, loadSummary]);
+
+  // Refresh in place: reuse the quiet path so the grid is swapped without a
+  // loading teardown. Tearing the grid down unmounts every card and forces the
+  // browser to re-request every thumbnail; the quiet path keeps the DOM and
+  // reuses each card's existing signed URL, so unchanged images never reload.
+  const refresh = () => { load(tab, offset, true); loadCounts(); };
 
   // Cards move queued -> generating -> ready on a background worker, so a static
   // page goes stale on its own. Poll while anything is still in flight, and stop
@@ -124,9 +161,21 @@ export default function BatchTab() {
   const inFlight = countFor("in_progress", counts);
   useEffect(() => {
     if (inFlight === 0 || review || busyId !== null) return;
-    const t = setInterval(() => { load(tab, offsetRef.current, true); loadCounts(); }, POLL_MS);
+    const t = setInterval(() => {
+      // Poll the cheap counts endpoint, not the page. Refetch the page (and pay
+      // for the row read + per-thumbnail URL signing) only when a status count
+      // has actually moved; an unchanged fingerprint means the page is current.
+      getBatchCounts().then((r) => {
+        const sig = countsSig(r.counts);
+        if (sig === lastCountsSigRef.current) return;
+        lastCountsSigRef.current = sig;
+        setCounts(r.counts);
+        load(tab, offsetRef.current, true);
+        loadSummary();
+      }).catch(() => {});
+    }, POLL_MS);
     return () => clearInterval(t);
-  }, [inFlight, review, busyId, tab, load, loadCounts]);
+  }, [inFlight, review, busyId, tab, load, loadSummary]);
 
   async function onEnqueue() {
     setEnqueuing(true); setNotice(null); setError(null);
@@ -151,6 +200,7 @@ export default function BatchTab() {
     setItems((xs) => xs.filter((x) => x.id !== id));
     setTotal((t) => Math.max(0, t - 1));
     loadCounts();
+    loadSummary();
   }
 
   async function run(id: number, fn: () => Promise<{ warning: string | null }>) {
@@ -175,6 +225,15 @@ export default function BatchTab() {
 
   const start = total === 0 ? 0 : offset + 1;
   const end = offset + items.length;
+  const pages = Math.max(1, Math.ceil(total / PAGE));
+  const currentPage = Math.floor(offset / PAGE) + 1;
+  // Clamp to a valid page and navigate; always resync the input so a clamped or
+  // invalid entry snaps back to a real page even when no navigation happens.
+  const goToPage = (p: number) => {
+    const clamped = Math.min(pages, Math.max(1, p >= 1 ? p : currentPage));
+    setPageInput(String(clamped));
+    if (!loading && clamped !== currentPage) load(tab, (clamped - 1) * PAGE);
+  };
 
   return (
     <div className="stack">
@@ -221,6 +280,41 @@ export default function BatchTab() {
 
       {notice && <p className="alert" role="status">{notice}</p>}
       {error && <p className="alert alert-error" role="alert">{error}</p>}
+
+      {summary.length > 0 && (
+        <details className="cat-review">
+          <summary>
+            Review by category
+            {categoryFilter && (
+              <span className="cat-active-badge">
+                {summary.find((c) => c.categoryid === categoryFilter)?.name ?? categoryFilter}
+              </span>
+            )}
+          </summary>
+          <div className="cat-list" role="listbox" aria-label="Filter review queue by category">
+            <button type="button" className={`cat-row${categoryFilter === null ? " active" : ""}`}
+                    aria-pressed={categoryFilter === null} onClick={() => setCategoryFilter(null)}>
+              <span className="cat-name">All categories</span>
+            </button>
+            {summary.map((c) => (
+              <button key={c.categoryid} type="button"
+                      className={`cat-row${categoryFilter === c.categoryid ? " active" : ""}`}
+                      aria-pressed={categoryFilter === c.categoryid}
+                      onClick={() => setCategoryFilter(categoryFilter === c.categoryid ? null : c.categoryid)}>
+                <span className="cat-name">{c.name ?? c.categoryid}</span>
+                <span className="cat-counts">
+                  <span className="cat-chip chip-unpub" title="Unpublished products — no mockup yet">{c.unpublished}</span>
+                  <span className="cat-chip chip-ready" title="Ready to review">{c.ready}</span>
+                  <span className="cat-chip chip-queued" title="Queued or generating">{c.queued}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+          <p className="muted cat-legend">
+            Per category: <b>unpublished</b> products · <b>ready</b> to review · <b>queued</b> or generating
+          </p>
+        </details>
+      )}
 
       <div className="tabs subtabs" role="tablist" aria-label="Batch review queues">
         {TABS.map((t) => (
@@ -276,13 +370,33 @@ export default function BatchTab() {
             )}
 
             {total > PAGE && (
-              <div className="toolbar" style={{ justifyContent: "center", alignItems: "center", gap: "var(--sp-3)" }}>
-                <button disabled={offset === 0 || loading} onClick={() => load(tab, Math.max(0, offset - PAGE))}>
+              <div className="toolbar" style={{ justifyContent: "center", alignItems: "center", gap: "var(--sp-2)", flexWrap: "wrap" }}>
+                <button aria-label="First page" disabled={offset === 0 || loading} onClick={() => goToPage(1)}>
+                  « First
+                </button>
+                <button aria-label="Previous page" disabled={offset === 0 || loading} onClick={() => goToPage(currentPage - 1)}>
                   ‹ Prev
                 </button>
-                <span className="muted">Page {Math.floor(offset / PAGE) + 1} of {Math.max(1, Math.ceil(total / PAGE))}</span>
-                <button disabled={end >= total || loading} onClick={() => load(tab, offset + PAGE)}>
+                <span className="muted" style={{ display: "inline-flex", alignItems: "center", gap: "var(--sp-2)" }}>
+                  Page
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    aria-label={`Page number, ${pages} total. Enter a page and press Enter to jump`}
+                    value={pageInput}
+                    disabled={loading}
+                    onChange={(e) => setPageInput(e.target.value.replace(/[^0-9]/g, ""))}
+                    onKeyDown={(e) => { if (e.key === "Enter") goToPage(Number(pageInput)); }}
+                    onBlur={() => goToPage(Number(pageInput))}
+                    style={{ width: "3.25rem", textAlign: "center", padding: "6px 8px" }}
+                  />
+                  of {pages}
+                </span>
+                <button aria-label="Next page" disabled={end >= total || loading} onClick={() => goToPage(currentPage + 1)}>
                   Next ›
+                </button>
+                <button aria-label="Last page" disabled={end >= total || loading} onClick={() => goToPage(pages)}>
+                  Last »
                 </button>
               </div>
             )}

@@ -583,13 +583,28 @@ export function enqueueBatch(body: {
   });
 }
 
-export function listBatchItems(p: { tab: BatchTabId; offset: number; limit: number }): Promise<BatchItems> {
+export function listBatchItems(
+  p: { tab: BatchTabId; offset: number; limit: number; categoryid?: string | null },
+): Promise<BatchItems> {
   const q = new URLSearchParams({ tab: p.tab, offset: String(p.offset), limit: String(p.limit) });
+  if (p.categoryid) q.set("categoryid", p.categoryid);
   return apiFetch<BatchItems>(`/api/batch/items?${q}`);
 }
 
 export function getBatchCounts(): Promise<{ counts: Record<string, number> }> {
   return apiFetch<{ counts: Record<string, number> }>("/api/batch/counts");
+}
+
+export interface BatchCategorySummary {
+  categoryid: string;
+  name: string | null;
+  unpublished: number;
+  ready: number;
+  queued: number;
+}
+
+export function getBatchCategorySummary(): Promise<{ categories: BatchCategorySummary[] }> {
+  return apiFetch<{ categories: BatchCategorySummary[] }>("/api/batch/category-summary");
 }
 
 export function getBatchSources(id: number): Promise<BatchSources> {

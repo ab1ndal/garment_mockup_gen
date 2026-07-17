@@ -1036,3 +1036,78 @@ td.mono,
   min-height: 32px;
   font-size: var(--fs-xs);
 }
+
+/* ============================================================
+   Batch: review-by-category panel
+   ============================================================ */
+.cat-review {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.cat-review > summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  font-weight: 500;
+  user-select: none;
+}
+.cat-active-badge {
+  font-size: var(--fs-sm);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  padding: 2px 8px;
+}
+.cat-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.cat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 6px 10px;
+  text-align: left;
+}
+.cat-row.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.cat-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cat-counts {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.cat-chip {
+  min-width: 26px;
+  text-align: center;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  border-radius: var(--r-sm);
+  padding: 1px 6px;
+  border: 1px solid transparent;
+}
+.chip-unpub { background: var(--warn-soft); border-color: var(--warn-border); color: var(--warn); }
+.chip-ready { background: var(--success-soft); border-color: var(--success-border); color: var(--success); }
+.chip-queued { background: var(--surface-2); border-color: var(--border-strong); color: var(--text-muted); }
+.cat-legend {
+  margin: 0;
+  padding: 0 var(--sp-3) var(--sp-2);
+  font-size: var(--fs-sm);
+}
