@@ -17,6 +17,13 @@ def _product(pid, cat="SA", url=_SENTINEL):
                    base_mockup=False, producturl=url)
 
 
+@pytest.fixture(autouse=True)
+def _no_active_cards(monkeypatch):
+    """Default: no product already has an un-reviewed card. Tests that exercise
+    the skip override this."""
+    monkeypatch.setattr(be.repo, "active_productids", lambda db, pids: set())
+
+
 def test_compose_prompt_prefixes_color():
     assert be.compose_prompt("Red", "BODY").startswith("Make the professional mockup of the Red product.")
     assert "BODY" in be.compose_prompt("Red", "BODY")
@@ -118,3 +125,22 @@ def test_plan_cards_skips_product_with_no_prompt(monkeypatch):
                                   batch_id="b1", created_by=None)
     assert rows == []
     assert "no prompt" in skipped[0]["reason"]
+
+
+def test_plan_cards_skips_product_with_unreviewed_card(monkeypatch):
+    """A product that already has an un-reviewed card (queued/generating/ready) is
+    skipped, so re-running the batch never duplicates a pending generation."""
+    monkeypatch.setattr(be.products_repo, "list_products",
+                        lambda db, **k: [_product("BC1"), _product("BC2")])
+    monkeypatch.setattr(be, "resolve_category_prompt", lambda db, cid: "BODY")
+    monkeypatch.setattr(be.drive_client, "extract_folder_id", lambda url: "FID")
+    monkeypatch.setattr(be.drive_client, "list_folder_image_ids", lambda fid, limit=14: ["a"])
+    monkeypatch.setattr(be.variants_repo, "list_colors", lambda db, pid: [])
+    monkeypatch.setattr(be.repo, "active_productids", lambda db, pids: {"BC1"})
+
+    rows, skipped = be.plan_cards(object(), category="SA", count=10, model="m",
+                                  resolution="4K", aspect_ratio="1:1",
+                                  batch_id="b1", created_by=None)
+    assert [r["productid"] for r in rows] == ["BC2"]
+    reasons = {s["productid"]: s["reason"] for s in skipped}
+    assert "awaiting review" in reasons["BC1"]

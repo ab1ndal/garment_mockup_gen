@@ -43,7 +43,14 @@ def plan_cards(
     rows: list[dict] = []
     skipped: list[dict] = []
 
+    # Don't regenerate a product that already has an un-reviewed card waiting in
+    # the queue or in Ready — accept or reject it first.
+    active = repo.active_productids(db, [p.productid for p in products])
+
     for p in products:
+        if p.productid in active:
+            skipped.append({"productid": p.productid, "reason": "already queued or awaiting review"})
+            continue
         body = resolve_category_prompt(db, p.categoryid)
         if not body:
             skipped.append({"productid": p.productid, "reason": f"no prompt for category {p.categoryid}"})

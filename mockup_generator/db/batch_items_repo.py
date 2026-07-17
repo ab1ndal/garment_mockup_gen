@@ -23,6 +23,13 @@ REJECTED = "rejected"
 
 ALL_STATUSES = [QUEUED, GENERATING, READY, FAILED, PUBLISHED, REJECTED]
 
+# A product with a card in one of these has an un-reviewed generation — queued,
+# running, or waiting in Ready to be accepted — so re-enqueuing it would just
+# duplicate the work. Failed is a resolved attempt (retried on its own card), and
+# reviewed outcomes don't block: accepted products drop out via the base_mockup
+# filter, and rejected ones are meant to be regenerated.
+ACTIVE_STATUSES = [QUEUED, GENERATING, READY]
+
 _COLS = (
     "id, batch_id, productid, color, image_ids, prompt_text, status, "
     "storage_path, error, model, resolution, aspect_ratio"
@@ -134,6 +141,20 @@ def counts(client: Client) -> dict[str, int]:
         )
         out[s] = resp.count or 0
     return out
+
+
+def active_productids(client: Client, productids: list[str]) -> set[str]:
+    """Of ``productids``, those that already have an un-reviewed card
+    (see ``ACTIVE_STATUSES``) — used to skip re-enqueuing them."""
+    if not productids:
+        return set()
+    resp = (
+        client.table("batch_items").select("productid")
+        .in_("status", ACTIVE_STATUSES)
+        .in_("productid", productids)
+        .execute()
+    )
+    return {r["productid"] for r in (resp.data or [])}
 
 
 def get(client: Client, item_id: int) -> BatchRow | None:
