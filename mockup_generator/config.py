@@ -89,6 +89,15 @@ class Settings:
         return _get("BATCH_CONCURRENCY", default="3")  # type: ignore[return-value]
 
     @property
+    def batch_model_concurrency(self) -> str | None:
+        """Per-model drainer budgets, so the batch pool fans out across models
+        whose capacity pools are independent (on Vertex each base model has its
+        own shared-capacity pool, so one model's 429s don't block another's).
+        Format: ``BATCH_MODEL_CONCURRENCY="gemini-3.1-flash-image=1,gemini-3-pro-image=2"``.
+        Unset → single-model behaviour using GEMINI_IMAGE_MODEL + BATCH_CONCURRENCY."""
+        return _get("BATCH_MODEL_CONCURRENCY", default=None)
+
+    @property
     def rembg_model(self) -> str:
         """BiRefNet session name for rembg background removal (product-shot import).
         Lite model (~214 MB) by default; set to 'birefnet-general' for the ~928 MB

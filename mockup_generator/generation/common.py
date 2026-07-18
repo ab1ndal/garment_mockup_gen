@@ -197,7 +197,21 @@ def generate_with_retries(
         types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_NONE"),
         types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
     ]
-    wait = 8
+    # Backoff is tuned to the shape of the failure, not one-size-fits-all:
+    #
+    # 429 is shared-capacity throttling, not "server dying". gemini-*-image is
+    # global-only and its pool admits only ~1-2 concurrent requests, so a freed
+    # slot opens roughly every generation (~18-20s). A 429 is a cheap fast-reject
+    # (~1.5s, no capacity cost — request-count quota is effectively unlimited), so
+    # the right move is to retry OFTEN with a LOW cap: backing off to 60s just
+    # idles a worker straight past open slots. Full jitter (sleep in [floor, wait])
+    # both spreads synchronised workers and lets a worker retry near-immediately to
+    # grab a slot the instant it frees.
+    #
+    # 5xx is genuine server trouble — back off harder (cap 60s).
+    _RL_CAP = 20   # 429: near the ~18-20s slot cadence, so retries land on freed slots
+    _SRV_CAP = 60  # 5xx: real server error, ease off
+    wait = 1
     for attempt in range(1, max_attempts + 1):
         try:
             return client.models.generate_content(
@@ -216,13 +230,13 @@ def generate_with_retries(
             # is only a local in errors.py and never reaches the exception, so
             # reading it here silently made every 429 permanent.
             if getattr(e, "code", None) == 429 and attempt < max_attempts:
-                time.sleep(wait)
-                wait = min(wait * 2, 60)
+                time.sleep(0.25 + random() * wait)  # full jitter → catch freed slots
+                wait = min(wait * 2, _RL_CAP)
                 continue
             raise
         except errors.ServerError:
             if attempt < max_attempts:
-                time.sleep(int(wait * (1 + random())))
-                wait = min(wait * 2, 60)
+                time.sleep(wait * (1 + random()))
+                wait = min(wait * 2, _SRV_CAP)
                 continue
             raise

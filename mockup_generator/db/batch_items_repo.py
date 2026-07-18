@@ -210,14 +210,20 @@ def transition(client: Client, *, item_id: int, expect: str, to: str, **fields) 
     return bool(resp.data)
 
 
-def claim_next_queued(client: Client) -> BatchRow | None:
+def claim_next_queued(client: Client, assign_model: str | None = None) -> BatchRow | None:
     """Claim the next ``queued`` row (queued -> generating). Race-safe: if the
     conditional update loses (another worker won), retry the next candidate.
     Returns the claimed row, or None when no queued rows remain.
 
+    ``assign_model`` stamps that model on the row as it is claimed, overriding
+    whatever was set at enqueue. This is how the per-model drainer pools fan the
+    batch out across independent capacity pools: a pool's drainer claims any
+    queued card and records the model that actually generated it.
+
     Ordered by ``attempts`` then id, so a requeued transient failure (attempts>0)
     waits behind every fresh card. That both keeps first-pass work moving and
     gives the rate limit a cooldown before the same card is tried again."""
+    fields = {"model": assign_model} if assign_model else {}
     while True:
         resp = (
             client.table("batch_items").select(_COLS)
@@ -229,8 +235,10 @@ def claim_next_queued(client: Client) -> BatchRow | None:
         if not rows:
             return None
         row = _row(rows[0])
-        if transition(client, item_id=row.id, expect=QUEUED, to=GENERATING):
+        if transition(client, item_id=row.id, expect=QUEUED, to=GENERATING, **fields):
             row.status = GENERATING
+            if assign_model:
+                row.model = assign_model
             return row
         # lost the race; try the next candidate
 

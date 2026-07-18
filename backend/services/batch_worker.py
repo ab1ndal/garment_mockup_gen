@@ -48,7 +48,7 @@ _MAX_ATTEMPTS = 4
 _STALE_SECONDS = 1200  # 20 min
 
 _lock = threading.Lock()
-_active = 0  # live drainers; guarded by _lock
+_active: dict[str, int] = {}  # model -> live drainers; guarded by _lock
 
 
 def _is_transient(exc: Exception) -> bool:
@@ -66,20 +66,39 @@ def _is_transient(exc: Exception) -> bool:
     return False
 
 
-def _concurrency() -> int:
-    """How many cards to generate at once. Generation is a slow network call, so
-    threads (not processes) are the right shape even on a small box.
+def _model_budgets() -> dict[str, int]:
+    """model -> number of dedicated drainers. Generation is a slow network call,
+    so threads (not processes) are the right shape even on a small box.
 
-    The real ceiling is the image model's rate limit, not the CPU: too many
-    drainers turn into 429s, which the generator answers with backoff — spending
-    wall-clock rather than saving it. Tune with ``BATCH_CONCURRENCY``.
+    Each base model has its OWN shared-capacity pool on Vertex, so dedicating
+    threads per model fans the batch out across independent pools instead of
+    piling every worker onto one throttled pool (where extra workers only earn
+    429s and backoff). Configured with ``BATCH_MODEL_CONCURRENCY``
+    (``"model=n,model=n"``); unset falls back to the single ``GEMINI_IMAGE_MODEL``
+    at ``BATCH_CONCURRENCY`` — the original single-pool behaviour.
     """
-    raw = settings.batch_concurrency
+    raw = settings.batch_model_concurrency
+    if raw:
+        budgets: dict[str, int] = {}
+        for part in raw.split(","):
+            model, _, num = part.strip().partition("=")
+            model = model.strip()
+            try:
+                n = max(0, int(num))
+            except (TypeError, ValueError):
+                log.warning("BATCH_MODEL_CONCURRENCY: bad entry %r; skipping", part)
+                continue
+            if model and n:
+                budgets[model] = n
+        if budgets:
+            return budgets
+        log.warning("BATCH_MODEL_CONCURRENCY=%r parsed empty; using single-model", raw)
     try:
-        return max(1, int(raw))
+        n = max(1, int(settings.batch_concurrency))
     except (TypeError, ValueError):
-        log.warning("BATCH_CONCURRENCY=%r is not an int; using %d", raw, _DEFAULT_CONCURRENCY)
-        return _DEFAULT_CONCURRENCY
+        log.warning("BATCH_CONCURRENCY=%r is not an int; using %d", settings.batch_concurrency, _DEFAULT_CONCURRENCY)
+        n = _DEFAULT_CONCURRENCY
+    return {settings.gemini_image_model: n}
 
 
 def _spawn(fn, *args) -> None:
@@ -87,9 +106,11 @@ def _spawn(fn, *args) -> None:
     threading.Thread(target=fn, args=args, daemon=True).start()
 
 
-def run_one(db: Client) -> bool:
-    """Claim and process one queued card. Returns False when nothing is queued."""
-    row = repo.claim_next_queued(db)
+def run_one(db: Client, model: str) -> bool:
+    """Claim and process one queued card for ``model``'s pool, stamping that model
+    on the card (overriding whatever was stamped at enqueue) so the batch fans out
+    across independent per-model capacity pools. False when nothing is queued."""
+    row = repo.claim_next_queued(db, assign_model=model)
     if row is None:
         return False
     attempt = row.attempts + 1
@@ -134,7 +155,7 @@ def _record_failure(db: Client, row: repo.BatchRow, attempt: int,
                     attempts=attempt, error=str(exc))
 
 
-def run_worker(db: Client) -> None:
+def run_worker(db: Client, model: str) -> None:
     """Drain the queue until it runs dry, then release this drainer's slot.
 
     Concurrency-safe by construction: every card is taken via
@@ -145,13 +166,12 @@ def run_worker(db: Client) -> None:
     spawning; call it through ``ensure_running``, never directly, or the pool
     count will drift.
     """
-    global _active
     try:
-        while run_one(db):
+        while run_one(db, model):
             pass
     finally:
         with _lock:
-            _active -= 1
+            _active[model] = max(0, _active.get(model, 1) - 1)
 
 
 def ensure_running(db: Client) -> None:
@@ -164,20 +184,22 @@ def ensure_running(db: Client) -> None:
     would otherwise strand its card until the next restart. Called on every
     enqueue/edit/retry, so recovery no longer waits on a reboot.
     """
-    global _active
     try:
         stale = repo.reset_stale_generating(db, _STALE_SECONDS)
         if stale:
             log.info("batch: reclaimed %d stale 'generating' row(s) to 'queued'", stale)
     except Exception as exc:  # noqa: BLE001 - reclaim is best-effort; still start the pool
         log.warning("batch: stale-generating reclaim skipped: %s", exc)
+    budgets = _model_budgets()
+    to_spawn: list[str] = []
     with _lock:
-        want = _concurrency() - _active
-        if want <= 0:
-            return
-        _active += want
-    for _ in range(want):
-        _spawn(run_worker, db)
+        for model, budget in budgets.items():
+            want = budget - _active.get(model, 0)
+            if want > 0:
+                _active[model] = _active.get(model, 0) + want
+                to_spawn.extend([model] * want)
+    for model in to_spawn:
+        _spawn(run_worker, db, model)
 
 
 def reset_orphaned(db: Client) -> int:
