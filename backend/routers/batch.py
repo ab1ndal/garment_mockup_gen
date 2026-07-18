@@ -230,9 +230,12 @@ def edit(item_id: int, req: BatchEditRequest,
     note = (req.prompt_note or "").strip()
     prompt_text = f"{row.prompt_text}\n\nRevision note: {note}" if note else row.prompt_text
     image_ids = req.image_ids if req.image_ids else row.image_ids
-    # ready -> queued with the updated prompt/images; clear the stale staged file id.
+    # ready -> queued with the updated prompt/images; clear the stale staged file
+    # id and reset attempts — an edited card is fresh work, so give it a full
+    # auto-retry budget again.
     _claim(db, item_id, items_repo.READY, items_repo.QUEUED,
-           prompt_text=prompt_text, image_ids=image_ids, storage_path=None, error=None)
+           prompt_text=prompt_text, image_ids=image_ids, storage_path=None,
+           error=None, attempts=0)
     warning = _discard_staged(row.storage_path) if row.storage_path else None
     worker.ensure_running(db)
     return BatchActionResponse(status="ok", warning=warning)
@@ -241,6 +244,7 @@ def edit(item_id: int, req: BatchEditRequest,
 @router.post("/{item_id}/retry", response_model=BatchActionResponse)
 def retry(item_id: int,
           user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
-    _claim(db, item_id, items_repo.FAILED, items_repo.QUEUED, error=None)
+    # A deliberate manual retry gets a fresh auto-retry budget.
+    _claim(db, item_id, items_repo.FAILED, items_repo.QUEUED, error=None, attempts=0)
     worker.ensure_running(db)
     return BatchActionResponse(status="ok", warning=None)

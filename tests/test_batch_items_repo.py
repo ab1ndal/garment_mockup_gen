@@ -12,6 +12,7 @@ class FakeQuery:
 
     def select(self, *a, **k): self.sink.append(("select", a, k)); return self
     def eq(self, c, v): self.sink.append(("eq", c, v)); return self
+    def lt(self, c, v): self.sink.append(("lt", c, v)); return self
     def in_(self, c, v): self.sink.append(("in", c, v)); return self
     def order(self, c, **k): self.sink.append(("order", c, k)); return self
     def range(self, lo, hi): self.sink.append(("range", lo, hi)); return self
@@ -32,7 +33,7 @@ def _raw(id=1, status="queued"):
     return {"id": id, "batch_id": "b1", "productid": "BC25001", "color": "Red",
             "image_ids": ["f1", "f2"], "prompt_text": "p", "status": status,
             "storage_path": None, "error": None,
-            "model": "m", "resolution": "4K", "aspect_ratio": "1:1"}
+            "model": "m", "resolution": "4K", "aspect_ratio": "1:1", "attempts": 0}
 
 
 def test_page_filters_by_statuses_and_returns_total():
@@ -71,3 +72,27 @@ def test_reset_orphaned_moves_generating_to_queued():
     upd = next(p for tag, p in [(s[0], s[1]) for s in c.sink if s[0] == "update"])
     assert upd["status"] == repo.QUEUED
     assert ("eq", "status", repo.GENERATING) in c.sink
+
+
+def test_reset_stale_generating_filters_by_age():
+    c = FakeClient(FakeResp([{"id": 1}]))
+    assert repo.reset_stale_generating(c, 1200) == 1
+    upd = next(p for tag, p in [(s[0], s[1]) for s in c.sink if s[0] == "update"])
+    assert upd["status"] == repo.QUEUED
+    assert ("eq", "status", repo.GENERATING) in c.sink
+    # bounded by age so it never steals a live drainer's row
+    assert any(tag == "lt" and col == "updated_at" for tag, col, _ in
+               [s for s in c.sink if s[0] == "lt"])
+
+
+def test_claim_orders_retries_behind_fresh_cards():
+    c = FakeClient(FakeResp([_raw()]))
+    repo.claim_next_queued(c)
+    assert ("order", "attempts", {"desc": False}) in c.sink
+    assert ("order", "id", {"desc": False}) in c.sink
+
+
+def test_row_defaults_attempts_when_absent():
+    r = _raw()
+    del r["attempts"]
+    assert repo._row(r).attempts == 0

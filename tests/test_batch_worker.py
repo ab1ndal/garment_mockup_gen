@@ -1,15 +1,27 @@
 import pytest
+from google.genai import errors as genai_errors
 
 from backend.services import batch_worker as bw
 from mockup_generator.db import batch_items_repo as repo
 from mockup_generator.db.batch_items_repo import BatchRow
 
 
-def _row(id=1):
+def _row(id=1, attempts=0):
     return BatchRow(id=id, batch_id="b1", productid="BC1", color="Red",
                     image_ids=["a", "b"], prompt_text="p", status=repo.GENERATING,
                     storage_path=None, error=None,
-                    model="m", resolution="4K", aspect_ratio="1:1")
+                    model="m", resolution="4K", aspect_ratio="1:1", attempts=attempts)
+
+
+def _429():
+    return genai_errors.ClientError(
+        429, {"error": {"code": 429, "message": "quota", "status": "RESOURCE_EXHAUSTED"}})
+
+
+def _throw(exc):
+    def _raise(*a, **k):
+        raise exc
+    return _raise
 
 
 def test_run_one_generates_stages_to_storage_and_marks_ready(monkeypatch):
@@ -69,10 +81,83 @@ def test_run_one_returns_false_when_nothing_queued(monkeypatch):
     assert bw.run_one(object()) is False
 
 
+def test_run_one_requeues_transient_429_under_cap(monkeypatch):
+    """A quota 429 (all internal retries exhausted) goes back to queued for another
+    pass, with the attempt counter bumped — it must not die in failed."""
+    monkeypatch.setattr(bw.repo, "claim_next_queued", lambda db: _row(attempts=0))
+    monkeypatch.setattr(bw.drive_client, "download_file", lambda fid: _tiny_png())
+    monkeypatch.setattr(bw.service, "generate_mockup_bytes", _throw(_429()))
+    updates = []
+    monkeypatch.setattr(bw.repo, "transition",
+                        lambda db, *, item_id, expect, to, **f: updates.append((to, f)) or True)
+    assert bw.run_one(object()) is True
+    assert updates[0][0] == repo.QUEUED and updates[0][1]["attempts"] == 1
+
+
+def test_run_one_fails_transient_at_cap(monkeypatch):
+    """Once the attempt cap is reached a still-failing card lands in failed for
+    good, so a permanently exhausted quota can't loop a card forever."""
+    monkeypatch.setattr(bw.repo, "claim_next_queued", lambda db: _row(attempts=bw._MAX_ATTEMPTS - 1))
+    monkeypatch.setattr(bw.drive_client, "download_file", lambda fid: _tiny_png())
+    monkeypatch.setattr(bw.service, "generate_mockup_bytes", _throw(_429()))
+    updates = []
+    monkeypatch.setattr(bw.repo, "transition",
+                        lambda db, *, item_id, expect, to, **f: updates.append((to, f)) or True)
+    assert bw.run_one(object()) is True
+    assert updates[0][0] == repo.FAILED and updates[0][1]["attempts"] == bw._MAX_ATTEMPTS
+
+
+def test_run_one_does_not_retry_permanent_error(monkeypatch):
+    """A non-transient error (bad request, missing images) fails on the first pass
+    instead of wasting the retry budget on a generation that can't succeed."""
+    monkeypatch.setattr(bw.repo, "claim_next_queued", lambda db: _row(attempts=0))
+    monkeypatch.setattr(bw.drive_client, "download_file", lambda fid: _tiny_png())
+    monkeypatch.setattr(bw.service, "generate_mockup_bytes", _throw(ValueError("bad input")))
+    updates = []
+    monkeypatch.setattr(bw.repo, "transition",
+                        lambda db, *, item_id, expect, to, **f: updates.append((to, f)) or True)
+    assert bw.run_one(object()) is True
+    assert updates[0][0] == repo.FAILED and updates[0][1]["attempts"] == 1
+
+
+def test_no_image_response_is_transient(monkeypatch):
+    """Flash sometimes returns no image part on a fine prompt; treat NO_IMAGE as
+    retryable so those cards aren't lost."""
+    monkeypatch.setattr(bw.repo, "claim_next_queued", lambda db: _row(attempts=0))
+    monkeypatch.setattr(bw.drive_client, "download_file", lambda fid: _tiny_png())
+    monkeypatch.setattr(bw.service, "generate_mockup_bytes",
+                        _throw(bw.NoImageReturned("no image (finish_reason: NO_IMAGE)")))
+    updates = []
+    monkeypatch.setattr(bw.repo, "transition",
+                        lambda db, *, item_id, expect, to, **f: updates.append((to, f)) or True)
+    assert bw.run_one(object()) is True
+    assert updates[0][0] == repo.QUEUED
+
+
 def _tiny_png() -> bytes:
     from io import BytesIO
     from PIL import Image
     buf = BytesIO(); Image.new("RGB", (2, 2)).save(buf, "PNG"); return buf.getvalue()
+
+
+@pytest.fixture(autouse=True)
+def _no_reclaim(monkeypatch):
+    """Pool tests exercise slot math, not DB reclaim — stub it to a no-op so
+    ensure_running doesn't touch the fake db. Overridden where reclaim is asserted."""
+    monkeypatch.setattr(bw.repo, "reset_stale_generating", lambda db, secs: 0)
+
+
+def test_ensure_running_reclaims_stale_generating(monkeypatch):
+    """Every ensure_running rescues crashed-mid-card rows before topping up, so a
+    stuck card recovers on the next enqueue instead of waiting for a restart."""
+    monkeypatch.setattr(bw, "_active", 0)
+    monkeypatch.setattr(bw, "_concurrency", lambda: 1)
+    monkeypatch.setattr(bw, "_spawn", lambda fn, *a: None)
+    calls = []
+    monkeypatch.setattr(bw.repo, "reset_stale_generating",
+                        lambda db, secs: calls.append(secs) or 2)
+    bw.ensure_running(object())
+    assert calls == [bw._STALE_SECONDS]
 
 
 def test_ensure_running_starts_a_pool_of_drainers(monkeypatch):

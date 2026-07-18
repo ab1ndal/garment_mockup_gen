@@ -9,6 +9,7 @@ worker) can't both act on the same card.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from supabase import Client
 
@@ -32,7 +33,7 @@ ACTIVE_STATUSES = [QUEUED, GENERATING, READY]
 
 _COLS = (
     "id, batch_id, productid, color, image_ids, prompt_text, status, "
-    "storage_path, error, model, resolution, aspect_ratio"
+    "storage_path, error, model, resolution, aspect_ratio, attempts"
 )
 
 
@@ -50,6 +51,7 @@ class BatchRow:
     model: str
     resolution: str
     aspect_ratio: str
+    attempts: int = 0
 
 
 def _row(r: dict) -> BatchRow:
@@ -66,6 +68,7 @@ def _row(r: dict) -> BatchRow:
         model=r["model"],
         resolution=r["resolution"],
         aspect_ratio=r["aspect_ratio"],
+        attempts=int(r.get("attempts") or 0),
     )
 
 
@@ -208,13 +211,19 @@ def transition(client: Client, *, item_id: int, expect: str, to: str, **fields) 
 
 
 def claim_next_queued(client: Client) -> BatchRow | None:
-    """Claim the oldest ``queued`` row (queued -> generating). Race-safe: if the
+    """Claim the next ``queued`` row (queued -> generating). Race-safe: if the
     conditional update loses (another worker won), retry the next candidate.
-    Returns the claimed row, or None when no queued rows remain."""
+    Returns the claimed row, or None when no queued rows remain.
+
+    Ordered by ``attempts`` then id, so a requeued transient failure (attempts>0)
+    waits behind every fresh card. That both keeps first-pass work moving and
+    gives the rate limit a cooldown before the same card is tried again."""
     while True:
         resp = (
             client.table("batch_items").select(_COLS)
-            .eq("status", QUEUED).order("id", desc=False).limit(1).execute()
+            .eq("status", QUEUED)
+            .order("attempts", desc=False).order("id", desc=False)
+            .limit(1).execute()
         )
         rows = resp.data or []
         if not rows:
@@ -227,10 +236,27 @@ def claim_next_queued(client: Client) -> BatchRow | None:
 
 
 def reset_orphaned_generating(client: Client) -> int:
-    """Crash recovery: flip any ``generating`` rows back to ``queued``."""
+    """Crash recovery: flip any ``generating`` rows back to ``queued``. Safe only
+    at startup, when no worker is running and every ``generating`` row is stale."""
     resp = (
         client.table("batch_items")
         .update({"status": QUEUED, "updated_at": "now()"})
         .eq("status", GENERATING).execute()
+    )
+    return len(resp.data or [])
+
+
+def reset_stale_generating(client: Client, older_than_seconds: int) -> int:
+    """Reclaim rows stuck in ``generating`` longer than any healthy generation
+    could run — a drainer that died mid-card without reaching a terminal
+    transition. Unlike ``reset_orphaned_generating`` (all rows), this is bounded
+    by age, so it is safe to call while other drainers are live: it never steals a
+    row one of them is still working. ``attempts`` is left untouched — the card
+    simply returns to the queue for another pass."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=older_than_seconds)).isoformat()
+    resp = (
+        client.table("batch_items")
+        .update({"status": QUEUED, "updated_at": "now()"})
+        .eq("status", GENERATING).lt("updated_at", cutoff).execute()
     )
     return len(resp.data or [])
