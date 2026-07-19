@@ -17,10 +17,10 @@ def client():
 
 
 @pytest.fixture(autouse=True)
-def _clear_cutout_cache():
-    im._CUTOUT_CACHE.clear()
+def _clear_source_cache():
+    im._SOURCE_CACHE.clear()
     yield
-    im._CUTOUT_CACHE.clear()
+    im._SOURCE_CACHE.clear()
 
 
 def test_publish_uploads_webp_only_and_inserts_one_row(client, monkeypatch):
@@ -44,7 +44,7 @@ def test_publish_uploads_webp_only_and_inserts_one_row(client, monkeypatch):
     monkeypatch.setattr(im.productimages_repo, "insert", _insert)
 
     r = client.post("/api/import/publish", json={
-        "productid": "P1", "file_id": "f1", "color": "Red", "params": {"bg": "white"}})
+        "productid": "P1", "file_id": "f1", "color": "Red", "params": {"brightness": 1.1}})
     assert r.status_code == 200
     body = r.json()
     assert body["image_url"].endswith(".webp") and body["displayorder"] == 20
@@ -60,15 +60,6 @@ def test_preview_returns_data_uri(client, monkeypatch):
     r = client.post("/api/import/preview", json={"file_id": "f1", "params": {}})
     assert r.status_code == 200
     assert r.json()["preview"].startswith("data:image/png;base64,")
-
-
-def test_preview_503_when_bg_unavailable(client, monkeypatch):
-    monkeypatch.setattr(im, "_download", lambda fid: b"SRC")
-    def _boom(src_bytes):
-        raise im.edit_pipeline.BackgroundRemovalUnavailable("no model")
-    monkeypatch.setattr(im.edit_pipeline, "compute_cutout", _boom)
-    r = client.post("/api/import/preview", json={"file_id": "f1", "params": {}})
-    assert r.status_code == 503
 
 
 def test_drive_images_lists_folder(client, monkeypatch):

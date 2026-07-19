@@ -441,7 +441,7 @@ export default function ProductShotsTab() {
                     className="img-frame relative"
                     style={{
                       aspectRatio: "1 / 1",
-                      background: params.bg === "cream" ? "#FAF7F0" : "#FFFFFF",
+                      background: "#FFFFFF",
                     }}
                   >
                     {preview ? (
@@ -535,6 +535,15 @@ export default function ProductShotsTab() {
                 fmt={(v) => v.toFixed(2)}
                 onChange={(v) => set("saturation", v)}
               />
+              <Slider
+                label="Hue"
+                value={params.hue}
+                min={-180}
+                max={180}
+                step={5}
+                fmt={(v) => `${v}°`}
+                onChange={(v) => set("hue", v)}
+              />
 
               <Toggle
                 label="Auto-contrast"
@@ -546,32 +555,6 @@ export default function ProductShotsTab() {
                 checked={params.white_balance}
                 onChange={(v) => set("white_balance", v)}
               />
-              <Toggle
-                label="Drop shadow"
-                checked={params.shadow}
-                onChange={(v) => set("shadow", v)}
-              />
-
-              <fieldset className="field mb-0!">
-                <legend className="text-xs font-semibold text-subtle">
-                  Background
-                </legend>
-                <div className="toolbar" role="radiogroup" aria-label="Background colour">
-                  {(["white", "cream"] as const).map((b) => (
-                    <button
-                      key={b}
-                      type="button"
-                      role="radio"
-                      aria-checked={params.bg === b}
-                      className={`pill ${params.bg === b ? "pill-done" : "pill-pending"}`}
-                      style={{ minHeight: 44, textTransform: "capitalize" }}
-                      onClick={() => set("bg", b)}
-                    >
-                      {b}
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
 
               {colors.length > 0 && (
                 <div className="field mb-0!">

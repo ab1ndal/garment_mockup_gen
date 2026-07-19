@@ -258,8 +258,7 @@ class EditParamsModel(BaseModel):
     white_balance: bool = False
     brightness: float = Field(default=1.0, ge=0.5, le=1.5)
     saturation: float = Field(default=1.0, ge=0.5, le=1.5)
-    bg: Literal["white", "cream"] = "white"
-    shadow: bool = False
+    hue: float = Field(default=0.0, ge=-180.0, le=180.0)
 
 
 class ImportImage(BaseModel):

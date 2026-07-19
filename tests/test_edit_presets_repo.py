@@ -37,9 +37,9 @@ class _Db:
 
 def test_insert_returns_row():
     db = _Db()
-    row = repo.insert(db, name="Studio", params={"bg": "white"},
+    row = repo.insert(db, name="Studio", params={"brightness": 1.1},
                       is_default=False, created_by="u1")
-    assert row["name"] == "Studio" and row["params"] == {"bg": "white"}
+    assert row["name"] == "Studio" and row["params"] == {"brightness": 1.1}
 
 
 def test_get_default_none_when_empty():

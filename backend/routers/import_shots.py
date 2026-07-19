@@ -26,7 +26,7 @@ from backend.schemas import (
 )
 from mockup_generator.db import edit_presets_repo, productimages_repo, products_repo
 from mockup_generator.generation import edit_pipeline, publish
-from mockup_generator.generation.edit_pipeline import BackgroundRemovalUnavailable, EditParams
+from mockup_generator.generation.edit_pipeline import EditParams
 from mockup_generator.integrations import drive_client, storage_client
 from mockup_generator.integrations.drive_client import DriveNotConfigured
 
@@ -45,67 +45,64 @@ def _download(file_id: str) -> bytes:
         raise HTTPException(status_code=502, detail=f"Could not load the image: {exc}") from exc
 
 
-_CUTOUT_CACHE: "OrderedDict[str, bytes]" = OrderedDict()  # file_id -> PNG-encoded RGBA cutout
+_SOURCE_CACHE: "OrderedDict[str, bytes]" = OrderedDict()  # file_id -> PNG-encoded RGB source
 _CACHE_CAP = 12
 _CACHE_LOCK = threading.Lock()
 _INFLIGHT: "dict[str, threading.Event]" = {}
 
 
 def _decode(png: bytes) -> Image.Image:
-    return Image.open(BytesIO(png)).convert("RGBA")
+    return Image.open(BytesIO(png)).convert("RGB")
 
 
-def _get_cutout(file_id: str) -> Image.Image:
-    """Return the RGBA cutout for a Drive file, computing+caching it (as PNG
-    bytes) on a miss. Concurrent misses on the same file_id share ONE compute
-    via an in-flight event, so warm + preview never double-run BiRefNet.
+def _get_source(file_id: str) -> Image.Image:
+    """Return the EXIF-normalised RGB source for a Drive file, downloading and
+    caching it (as PNG bytes) on a miss. Concurrent misses on the same file_id
+    share ONE download via an in-flight event, so warm + preview never double-hit
+    Drive. Rendering itself is cheap now; the Drive download is the cost worth
+    caching across a slider-drag's many previews.
     """
     while True:
         with _CACHE_LOCK:
-            cached = _CUTOUT_CACHE.get(file_id)
+            cached = _SOURCE_CACHE.get(file_id)
             if cached is not None:
-                _CUTOUT_CACHE.move_to_end(file_id)
+                _SOURCE_CACHE.move_to_end(file_id)
                 return _decode(cached)
             event = _INFLIGHT.get(file_id)
             if event is None:
                 event = threading.Event()
                 _INFLIGHT[file_id] = event
-                break  # we own the compute for this file_id
-        # another request is already computing this file_id; wait, then re-check
+                break  # we own the download for this file_id
+        # another request is already downloading this file_id; wait, then re-check
         event.wait()
-    # owner path: compute outside the lock so cache hits / other keys aren't blocked
+    # owner path: download outside the lock so cache hits / other keys aren't blocked
     try:
-        cutout = edit_pipeline.compute_cutout(_download(file_id))
+        source = edit_pipeline.normalize_source(_download(file_id))
         buf = BytesIO()
-        cutout.save(buf, format="PNG")
+        source.save(buf, format="PNG")
         png = buf.getvalue()
-    except BackgroundRemovalUnavailable as exc:
-        with _CACHE_LOCK:
-            _INFLIGHT.pop(file_id, None)
-        event.set()
-        raise HTTPException(status_code=503, detail="Background removal is unavailable on the server") from exc
     except BaseException:
         with _CACHE_LOCK:
             _INFLIGHT.pop(file_id, None)
         event.set()
         raise
     with _CACHE_LOCK:
-        _CUTOUT_CACHE[file_id] = png
-        _CUTOUT_CACHE.move_to_end(file_id)
-        while len(_CUTOUT_CACHE) > _CACHE_CAP:
-            _CUTOUT_CACHE.popitem(last=False)
+        _SOURCE_CACHE[file_id] = png
+        _SOURCE_CACHE.move_to_end(file_id)
+        while len(_SOURCE_CACHE) > _CACHE_CAP:
+            _SOURCE_CACHE.popitem(last=False)
         _INFLIGHT.pop(file_id, None)
     event.set()
-    return cutout
+    return source
 
 
-def _release_cutout(file_id: str) -> None:
+def _release_source(file_id: str) -> None:
     with _CACHE_LOCK:
-        _CUTOUT_CACHE.pop(file_id, None)
+        _SOURCE_CACHE.pop(file_id, None)
 
 
 def _render(file_id: str, params_model) -> bytes:
-    return edit_pipeline.render(_get_cutout(file_id),
+    return edit_pipeline.render(_get_source(file_id),
                                 EditParams(**params_model.model_dump()))
 
 
@@ -134,15 +131,15 @@ def preview(req: PreviewRequest, user: CurrentUser = Depends(get_current_user),
 
 @router.post("/warm")
 def warm(req: WarmRequest, user: CurrentUser = Depends(get_current_user)):
-    """Pre-compute + cache the cutout so the first adjustment is instant too."""
-    _get_cutout(req.file_id)
+    """Pre-download + cache the source so the first adjustment is instant too."""
+    _get_source(req.file_id)
     return {"status": "ok"}
 
 
 @router.post("/release")
 def release(req: ReleaseRequest, user: CurrentUser = Depends(get_current_user)):
-    """Drop the cached cutout once the user is done editing that image."""
-    _release_cutout(req.file_id)
+    """Drop the cached source once the user is done editing that image."""
+    _release_source(req.file_id)
     return {"status": "ok"}
 
 

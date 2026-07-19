@@ -18,7 +18,7 @@ def client():
 
 def test_list_presets(client, monkeypatch):
     monkeypatch.setattr(im.edit_presets_repo, "list_all", lambda db: [
-        {"preset_id": 1, "name": "Studio", "params": {"bg": "white"}, "is_default": True}])
+        {"preset_id": 1, "name": "Studio", "params": {"brightness": 1.1}, "is_default": True}])
     r = client.get("/api/import/presets")
     assert r.status_code == 200
     assert r.json()["presets"][0]["name"] == "Studio"
@@ -31,7 +31,7 @@ def test_create_preset(client, monkeypatch):
         return {"preset_id": 9, "name": name, "params": params, "is_default": is_default}
     monkeypatch.setattr(im.edit_presets_repo, "insert", _insert)
     r = client.post("/api/import/presets", json={
-        "name": "Soft", "params": {"bg": "cream"}, "is_default": True})
+        "name": "Soft", "params": {"hue": 30.0}, "is_default": True})
     assert r.status_code == 200
     assert seen == {"name": "Soft", "is_default": True, "created_by": "u1"}
 

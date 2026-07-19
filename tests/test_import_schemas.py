@@ -5,7 +5,7 @@ from backend.schemas import EditParamsModel, ImportPublishRequest
 
 def test_defaults():
     p = EditParamsModel()
-    assert p.rotate_quarter == 0 and p.bg == "white" and p.brightness == 1.0
+    assert p.rotate_quarter == 0 and p.hue == 0.0 and p.brightness == 1.0
 
 
 def test_rejects_out_of_range_brightness():
@@ -20,5 +20,5 @@ def test_rejects_bad_rotate_quarter():
 
 def test_publish_request_parses_nested_params():
     req = ImportPublishRequest(productid="P1", file_id="f1",
-                               params={"bg": "cream", "shadow": True})
-    assert req.params.bg == "cream" and req.params.shadow is True
+                               params={"brightness": 1.2, "hue": 45.0})
+    assert req.params.brightness == 1.2 and req.params.hue == 45.0

@@ -637,8 +637,7 @@ export interface EditParams {
   white_balance: boolean;
   brightness: number; // 0.5..1.5
   saturation: number; // 0.5..1.5
-  bg: "white" | "cream";
-  shadow: boolean;
+  hue: number; // -180..180 deg
 }
 
 export const DEFAULT_EDIT_PARAMS: EditParams = {
@@ -648,8 +647,7 @@ export const DEFAULT_EDIT_PARAMS: EditParams = {
   white_balance: false,
   brightness: 1,
   saturation: 1,
-  bg: "white",
-  shadow: false,
+  hue: 0,
 };
 
 export interface ImportImage {

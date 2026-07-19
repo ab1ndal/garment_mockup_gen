@@ -52,16 +52,6 @@ async def lifespan(_app: FastAPI):
     except Exception as exc:  # noqa: BLE001 - batch resume is best-effort; boot must not fail
         log.warning("batch resume skipped: %s", exc)
 
-    # Optionally warm the background-removal model so the first import request
-    # isn't slow. Off by default (warming downloads ~214 MB); enable via
-    # REMBG_WARM=1 where the model is pre-cached/persistent.
-    if settings.rembg_warm:
-        try:
-            from mockup_generator.generation import edit_pipeline
-            edit_pipeline._get_session()
-            log.info("rembg session warmed (%s).", settings.rembg_model)
-        except Exception as exc:  # noqa: BLE001 - feature degrades to 503; boot must not fail
-            log.warning("rembg warm-up skipped: %s", exc)
     yield
 
 

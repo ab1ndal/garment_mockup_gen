@@ -7,68 +7,63 @@ import backend.routers.import_shots as mod
 from backend.schemas import EditParamsModel
 
 
-def _rgba(colour=(120, 60, 30), size=(40, 40)):
-    return Image.new("RGBA", size, colour + (255,))
+def _src_bytes(colour=(120, 60, 30), size=(40, 40)):
+    buf = BytesIO()
+    Image.new("RGB", size, colour).save(buf, format="PNG")
+    return buf.getvalue()
 
 
 @pytest.fixture(autouse=True)
 def _clear_cache():
-    mod._CUTOUT_CACHE.clear()
+    mod._SOURCE_CACHE.clear()
     mod._INFLIGHT.clear()
     yield
-    mod._CUTOUT_CACHE.clear()
+    mod._SOURCE_CACHE.clear()
     mod._INFLIGHT.clear()
 
 
-def test_get_cutout_computes_once_per_file_id(monkeypatch):
-    downloads, computes = [], []
-    monkeypatch.setattr(mod, "_download", lambda fid: downloads.append(fid) or b"bytes")
-    monkeypatch.setattr(mod.edit_pipeline, "compute_cutout",
-                        lambda b: computes.append(b) or _rgba())
+def test_get_source_downloads_once_per_file_id(monkeypatch):
+    downloads = []
+    monkeypatch.setattr(mod, "_download", lambda fid: downloads.append(fid) or _src_bytes())
 
-    a = mod._get_cutout("file-A")
-    b = mod._get_cutout("file-A")
-    assert a.size == b.size            # cache hit decodes a fresh Image from bytes
-    assert downloads == ["file-A"]     # Drive hit exactly once
-    assert len(computes) == 1          # BiRefNet ran exactly once
+    a = mod._get_source("file-A")
+    b = mod._get_source("file-A")
+    assert a.size == b.size             # cache hit decodes a fresh Image from bytes
+    assert downloads == ["file-A"]      # Drive hit exactly once
 
 
-def test_concurrent_get_cutout_computes_once(monkeypatch):
+def test_concurrent_get_source_downloads_once(monkeypatch):
     import threading, time
-    computes = []
-    def _slow(src_bytes):
-        computes.append(1)
+    downloads = []
+    def _slow(fid):
+        downloads.append(1)
         time.sleep(0.2)
-        return _rgba()
-    monkeypatch.setattr(mod, "_download", lambda fid: b"bytes")
-    monkeypatch.setattr(mod.edit_pipeline, "compute_cutout", _slow)
+        return _src_bytes()
+    monkeypatch.setattr(mod, "_download", _slow)
     results = []
-    threads = [threading.Thread(target=lambda: results.append(mod._get_cutout("file-C")))
+    threads = [threading.Thread(target=lambda: results.append(mod._get_source("file-C")))
                for _ in range(4)]
     for t in threads: t.start()
     for t in threads: t.join()
-    assert len(computes) == 1     # 4 concurrent misses -> ONE BiRefNet run
+    assert len(downloads) == 1     # 4 concurrent misses -> ONE Drive download
     assert len(results) == 4
 
 
 def test_cache_evicts_least_recently_used(monkeypatch):
-    monkeypatch.setattr(mod, "_download", lambda fid: b"bytes")
-    monkeypatch.setattr(mod.edit_pipeline, "compute_cutout", lambda b: _rgba())
+    monkeypatch.setattr(mod, "_download", lambda fid: _src_bytes())
     for i in range(mod._CACHE_CAP + 3):
-        mod._get_cutout(f"file-{i}")
-    assert len(mod._CUTOUT_CACHE) == mod._CACHE_CAP
-    assert "file-0" not in mod._CUTOUT_CACHE     # oldest evicted
+        mod._get_source(f"file-{i}")
+    assert len(mod._SOURCE_CACHE) == mod._CACHE_CAP
+    assert "file-0" not in mod._SOURCE_CACHE     # oldest evicted
 
 
-def test_render_uses_cached_cutout(monkeypatch):
-    computes = []
-    monkeypatch.setattr(mod, "_download", lambda fid: b"bytes")
-    monkeypatch.setattr(mod.edit_pipeline, "compute_cutout",
-                        lambda b: computes.append(1) or _rgba())
+def test_render_uses_cached_source(monkeypatch):
+    downloads = []
+    monkeypatch.setattr(mod, "_download", lambda fid: downloads.append(1) or _src_bytes())
     p = EditParamsModel()
     mod._render("file-X", p)
     mod._render("file-X", p)
-    assert len(computes) == 1          # second render is a cache hit
+    assert len(downloads) == 1          # second render is a cache hit
 
 
 from fastapi.testclient import TestClient
@@ -89,18 +84,16 @@ def client():
 
 
 def test_warm_populates_cache(client, monkeypatch):
-    monkeypatch.setattr(mod, "_download", lambda fid: b"bytes")
-    monkeypatch.setattr(mod.edit_pipeline, "compute_cutout", lambda b: _rgba())
+    monkeypatch.setattr(mod, "_download", lambda fid: _src_bytes())
     r = client.post("/api/import/warm", json={"file_id": "file-W"})
     assert r.status_code == 200 and r.json() == {"status": "ok"}
-    assert "file-W" in mod._CUTOUT_CACHE
+    assert "file-W" in mod._SOURCE_CACHE
 
 
-def test_release_evicts_cached_cutout(client, monkeypatch):
-    monkeypatch.setattr(mod, "_download", lambda fid: b"bytes")
-    monkeypatch.setattr(mod.edit_pipeline, "compute_cutout", lambda b: _rgba())
-    mod._get_cutout("file-R")                      # populate
-    assert "file-R" in mod._CUTOUT_CACHE
+def test_release_evicts_cached_source(client, monkeypatch):
+    monkeypatch.setattr(mod, "_download", lambda fid: _src_bytes())
+    mod._get_source("file-R")                      # populate
+    assert "file-R" in mod._SOURCE_CACHE
     r = client.post("/api/import/release", json={"file_id": "file-R"})
     assert r.status_code == 200 and r.json() == {"status": "ok"}
-    assert "file-R" not in mod._CUTOUT_CACHE
+    assert "file-R" not in mod._SOURCE_CACHE
