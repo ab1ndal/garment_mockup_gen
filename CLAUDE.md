@@ -17,7 +17,9 @@ AI-powered luxury garment mockup generator for Bindal's Creation (Indian ethnic 
 ## Commands
 
 ```bash
-# Run the Streamlit web app
+# Run the legacy Streamlit web app (streamlit is an optional `legacy` extra,
+# excluded from the Docker/prod image — install it first)
+poetry install --extras legacy
 poetry run streamlit run app.py
 
 # Run a specific module directly

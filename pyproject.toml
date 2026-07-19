@@ -10,8 +10,6 @@ dependencies = [
   "pillow>=11.3.0,<12.0.0",
   "python-dotenv (>=1.1.1,<2.0.0)",
   "google-genai (>=2.9.0,<3.0.0)",
-  "streamlit (>=1.50.0,<2.0.0)",
-  "python-pptx (>=1.0.2,<2.0.0)",
   "fastapi (>=0.138.0,<0.139.0)",
   "uvicorn[standard] (>=0.49.0,<0.50.0)",
   "supabase (>=2.31.0,<3.0.0)",
@@ -20,6 +18,14 @@ dependencies = [
   "python-multipart (>=0.0.32,<0.0.33)",
   "pillow-heif (>=1.4.0,<2.0.0)",
   "numpy (>=1.26,<2.3)"
+]
+
+# Legacy Streamlit app (`app.py`) only. Excluded from the Docker image, which
+# runs `pip install .` (project deps, no extras). Install for local Streamlit use:
+#   poetry install --extras legacy   (or)   pip install .[legacy]
+[project.optional-dependencies]
+legacy = [
+  "streamlit>=1.50.0,<2.0.0"
 ]
 
 [project.scripts]
