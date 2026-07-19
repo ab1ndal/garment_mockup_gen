@@ -28,3 +28,23 @@ services:
         sync: false
       - key: FRONTEND_ORIGINS
         sync: false
+      # Google Drive read/write (product folders, backfill). Service-account key
+      # as inline JSON — NOT a file path (no persistent FS on Render). Paste the
+      # contents of the local drive-sa.json. Also serves Vertex auth via the
+      # GOOGLE_VERTEX_SA_JSON fallback in config.py, so one key covers both.
+      - key: GOOGLE_DRIVE_SA_JSON
+        sync: false
+      # Route Gemini image + VEO video through Vertex AI (Cloud billing), matching
+      # local. Without this, generation falls back to the AI Studio key path.
+      - key: GOOGLE_GENAI_USE_VERTEXAI
+        value: "true"
+      - key: GOOGLE_CLOUD_PROJECT
+        value: bindalscreation
+      - key: GOOGLE_CLOUD_LOCATION
+        value: global
+      # Image model + per-model batch pools, matching local. Default is the pro
+      # model + a single pool, so both must be set explicitly to match prod.
+      - key: GEMINI_IMAGE_MODEL
+        value: gemini-3.1-flash-image
+      - key: BATCH_MODEL_CONCURRENCY
+        value: gemini-3.1-flash-image=3,gemini-3-pro-image=3
