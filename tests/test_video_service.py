@@ -75,8 +75,14 @@ def _no_sleep(monkeypatch):
     monkeypatch.setattr(video_service.time, "sleep", lambda *_a, **_k: None)
 
 
-def _patch_client(monkeypatch, client):
-    monkeypatch.setattr(video_service, "get_genai_client", lambda: client)
+def _patch_client(monkeypatch, client, seen=None):
+    # Production passes the VEO region (VEO isn't served on `global`); the stub
+    # records the location so a test can assert the regional client is used.
+    def _factory(location=None):
+        if seen is not None:
+            seen["location"] = location
+        return client
+    monkeypatch.setattr(video_service, "get_genai_client", _factory)
 
 
 def test_generate_video_bytes_returns_mp4(monkeypatch):
@@ -85,16 +91,28 @@ def test_generate_video_bytes_returns_mp4(monkeypatch):
     _patch_client(monkeypatch, _FakeClient(op, captured=captured))
 
     out = video_service.generate_video_bytes(
-        b"imgbytes", "a slow pan", model="veo-3.1-generate-preview",
+        b"imgbytes", "a slow pan", model="veo-3.1-generate-001",
         aspect_ratio="9:16", resolution="720p", duration=4,
     )
 
     assert out == b"MP4DATA"
-    assert captured["model"] == "veo-3.1-generate-preview"
+    assert captured["model"] == "veo-3.1-generate-001"
     cfg = captured["config"]
     assert cfg.aspect_ratio == "9:16"
     assert cfg.resolution == "720p"
     assert cfg.duration_seconds == 4
+
+
+def test_generate_video_bytes_uses_veo_region_not_global(monkeypatch):
+    """VEO 404s on the `global` endpoint the image models use, so the video
+    client must be built for the configured VEO region."""
+    seen = {}
+    op = _FakeOperation(videos=[_FakeGenerated(_FakeVideo(b"V"))], flips_after=0)
+    _patch_client(monkeypatch, _FakeClient(op), seen=seen)
+
+    video_service.generate_video_bytes(b"i", "p")
+    assert seen["location"] == "us-central1"
+    assert seen["location"] != "global"
 
 
 def test_generate_video_bytes_polls_until_done(monkeypatch):
@@ -109,10 +127,10 @@ def test_generate_video_bytes_uses_configured_model(monkeypatch):
     captured = {}
     op = _FakeOperation(videos=[_FakeGenerated(_FakeVideo(b"V"))])
     _patch_client(monkeypatch, _FakeClient(op, captured=captured))
-    monkeypatch.setenv("VEO_MODEL", "veo-3.1-fast-generate-preview")
+    monkeypatch.setenv("VEO_MODEL", "veo-3.1-fast-generate-001")
 
     video_service.generate_video_bytes(b"i", "p")
-    assert captured["model"] == "veo-3.1-fast-generate-preview"
+    assert captured["model"] == "veo-3.1-fast-generate-001"
 
 
 def test_generate_video_bytes_raises_when_no_video(monkeypatch):

@@ -96,7 +96,7 @@ def generate_video_bytes(
     elif image_bytes:
         call_kwargs["image"] = types.Image(image_bytes=image_bytes, mime_type="image/png")
 
-    client = get_genai_client()
+    client = get_genai_client(settings.veo_location)
     operation = client.models.generate_videos(**call_kwargs)
 
     start = time.monotonic()

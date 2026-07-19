@@ -59,6 +59,15 @@ class Settings:
         return _get("GOOGLE_CLOUD_LOCATION", default="global")  # type: ignore[return-value]
 
     @property
+    def veo_location(self) -> str:
+        """Vertex region for VEO video generation. The VEO models are NOT served
+        on the ``global`` endpoint the image models require — asking for one there
+        404s ("model not found ... in the specified region") — so video routes
+        through a fixed regional location. Not user-tunable: the region is a
+        hard requirement of VEO on Vertex, not a preference."""
+        return "us-central1"
+
+    @property
     def vertex_sa_json(self) -> str | None:
         """Service-account credentials for Vertex AI (path or JSON content).
 
@@ -122,7 +131,7 @@ class Settings:
     @property
     def veo_model(self) -> str:
         """VEO video-generation model. Override for fast/lite variants."""
-        return _get("VEO_MODEL", default="veo-3.1-generate-preview")  # type: ignore[return-value]
+        return _get("VEO_MODEL", default="veo-3.1-generate-001")  # type: ignore[return-value]
 
     @property
     def veo_poll_timeout_sec(self) -> int:

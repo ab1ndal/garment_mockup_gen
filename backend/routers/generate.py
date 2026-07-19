@@ -93,12 +93,12 @@ def _caps_for(model: str | None) -> dict:
 
 # Selectable video-generation options. 1080p requires duration 8s (VEO constraint).
 ALLOWED_VEO_MODELS = [
-    "veo-3.1-generate-preview", "veo-3.1-fast-generate-preview", "veo-3.1-lite-generate-preview",
+    "veo-3.1-generate-001", "veo-3.1-fast-generate-001", "veo-3.1-lite-generate-001",
 ]
 ALLOWED_VIDEO_RESOLUTIONS = ["720p", "1080p"]
 ALLOWED_VIDEO_ASPECTS = ["9:16", "16:9"]
 ALLOWED_VIDEO_DURATIONS = [4, 6, 8]
-_VIDEO_DEFAULTS = {"model": "veo-3.1-generate-preview", "resolution": "720p",
+_VIDEO_DEFAULTS = {"model": "veo-3.1-generate-001", "resolution": "720p",
                    "aspect_ratio": "9:16", "duration": 4}
 
 _VIDEO_MODES_FULL = ["text", "image", "frames", "reference", "extend"]
@@ -106,23 +106,23 @@ _VIDEO_MODES_LITE = ["text", "image", "frames"]
 _VIDEO_PERSON_VALUES = ["allow_all", "allow_adult"]
 
 VIDEO_CAPS = {
-    "veo-3.1-generate-preview": {
+    "veo-3.1-generate-001": {
         "modes": _VIDEO_MODES_FULL, "aspect_ratios": ALLOWED_VIDEO_ASPECTS,
         "resolutions": ALLOWED_VIDEO_RESOLUTIONS, "durations": ALLOWED_VIDEO_DURATIONS,
         "person_generation": _VIDEO_PERSON_VALUES,
     },
-    "veo-3.1-fast-generate-preview": {
+    "veo-3.1-fast-generate-001": {
         "modes": _VIDEO_MODES_FULL, "aspect_ratios": ALLOWED_VIDEO_ASPECTS,
         "resolutions": ALLOWED_VIDEO_RESOLUTIONS, "durations": ALLOWED_VIDEO_DURATIONS,
         "person_generation": _VIDEO_PERSON_VALUES,
     },
-    "veo-3.1-lite-generate-preview": {
+    "veo-3.1-lite-generate-001": {
         "modes": _VIDEO_MODES_LITE, "aspect_ratios": ALLOWED_VIDEO_ASPECTS,
         "resolutions": ALLOWED_VIDEO_RESOLUTIONS, "durations": ALLOWED_VIDEO_DURATIONS,
         "person_generation": _VIDEO_PERSON_VALUES,
     },
 }
-_DEFAULT_VIDEO_CAPS_MODEL = "veo-3.1-generate-preview"
+_DEFAULT_VIDEO_CAPS_MODEL = "veo-3.1-generate-001"
 
 
 def _video_caps_for(model: str | None) -> dict:

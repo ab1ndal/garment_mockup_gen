@@ -23,20 +23,24 @@ MAX_SIDE = 1024
 ALLOWED_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 
 
-@lru_cache(maxsize=1)
-def get_genai_client() -> genai.Client:
-    """Lazily build the Google GenAI client from settings (cached).
+@lru_cache(maxsize=4)
+def get_genai_client(location: str | None = None) -> genai.Client:
+    """Lazily build the Google GenAI client from settings (cached per location).
 
     When ``GOOGLE_GENAI_USE_VERTEXAI`` is set, route through Vertex AI so calls
     bill against the GCP project's pay-as-you-go account (uses Application
     Default Credentials) instead of AI Studio prepay credits. Otherwise fall
     back to the Gemini Developer API with an API key.
+
+    ``location`` overrides the Vertex region for callers whose model isn't served
+    where the default ``GOOGLE_CLOUD_LOCATION`` points (VEO isn't on ``global``).
+    Cached per distinct location so image and video clients coexist.
     """
     if settings.use_vertex:
         return genai.Client(
             vertexai=True,
             project=settings.google_cloud_project,
-            location=settings.google_cloud_location,
+            location=location or settings.google_cloud_location,
             credentials=_vertex_credentials(),
         )
     return genai.Client(api_key=settings.google_api_key)

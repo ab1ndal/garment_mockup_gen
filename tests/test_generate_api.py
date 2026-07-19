@@ -220,7 +220,7 @@ def test_generation_options_lists_choices_and_defaults(client):
     assert "512px" in flash["image_sizes"] and "high" in flash["thinking_levels"]
     assert "4K" not in body["image_caps"]["gemini-2.5-flash-image"]["image_sizes"]
     # video options (unchanged)
-    assert "veo-3.1-generate-preview" in body["video_models"]
+    assert "veo-3.1-generate-001" in body["video_models"]
     assert body["video_resolutions"] == ["720p", "1080p"]
     assert body["video_aspect_ratios"] == ["9:16", "16:9"]
     assert body["video_durations"] == [4, 6, 8]
@@ -283,12 +283,12 @@ def test_generate_video_threads_options(client, monkeypatch):
     _wire_video(monkeypatch, calls=calls)
     r = _start_video(client, {
         "productid": "BC25001", "prompt": "p",
-        "model": "veo-3.1-fast-generate-preview", "resolution": "720p",
+        "model": "veo-3.1-fast-generate-001", "resolution": "720p",
         "aspect_ratio": "16:9", "duration": 6,
     })
     assert r.status_code == 200
     kw = calls["video"]["kw"]
-    assert kw["model"] == "veo-3.1-fast-generate-preview"
+    assert kw["model"] == "veo-3.1-fast-generate-001"
     assert kw["aspect_ratio"] == "16:9"
     assert kw["duration"] == 6
 
@@ -480,9 +480,9 @@ def test_upload_refine_dropped_when_files_at_cap(client, monkeypatch):
 def test_options_includes_video_caps(client):
     body = client.get("/api/generate/options").json()
     caps = body["video_caps"]
-    full = caps["veo-3.1-generate-preview"]
+    full = caps["veo-3.1-generate-001"]
     assert set(full["modes"]) == {"text", "image", "frames", "reference", "extend"}
-    lite = caps["veo-3.1-lite-generate-preview"]
+    lite = caps["veo-3.1-lite-generate-001"]
     assert "reference" not in lite["modes"] and "extend" not in lite["modes"]
     assert full["resolutions"] == ["720p", "1080p"]
     assert full["durations"] == [4, 6, 8]
@@ -493,26 +493,26 @@ def test_validate_video_params_rules():
     import pytest as _pytest
     # reference mode requires 8s
     with _pytest.raises(HTTPException) as e1:
-        gen._validate_video_params(model="veo-3.1-generate-preview", mode="reference",
+        gen._validate_video_params(model="veo-3.1-generate-001", mode="reference",
                                    aspect_ratio="9:16", resolution="720p", duration=4)
     assert e1.value.status_code == 400
     # extend requires 720p
     with _pytest.raises(HTTPException) as e2:
-        gen._validate_video_params(model="veo-3.1-generate-preview", mode="extend",
+        gen._validate_video_params(model="veo-3.1-generate-001", mode="extend",
                                    aspect_ratio="9:16", resolution="1080p", duration=8)
     assert e2.value.status_code == 400
     # lite does not support reference mode
     with _pytest.raises(HTTPException) as e3:
-        gen._validate_video_params(model="veo-3.1-lite-generate-preview", mode="reference",
+        gen._validate_video_params(model="veo-3.1-lite-generate-001", mode="reference",
                                    aspect_ratio="9:16", resolution="720p", duration=8)
     assert e3.value.status_code == 400
     # 1080p requires 8s
     with _pytest.raises(HTTPException) as e4:
-        gen._validate_video_params(model="veo-3.1-generate-preview", mode="image",
+        gen._validate_video_params(model="veo-3.1-generate-001", mode="image",
                                    aspect_ratio="9:16", resolution="1080p", duration=6)
     assert e4.value.status_code == 400
     # valid combo: no raise
-    gen._validate_video_params(model="veo-3.1-generate-preview", mode="frames",
+    gen._validate_video_params(model="veo-3.1-generate-001", mode="frames",
                                aspect_ratio="16:9", resolution="720p", duration=8)
 
 
@@ -600,7 +600,7 @@ def test_video_upload_rejects_reference_on_lite_400(client, monkeypatch):
     files = [("reference_images", ("r.png", _png_bytes(), "image/png"))]
     r = client.post("/api/generate/video/upload",
                     data={"mode": "reference", "prompt": "p", "duration": "8",
-                          "model": "veo-3.1-lite-generate-preview"},
+                          "model": "veo-3.1-lite-generate-001"},
                     files=files)
     assert r.status_code == 400
 

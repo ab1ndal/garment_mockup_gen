@@ -6,6 +6,7 @@ from PIL import Image
 
 from google.genai import types
 
+from mockup_generator.config import settings
 from mockup_generator.generation.common import get_genai_client, part_from_pil
 from mockup_generator.prompts.defaults import VIDEO_PROMPT
 
@@ -13,7 +14,7 @@ from mockup_generator.prompts.defaults import VIDEO_PROMPT
 MAX_SIDE = 1024
 ASPECT_RATIO = "9:16"
 RESOLUTION = "720p"
-VEO_MODEL = "veo-3.1-generate-preview"
+VEO_MODEL = "veo-3.1-generate-001"
 #NEGATIVE_PROMPT = (
 #    "floating pieces, detached fabric, fragments, torn cloth, broken geometry, "
 #    "jerky movement, jerky camera movement, fabric merging, missing dupatta, cartoon effects, distorted clothing layers"
@@ -75,7 +76,7 @@ def generate_video(prompt: str, image_path: Path, output_folder: Path, filename:
     im.save(buf, format="JPEG", quality=90)
     image_bytes = buf.getvalue()
 
-    client = get_genai_client()
+    client = get_genai_client(settings.veo_location)  # VEO not served on `global`
     print(f"Submitting video job for {filename} ...")
     operation = client.models.generate_videos(
         model=VEO_MODEL,
