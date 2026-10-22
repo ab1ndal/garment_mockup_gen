@@ -32,6 +32,7 @@ from backend.schemas import (
 from mockup_generator.config import settings
 from mockup_generator.db import productimages_repo, products_repo
 from mockup_generator.generation import publish, service, video_service, watermark
+from mockup_generator.generation.common import load_reference_image
 from mockup_generator.integrations import drive_client, storage_client
 from mockup_generator.integrations.drive_client import DriveNotConfigured
 
@@ -43,8 +44,7 @@ log = logging.getLogger(__name__)
 def _decode_b64_image(b64: str) -> Image.Image:
     """Decode a base64 PNG/JPEG into a PIL image, or raise 400 on bad input."""
     try:
-        raw = base64.b64decode(b64, validate=True)
-        return Image.open(BytesIO(raw)).convert("RGB")
+        return load_reference_image(base64.b64decode(b64, validate=True))
     except Exception as exc:  # noqa: BLE001 - any decode/parse failure is a bad request
         raise HTTPException(status_code=400, detail="Invalid refine image.") from exc
 
@@ -292,7 +292,7 @@ def generate_image(req: GenerateRequest, user: CurrentUser = Depends(get_current
         if not folder_id:
             raise HTTPException(status_code=400, detail="Product has no linked Drive folder")
         try:
-            images = [Image.open(BytesIO(drive_client.download_file(fid))) for fid in ref_ids]
+            images = [load_reference_image(drive_client.download_file(fid)) for fid in ref_ids]
         except DriveNotConfigured as exc:
             raise HTTPException(status_code=503, detail="Drive access is not configured on the server") from exc
         except Exception as exc:
@@ -367,7 +367,7 @@ async def generate_image_upload(
         if len(raw) > _MAX_UPLOAD_BYTES:
             raise HTTPException(status_code=413, detail="An uploaded image is too large.")
         try:
-            images.append(Image.open(BytesIO(raw)).convert("RGB"))
+            images.append(load_reference_image(raw))
         except Exception as exc:
             raise HTTPException(status_code=400, detail="An uploaded file is not a valid image.") from exc
 

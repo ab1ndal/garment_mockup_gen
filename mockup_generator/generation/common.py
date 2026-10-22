@@ -72,6 +72,29 @@ def part_from_pil(im: Image.Image, fmt: str = "JPEG", quality: int = 90) -> type
     return types.Part.from_bytes(data=buf.getvalue(), mime_type="image/jpeg")
 
 
+def load_reference_image(raw: bytes, max_side: int = MAX_SIDE) -> Image.Image:
+    """Decode reference bytes into a ``max_side``-bounded RGB image.
+
+    Generation only ever sends a ``MAX_SIDE`` JPEG (see ``part_from_pil``), so the
+    full-resolution pixel buffer is pure overhead — and it is not transient:
+    ``Image.open`` keeps the source bytes alive, and the first ``convert``
+    materialises the whole original inside the object, which then sits in the
+    caller's reference list for the entire generation call. At 5 references per
+    batch card across 6 drainers that reserved well over a gigabyte and put the
+    512 MB instance over its limit. Decoding through this helper releases both the
+    bytes and the full-resolution buffer before returning.
+
+    ``draft`` lets the JPEG decoder scale down while decoding rather than decoding
+    at full size and shrinking afterwards; it is a no-op for other formats, which
+    still get the correct result from ``thumbnail``.
+    """
+    with Image.open(BytesIO(raw)) as src:
+        src.draft("RGB", (max_side, max_side))
+        im = src.convert("RGB")
+    im.thumbnail((max_side, max_side))
+    return im
+
+
 def load_images_from_folder(
     folder: Path, max_side: int = MAX_SIDE, limit: int = 2
 ) -> list[Image.Image]:

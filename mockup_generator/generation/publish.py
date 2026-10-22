@@ -13,6 +13,7 @@ path, no duplication.
 
 from __future__ import annotations
 
+import threading
 from io import BytesIO
 
 from PIL import Image
@@ -21,6 +22,20 @@ from mockup_generator.db import mockup_variations_repo, mockups_repo, productima
 from mockup_generator.integrations import storage_client
 
 _WEBP_QUALITY = 85
+
+# Longest side of the web display variant. The archival PNG keeps the model's
+# full output; this copy only ever feeds an <img> on the storefront, where 2048
+# is already generous. Beyond it the encode cost climbs faster than the value: a
+# 4K re-encode holds the decoded RGB buffer plus libwebp's own ARGB copy at once,
+# ~227 MB per call against a 512 MB instance.
+_WEBP_MAX_SIDE = 2048
+
+# Approvals arrive on FastAPI's request threadpool, which is far wider than this
+# box can afford for full-resolution image work — two concurrent 4K encodes plus
+# the batch drainers is what tripped the memory limit. Two at a time keeps the
+# peak bounded without making a reviewer wait on a queue in practice, since
+# approvals are hand-driven one card at a time.
+_ENCODE_SLOTS = threading.Semaphore(2)
 
 # Fixed-width copies the storefront requests as ``{key}_{width}.webp`` instead of
 # resizing on the fly. The naming is a contract with the storefront and the
@@ -39,8 +54,10 @@ def _webp_bytes(img: Image.Image, quality: int) -> bytes:
 
 
 def _encode_webp(png: bytes) -> bytes:
-    """Re-encode PNG bytes to lossy WEBP (quality 85) for web display."""
-    with Image.open(BytesIO(png)) as img:
+    """Re-encode PNG bytes to lossy WEBP (quality 85) for web display,
+    downscaled to ``_WEBP_MAX_SIDE``. Smaller images are left as they are."""
+    with _ENCODE_SLOTS, Image.open(BytesIO(png)) as img:
+        img.thumbnail((_WEBP_MAX_SIDE, _WEBP_MAX_SIDE))
         return _webp_bytes(img, _WEBP_QUALITY)
 
 
@@ -49,11 +66,12 @@ def upload_web_images(productid: str, png: bytes, key: str) -> str:
     return the display WEBP's public URL.
 
     Call before inserting the ``productimages`` row so a live row always has its
-    variants. The PNG is decoded once and every encode derives from it; only one
-    resized copy is alive at a time (this runs on a 512 MB instance).
+    variants. The PNG is decoded once, capped at ``_WEBP_MAX_SIDE``, and every
+    encode derives from that copy; only one resized copy is alive at a time and
+    the whole call holds an encode slot (this runs on a 512 MB instance).
     """
-    with Image.open(BytesIO(png)) as img:
-        img.load()
+    with _ENCODE_SLOTS, Image.open(BytesIO(png)) as img:
+        img.thumbnail((_WEBP_MAX_SIDE, _WEBP_MAX_SIDE))
         _path, public_url = storage_client.upload_mockup(
             productid, _webp_bytes(img, _WEBP_QUALITY), key,
             ext="webp", content_type="image/webp",
