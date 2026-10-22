@@ -69,3 +69,19 @@ def test_upsert_many_empty_is_noop():
     c = FakeClient(FakeResp([]))
     assert repo.upsert_many(c, []) == 0
     assert c.sink == []   # no DB call at all
+
+
+def test_page_embeds_product_name_in_the_same_query():
+    rows = [
+        {"file_id": "a", "productid": "BC25001", "alpha": None, "filename": "a.png",
+         "thumbnail_link": None, "status": "pending", "products": {"name": "Saree"}},
+        {"file_id": "b", "productid": None, "alpha": None, "filename": "b.png",
+         "thumbnail_link": None, "status": "pending", "products": None},
+    ]
+    c = FakeClient(FakeResp(rows, count=2))
+    out, _ = repo.page(c, status="pending", offset=0, limit=20)
+    assert [x for x in c.sink if x[0] == "table"] == [("table", "backfill_items")]  # one query
+    select = next(x for x in c.sink if x[0] == "select")
+    assert "products(name)" in select[1][0]
+    assert (out[0].product_name, out[0].product_found) == ("Saree", True)
+    assert (out[1].product_name, out[1].product_found) == (None, False)
