@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  listBackfill, getBackfillCounts, rescanBackfill, getBackfillSources,
+  listBackfill, getBackfillCounts, rescanBackfill, getBackfillSources, getProductColors,
   approveBackfill, flagBackfill, flagEditBackfill, skipBackfill, unskipBackfill,
   type BackfillItem, type BackfillSources, type BackfillStatus, ApiError,
 } from "../api";
@@ -367,15 +367,28 @@ function ReviewPanel({
   const lightbox = useImageLightbox();
 
   useEffect(() => {
+    // Two independent fetches: colors are one quick DB read, while sources waits
+    // on Drive (full-res preview + originals). Fill the dropdown as soon as its
+    // own data lands instead of after the images.
+    let stale = false;
+    if (item.productid && !item.unknown_product) {
+      getProductColors(item.productid)
+        .then((r) => {
+          if (stale) return;
+          setColors(r.colors);
+          if (r.colors.length === 1) setColor((c) => c || r.colors[0]);
+        })
+        .catch(() => { if (!stale) setColors([]); });  // optional; approve works without color
+    }
     getBackfillSources(item.file_id, item.productid)
       .then((d) => {
+        if (stale) return;
         setData(d);
-        setColors(d.colors);
-        if (d.colors.length === 1) setColor(d.colors[0]);
         if (d.suggested_aspect) setAspect(d.suggested_aspect);
       })
-      .catch((e: ApiError) => setMsg(e.message));
-  }, [item.file_id, item.productid]);
+      .catch((e: ApiError) => { if (!stale) setMsg(e.message); });
+    return () => { stale = true; };
+  }, [item.file_id, item.productid, item.unknown_product]);
 
   const onErr = (e: ApiError) =>
     setMsg(e.status === 409 ? "That mockup was just handled by another reviewer." : e.message);

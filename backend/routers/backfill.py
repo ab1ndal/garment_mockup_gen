@@ -23,7 +23,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from PIL import Image
 from supabase import Client
 
@@ -36,7 +36,7 @@ from backend.schemas import (
 from mockup_generator.config import settings
 from mockup_generator.db import (
     backfill_edits_repo, backfill_items_repo as items_repo,
-    mockups_repo, products_repo, variants_repo,
+    mockups_repo, productimages_repo, products_repo,
 )
 from mockup_generator.generation import publish, watermark
 from mockup_generator.integrations import drive_client
@@ -121,8 +121,10 @@ def rescan(user: CurrentUser = Depends(get_current_user), db: Client = Depends(g
 @router.get("/{file_id}/sources")
 def card_sources(file_id: str, productid: str | None = None,
                  user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
-    # Three independent chains, run side by side: each step is a round-trip to
-    # the (distant) database or to Drive, so in sequence they added up.
+    # Independent chains, run side by side: each step is a round-trip to the
+    # (distant) database or to Drive, so in sequence they added up. Colors are
+    # not here: the card fetches them from /api/products/{id}/colors so its
+    # dropdown doesn't wait on Drive.
     timings: dict[str, int] = {}
 
     def timed_call(stage, fn, *args):
@@ -130,11 +132,8 @@ def card_sources(file_id: str, productid: str | None = None,
             return fn(*args)
 
     originals = {"loose": [], "groups": []}
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    with ThreadPoolExecutor(max_workers=1) as pool:
         download = pool.submit(timed_call, "download", drive_client.download_file, file_id)
-        # Unknown products have no variant rows, so this is [] for them as before.
-        colors_f = pool.submit(timed_call, "colors", variants_repo.list_colors, db, productid) \
-            if productid else None
         product = timed_call("product", products_repo.get_product, db, productid) \
             if productid else None
         if product and getattr(product, "producturl", None):
@@ -146,7 +145,6 @@ def card_sources(file_id: str, productid: str | None = None,
                     raise HTTPException(status_code=503, detail="Drive access is not configured on the server")
                 except Exception as exc:  # noqa: BLE001 - originals are reference-only
                     log.warning("could not list originals for %s: %s", productid, exc)
-        colors = colors_f.result() if colors_f and product else []
 
         try:
             png = download.result()
@@ -162,19 +160,25 @@ def card_sources(file_id: str, productid: str | None = None,
         w, h = 1, 1
     preview = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
     return {"originals": originals, "generated_preview": preview,
-            "colors": colors, "suggested_aspect": _suggest_aspect(w, h)}
+            "suggested_aspect": _suggest_aspect(w, h)}
 
 
 @router.post("/approve")
-def approve(req: BackfillApproveRequest,
+def approve(req: BackfillApproveRequest, background: BackgroundTasks,
             user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
     timings: dict[str, int] = {}
     # Reserve the row first so a second reviewer can't also publish it.
     with timed(timings, "claim"):
         _claim(db, req.file_id, items_repo.PENDING, items_repo.PUBLISHED)
     try:
-        with timed(timings, "download"):
-            png = drive_client.download_file(req.file_id)
+        # The display-order lookup (a database round-trip) overlaps the Drive
+        # download instead of following it inside publish.
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            order_f = pool.submit(productimages_repo.next_display_order, db, req.productid)
+            with timed(timings, "download"):
+                png = drive_client.download_file(req.file_id)
+            with timed(timings, "wait_order"):
+                order = order_f.result()
         if req.remove_watermark:
             with timed(timings, "watermark"):
                 png = watermark.remove_corner_star(png)
@@ -182,7 +186,7 @@ def approve(req: BackfillApproveRequest,
             result = publish.publish_image(
                 db, productid=req.productid, png=png, color=req.color,
                 theme_name=req.theme_name, aspect_ratio=req.aspect_ratio,
-                created_by=user.id, prompt_text=None,
+                created_by=user.id, prompt_text=None, display_order=order,
             )
     except DriveNotConfigured as exc:
         items_repo.transition(db, file_id=req.file_id, expect=items_repo.PUBLISHED, to=items_repo.PENDING)
@@ -191,22 +195,28 @@ def approve(req: BackfillApproveRequest,
         items_repo.transition(db, file_id=req.file_id, expect=items_repo.PUBLISHED, to=items_repo.PENDING)
         raise HTTPException(status_code=502, detail=f"Could not publish the mockup: {exc}") from exc
 
-    # Archive the original out of the worklist (SA is Editor, can move not delete).
-    warning = None
-    try:
-        with timed(timings, "ensure_archive_folder"):
-            archive = drive_client.ensure_subfolder(
-                settings.generated_mockups_folder_id, drive_client.ARCHIVE_FOLDER)
-        with timed(timings, "move_to_archive"):
-            drive_client.move_file(req.file_id, archive)
-    except Exception as exc:  # noqa: BLE001 - published already; Drive archive is non-fatal
-        log.warning("published %s but Drive archive failed: %s", req.file_id, exc)
-        warning = "Published, but the Drive original could not be archived (will reconcile on rescan)."
+    # Archiving the Drive original takes ~1.8s and the reviewer doesn't need to
+    # wait for it: the row is already `published`, and a failed move is
+    # reconciled by the next rescan. So it runs after the response is sent, and a
+    # failure is logged rather than shown.
+    background.add_task(_archive_original, req.file_id)
     log.info("backfill approve timing file_id=%s productid=%s %s",
              req.file_id, req.productid, format_timings(timings))
 
     return {"status": "ok", "image_url": result["image_url"],
-            "variation_id": result["variation_id"], "warning": warning}
+            "variation_id": result["variation_id"], "warning": None}
+
+
+def _archive_original(file_id: str) -> None:
+    """Move a published original out of the worklist (SA is Editor: can move,
+    not delete). Runs as a background task, so it must not raise."""
+    try:
+        archive = drive_client.ensure_subfolder(
+            settings.generated_mockups_folder_id, drive_client.ARCHIVE_FOLDER)
+        drive_client.move_file(file_id, archive)
+    except Exception as exc:  # noqa: BLE001 - published already; rescan reconciles
+        log.warning("published %s but Drive archive failed (rescan will reconcile): %s",
+                    file_id, exc)
 
 
 @router.post("/flag")

@@ -262,3 +262,18 @@ def test_failed_publish_still_logs_timings(monkeypatch, caplog):
     assert "outcome=failed" in line
     assert " write_rows=" in line  # the failing stage is still timed
     assert " total=" in line
+
+
+def test_publish_uses_given_display_order_without_lookup(monkeypatch):
+    calls = {}
+    _wire(monkeypatch, calls, order=0)
+
+    def no_lookup(db, pid):
+        raise AssertionError("display order was supplied; must not query it")
+    monkeypatch.setattr(publish.productimages_repo, "next_display_order", no_lookup)
+
+    out = publish.publish_image(object(), productid="BC1", png=_png(), color="Red",
+                                theme_name=None, aspect_ratio=None, created_by="u1",
+                                display_order=5)
+    assert calls["rows"]["displayorder"] == 5
+    assert out["image_url"] == "https://public/BC1/red_5_deadbeef.png"
