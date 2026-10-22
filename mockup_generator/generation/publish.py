@@ -13,7 +13,9 @@ path, no duplication.
 
 from __future__ import annotations
 
+import logging
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 
@@ -21,6 +23,9 @@ from PIL import Image
 
 from mockup_generator.db import mockup_variations_repo, mockups_repo, productimages_repo
 from mockup_generator.integrations import storage_client
+from mockup_generator.timing import format_timings, timed
+
+log = logging.getLogger(__name__)
 
 _WEBP_QUALITY = 85
 
@@ -89,21 +94,29 @@ def _encode_web_images(png: bytes, key: str) -> list[tuple[str, bytes, str | Non
     return encoded
 
 
-def upload_web_images(productid: str, png: bytes, key: str) -> str:
+def upload_web_images(productid: str, png: bytes, key: str,
+                      timings: dict[str, int] | None = None) -> str:
     """Upload the display WEBP ``{key}.webp`` plus its fixed-width variants and
     return the display WEBP's public URL.
 
     Call before inserting the ``productimages`` row so a live row always has its
     variants. Uploads run in parallel, outside the encode slot; every one settles
     before this returns or raises, so a failure leaves nothing still running.
+    Stage durations go into ``timings`` when given.
     """
-    encoded = _encode_web_images(png, key)
-    with ThreadPoolExecutor(max_workers=len(encoded)) as pool:
-        futures = [
-            pool.submit(storage_client.upload_mockup, productid, data, k,
-                        ext="webp", content_type="image/webp", cache_control=cache)
-            for k, data, cache in encoded
-        ]
+    t = {} if timings is None else timings
+
+    def upload(k: str, data: bytes, cache: str | None):
+        # "upload_webp" for the display copy, "upload_webp_600" for a variant.
+        with timed(t, f"upload_webp{k[len(key):]}"):
+            return storage_client.upload_mockup(productid, data, k, ext="webp",
+                                                content_type="image/webp",
+                                                cache_control=cache)
+
+    with timed(t, "encode_webp"):
+        encoded = _encode_web_images(png, key)
+    with timed(t, "upload_webp_all"), ThreadPoolExecutor(max_workers=len(encoded)) as pool:
+        futures = [pool.submit(upload, k, data, cache) for k, data, cache in encoded]
     _path, public_url = futures[0].result()
     for f in futures[1:]:
         f.result()
@@ -125,12 +138,37 @@ def publish_image(
     prompt_text: str | None = None, prompt_id: int | None = None,
 ) -> dict:
     """Publish ``png`` for ``productid`` + ``color``. Returns
-    ``{"image_url", "variation_id"}``."""
+    ``{"image_url", "variation_id"}``.
+
+    Logs one line with every stage's duration, success or failure."""
+    timings: dict[str, int] = {}
+    start = time.perf_counter()
+    outcome = "failed"
+    try:
+        result = _publish_image(
+            db, timings, productid=productid, png=png, color=color,
+            theme_name=theme_name, aspect_ratio=aspect_ratio, created_by=created_by,
+            prompt_text=prompt_text, prompt_id=prompt_id,
+        )
+        outcome = "ok"
+        return result
+    finally:
+        timings["total"] = round((time.perf_counter() - start) * 1000)
+        log.info("publish timing productid=%s outcome=%s png_bytes=%d %s",
+                 productid, outcome, len(png), format_timings(timings))
+
+
+def _publish_image(
+    db, timings: dict[str, int], *, productid: str, png: bytes, color: str | None,
+    theme_name: str | None, aspect_ratio: str | None, created_by: str | None,
+    prompt_text: str | None, prompt_id: int | None,
+) -> dict:
     theme = build_photo_theme(theme_name, aspect_ratio)
 
     # Append: never overwrite a prior design. The next display order goes into
     # the Storage key so each variant gets its own permanent object.
-    order = productimages_repo.next_display_order(db, productid)
+    with timed(timings, "next_order"):
+        order = productimages_repo.next_display_order(db, productid)
     slug = storage_client.slugify(color)
     stem = "_".join(p for p in (slug, str(order)) if p)
     key = f"{stem}_{storage_client.short_hex()}"
@@ -138,16 +176,25 @@ def publish_image(
     # the same key stem (different extension, no collision).
     # The archival PNG is the largest upload, so it goes up while the WEBPs
     # encode rather than after them.
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        archival = pool.submit(storage_client.upload_mockup, productid, png, key)
-        public_url = upload_web_images(productid, png, key)
-    archival.result()
+    def upload_archival():
+        with timed(timings, "upload_png"):
+            return storage_client.upload_mockup(productid, png, key)
 
-    row = mockup_variations_repo.insert(
-        db, productid=productid, prompt_text=prompt_text, image_url=public_url,
-        color=color, created_by=created_by, prompt_id=prompt_id,
-    )
-    mockups_repo.set_base_mockup(db, productid, True)
-    productimages_repo.insert(db, productid=productid, imageurl=public_url,
-                              productcolor=color, theme=theme, displayorder=order)
+    # wait_png > 0 means the archival PNG upload outlasted all the WEBP work.
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        archival = pool.submit(upload_archival)
+        public_url = upload_web_images(productid, png, key, timings)
+        with timed(timings, "wait_png"):
+            archival.result()
+
+    with timed(timings, "insert_variation"):
+        row = mockup_variations_repo.insert(
+            db, productid=productid, prompt_text=prompt_text, image_url=public_url,
+            color=color, created_by=created_by, prompt_id=prompt_id,
+        )
+    with timed(timings, "set_base_mockup"):
+        mockups_repo.set_base_mockup(db, productid, True)
+    with timed(timings, "insert_productimage"):
+        productimages_repo.insert(db, productid=productid, imageurl=public_url,
+                                  productcolor=color, theme=theme, displayorder=order)
     return {"image_url": public_url, "variation_id": row.get("variation_id")}

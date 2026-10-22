@@ -145,3 +145,28 @@ def test_approve_storage_not_configured_503(client, monkeypatch):
                     data={"productid": "BC1", "source": "generated"},
                     files={"image": ("m.png", _png_bytes(), "image/png")})
     assert r.status_code == 503
+
+
+def test_approve_logs_every_stage(client, monkeypatch, caplog):
+    """One approve must leave enough in the logs to say which step was slow:
+    the request total, the route's own stages and each publish stage."""
+    _wire(monkeypatch, {})
+    caplog.set_level("INFO")
+
+    r = client.post("/api/generate/approve", data={"productid": "BC25001"},
+                    files={"image": ("m.png", _png_bytes(), "image/png")})
+
+    assert r.status_code == 200
+    lines = [rec.getMessage() for rec in caplog.records]
+    approve = next(m for m in lines if m.startswith("approve timing"))
+    for stage in ("read_upload", "decode", "encode_png", "publish"):
+        assert f" {stage}=" in approve
+    pub = next(m for m in lines if m.startswith("publish timing"))
+    assert "outcome=ok" in pub
+    for stage in ("next_order", "upload_png", "encode_webp", "upload_webp",
+                  "upload_webp_150", "upload_webp_600", "upload_webp_1200",
+                  "upload_webp_all", "wait_png", "insert_variation",
+                  "set_base_mockup", "insert_productimage", "total"):
+        assert f" {stage}=" in pub
+    assert any(m.startswith("request method=POST path=/api/generate/approve status=200 ms=")
+               for m in lines)

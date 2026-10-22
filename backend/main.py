@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
@@ -23,6 +24,14 @@ from backend.routers import products as products_router
 from backend.routers import prompts as prompts_router
 from mockup_generator.config import settings
 from mockup_generator.integrations.supabase_client import anon_client, service_client
+
+# Uvicorn configures only its own loggers, so without a root handler every INFO
+# line from this app was silently dropped. Third-party libraries stay at WARNING
+# (httpx alone would log every Supabase call).
+logging.basicConfig(level=logging.WARNING,
+                    format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+for _name in ("backend", "mockup", "mockup_generator"):
+    logging.getLogger(_name).setLevel(logging.INFO)
 
 log = logging.getLogger("mockup.api")
 
@@ -102,6 +111,38 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class RequestTimingMiddleware:
+    """Log method, path, status and wall-clock duration of every API request,
+    measured from the first byte received to the last byte sent — so it
+    includes the upload body and the response stream."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["path"] == "/api/health":
+            await self.app(scope, receive, send)
+            return
+        start = time.perf_counter()
+        status = 500  # stays 500 if the app raises before sending a response
+
+        async def send_with_status(message):
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = message["status"]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_with_status)
+        finally:
+            log.info("request method=%s path=%s status=%d ms=%d", scope["method"],
+                     scope["path"], status, round((time.perf_counter() - start) * 1000))
+
+
+# Added last so it wraps CORS too: preflights are timed as well.
+app.add_middleware(RequestTimingMiddleware)
 
 
 @app.get("/api/health")
