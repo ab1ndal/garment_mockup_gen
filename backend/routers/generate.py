@@ -35,6 +35,7 @@ from mockup_generator.generation import publish, service, video_service, waterma
 from mockup_generator.generation.common import load_reference_image
 from mockup_generator.integrations import drive_client, storage_client
 from mockup_generator.integrations.drive_client import DriveNotConfigured
+from mockup_generator.timing import format_timings, timed
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
 
@@ -410,30 +411,41 @@ def approve_mockup(
     user: CurrentUser = Depends(get_current_user),
     db: Client = Depends(get_db),
 ):
-    raw = image.file.read()
+    # Upload receive time is not here: FastAPI parses the multipart body before
+    # this function runs. The request-timing middleware covers it.
+    timings: dict[str, int] = {}
+    with timed(timings, "read_upload"):
+        raw = image.file.read()
     if len(raw) > _MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="Image is too large.")
     try:
-        Image.open(BytesIO(raw)).verify()              # cheap validity check
-        png_img = Image.open(BytesIO(raw)).convert("RGB")  # reopen (verify exhausts it)
+        with timed(timings, "decode"):
+            Image.open(BytesIO(raw)).verify()              # cheap validity check
+            png_img = Image.open(BytesIO(raw)).convert("RGB")  # reopen (verify exhausts it)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Uploaded file is not a valid image.") from exc
 
-    buf = BytesIO()
-    png_img.save(buf, format="PNG")
-    png = buf.getvalue()
+    with timed(timings, "encode_png"):
+        buf = BytesIO()
+        png_img.save(buf, format="PNG")
+        png = buf.getvalue()
 
     text = prompt_text or ("(manual upload)" if source == "corrected" else "")
     try:
-        result = publish.publish_image(
-            db, productid=productid, png=png, color=color,
-            theme_name=theme_name, aspect_ratio=aspect_ratio,
-            created_by=user.id, prompt_text=text,
-        )
+        with timed(timings, "publish"):
+            result = publish.publish_image(
+                db, productid=productid, png=png, color=color,
+                theme_name=theme_name, aspect_ratio=aspect_ratio,
+                created_by=user.id, prompt_text=text,
+            )
     except storage_client.StorageNotConfigured as exc:
         raise HTTPException(status_code=503, detail="Storage is not configured on the server") from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Could not store the mockup: {exc}") from exc
+    finally:
+        log.info("approve timing productid=%s upload_bytes=%d size=%dx%d %s",
+                 productid, len(raw), png_img.width, png_img.height,
+                 format_timings(timings))
 
     return ApproveResponse(
         status="ok", detail="Published.",

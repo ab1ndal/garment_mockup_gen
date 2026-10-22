@@ -243,3 +243,23 @@ def test_failed_upload_fails_publish_after_others_settle(monkeypatch):
         _publish(_png_sized(800, 800))
     assert len(finished) == _UPLOADS_PER_PUBLISH - 1
     assert "image" not in calls and "variation" not in calls
+
+
+def test_failed_publish_still_logs_timings(monkeypatch, caplog):
+    calls = {}
+    _wire(monkeypatch, calls)
+
+    def fail(db, **kw):
+        raise RuntimeError("db down")
+    monkeypatch.setattr(publish.mockup_variations_repo, "insert", fail)
+    caplog.set_level("INFO")
+
+    with pytest.raises(RuntimeError):
+        publish.publish_image(object(), productid="BC1", png=_png(), color=None,
+                              theme_name=None, aspect_ratio=None, created_by="u1")
+
+    line = next(r.getMessage() for r in caplog.records
+                if r.getMessage().startswith("publish timing"))
+    assert "outcome=failed" in line
+    assert " insert_variation=" in line  # the failing stage is still timed
+    assert " total=" in line
