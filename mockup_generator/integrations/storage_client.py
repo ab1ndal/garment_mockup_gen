@@ -33,11 +33,14 @@ def upload_mockup(
     bucket: str = _BUCKET,
     ext: str = "png",
     content_type: str = "image/png",
+    cache_control: str | None = None,
 ) -> tuple[str, str]:
     """Upload ``data`` under ``{productid}/{key}.{ext}`` to the public bucket.
 
     ``ext``/``content_type`` default to PNG; pass ``webp``/``image/webp`` for the
-    web-optimized variant. Returns ``(object_path, public_url)``: persist the
+    web-optimized variant. ``cache_control`` (max-age seconds) overrides the
+    storage default; only pass a long one for keys that are never rewritten.
+    Returns ``(object_path, public_url)``: persist the
     stable path; hand the permanent public URL to the browser / store in DB.
     """
     client = service_client()
@@ -46,7 +49,10 @@ def upload_mockup(
 
     path = f"{productid}/{key}.{ext}"
     store = client.storage.from_(bucket)
-    store.upload(path, data, {"content-type": content_type, "upsert": "true"})
+    options = {"content-type": content_type, "upsert": "true"}
+    if cache_control is not None:
+        options["cache-control"] = cache_control
+    store.upload(path, data, options)
     return path, store.get_public_url(path)
 
 

@@ -146,13 +146,12 @@ def release(req: ReleaseRequest, user: CurrentUser = Depends(get_current_user)):
 @router.post("/publish", response_model=ImportPublishResponse)
 def publish_shot(req: ImportPublishRequest, user: CurrentUser = Depends(get_current_user),
                  db: Client = Depends(get_db)):
-    webp = publish._encode_webp(_render(req.file_id, req.params))
+    png = _render(req.file_id, req.params)
     order = productimages_repo.next_product_shot_order(db, req.productid)
     slug = storage_client.slugify(req.color)
     stem = "_".join(p for p in (req.productid, slug, str(order)) if p)
     key = f"{stem}_{storage_client.short_hex()}"
-    _path, url = storage_client.upload_mockup(
-        req.productid, webp, key, ext="webp", content_type="image/webp")
+    url = publish.upload_web_images(req.productid, png, key)
     productimages_repo.insert(db, productid=req.productid, imageurl=url,
                               productcolor=req.color, theme=_PRODUCT_SHOT_THEME,
                               displayorder=order)

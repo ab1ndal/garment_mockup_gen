@@ -1,6 +1,7 @@
 """Shared publish path for approved mockups.
 
-Uploads the PNG to the public ``mockups`` bucket and *appends* a new
+Uploads the PNG, its display WEBP and 150/600/1200px WEBP size variants to the
+public ``mockups`` bucket and *appends* a new
 ``productimages`` row — every approve is kept, so multiple designs for the same
 ``(productid, color, phototheme)`` coexist instead of overwriting one another.
 The display order (the next append position) is baked into the Storage key, so
@@ -21,13 +22,58 @@ from mockup_generator.integrations import storage_client
 
 _WEBP_QUALITY = 85
 
+# Fixed-width copies the storefront requests as ``{key}_{width}.webp`` instead of
+# resizing on the fly. The naming is a contract with the storefront and the
+# backfill script — do not change one side alone.
+_VARIANT_WIDTHS = (150, 600, 1200)
+_VARIANT_QUALITY = 80
+# Keys carry a per-publish random suffix and are never rewritten, so browsers
+# and the CDN can cache them for a year.
+_VARIANT_CACHE_CONTROL = "31536000"
+
+
+def _webp_bytes(img: Image.Image, quality: int) -> bytes:
+    buf = BytesIO()
+    img.save(buf, format="WEBP", quality=quality)
+    return buf.getvalue()
+
 
 def _encode_webp(png: bytes) -> bytes:
     """Re-encode PNG bytes to lossy WEBP (quality 85) for web display."""
     with Image.open(BytesIO(png)) as img:
-        buf = BytesIO()
-        img.save(buf, format="WEBP", quality=_WEBP_QUALITY)
-        return buf.getvalue()
+        return _webp_bytes(img, _WEBP_QUALITY)
+
+
+def upload_web_images(productid: str, png: bytes, key: str) -> str:
+    """Upload the display WEBP ``{key}.webp`` plus its fixed-width variants and
+    return the display WEBP's public URL.
+
+    Call before inserting the ``productimages`` row so a live row always has its
+    variants. The PNG is decoded once and every encode derives from it; only one
+    resized copy is alive at a time (this runs on a 512 MB instance).
+    """
+    with Image.open(BytesIO(png)) as img:
+        img.load()
+        _path, public_url = storage_client.upload_mockup(
+            productid, _webp_bytes(img, _WEBP_QUALITY), key,
+            ext="webp", content_type="image/webp",
+        )
+        # Palette images would resize with NEAREST (Pillow forces it for "P").
+        src = img.convert("RGBA") if img.mode in ("P", "1") else img
+        for width in _VARIANT_WIDTHS:
+            # Never enlarge: a narrower source keeps its own size under this key.
+            if src.width > width:
+                height = max(1, round(src.height * width / src.width))
+                variant = src.resize((width, height), Image.LANCZOS)
+            else:
+                variant = src
+            storage_client.upload_mockup(
+                productid, _webp_bytes(variant, _VARIANT_QUALITY), f"{key}_{width}",
+                ext="webp", content_type="image/webp",
+                cache_control=_VARIANT_CACHE_CONTROL,
+            )
+            del variant
+    return public_url
 
 
 def build_photo_theme(theme_name: str | None, aspect_ratio: str | None) -> str:
@@ -57,9 +103,7 @@ def publish_image(
     # Keep the PNG as archival; the DB references the web-optimized WEBP under
     # the same key stem (different extension, no collision).
     storage_client.upload_mockup(productid, png, key)
-    _path, public_url = storage_client.upload_mockup(
-        productid, _encode_webp(png), key, ext="webp", content_type="image/webp"
-    )
+    public_url = upload_web_images(productid, png, key)
 
     row = mockup_variations_repo.insert(
         db, productid=productid, prompt_text=prompt_text, image_url=public_url,

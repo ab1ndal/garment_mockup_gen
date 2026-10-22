@@ -21,19 +21,18 @@ def client():
 def test_published_key_contains_product_id(client, monkeypatch):
     captured = {}
     monkeypatch.setattr(mod, "_render", lambda fid, params: b"webp-source")
-    monkeypatch.setattr(mod.publish, "_encode_webp", lambda b: b)
     monkeypatch.setattr(mod.productimages_repo, "next_product_shot_order", lambda db, pid: 20)
     monkeypatch.setattr(mod.storage_client, "slugify", lambda c: "red")
     monkeypatch.setattr(mod.storage_client, "short_hex", lambda: "deadbeef")
     monkeypatch.setattr(mod.productimages_repo, "insert",
                         lambda db, **kw: None)
 
-    def _fake_upload(productid, data, key, *, ext, content_type):
+    def _fake_upload(productid, png, key):
         captured["productid"] = productid
         captured["key"] = key
-        return f"{productid}/{key}.{ext}", f"https://x/{productid}/{key}.{ext}"
+        return f"https://x/{productid}/{key}.webp"
 
-    monkeypatch.setattr(mod.storage_client, "upload_mockup", _fake_upload)
+    monkeypatch.setattr(mod.publish, "upload_web_images", _fake_upload)
 
     r = client.post("/api/import/publish",
                     json={"productid": "BC25001", "file_id": "f1", "color": "Red", "params": {}})

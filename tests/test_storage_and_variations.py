@@ -157,3 +157,15 @@ def test_insert_omits_color_when_none():
         _FakeDb(sink), productid="BC1", prompt_text="p", image_url="u"
     )
     assert "color" not in sink["payload"]
+
+
+def test_upload_mockup_passes_cache_control_only_when_given(monkeypatch):
+    sink = {}
+    monkeypatch.setattr(storage_client, "service_client", lambda: _FakeServiceClient(sink))
+
+    storage_client.upload_mockup("BC1", b"x", "k")
+    assert "cache-control" not in sink["upload"]["opts"]
+
+    storage_client.upload_mockup("BC1", b"x", "k_150", ext="webp",
+                                 content_type="image/webp", cache_control="31536000")
+    assert sink["upload"]["opts"]["cache-control"] == "31536000"
