@@ -776,11 +776,11 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
           </div>
           <div className="flex flex-wrap gap-2">
             <button className="btn" onClick={() => regenerate(true)}
-                    disabled={busy !== null || publishing || !active}>
+                    disabled={busy !== null || !active}>
               {busy === "image" && <span className="spinner" aria-hidden />} Refine this
             </button>
             <button className="btn" onClick={() => regenerate(false)}
-                    disabled={busy !== null || publishing || pickedCount === 0}>
+                    disabled={busy !== null || pickedCount === 0}>
               Try again
             </button>
           </div>
