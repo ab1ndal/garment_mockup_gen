@@ -14,6 +14,7 @@ path, no duplication.
 from __future__ import annotations
 
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 
 from PIL import Image
@@ -61,21 +62,18 @@ def _encode_webp(png: bytes) -> bytes:
         return _webp_bytes(img, _WEBP_QUALITY)
 
 
-def upload_web_images(productid: str, png: bytes, key: str) -> str:
-    """Upload the display WEBP ``{key}.webp`` plus its fixed-width variants and
-    return the display WEBP's public URL.
+def _encode_web_images(png: bytes, key: str) -> list[tuple[str, bytes, str | None]]:
+    """Encode the display WEBP and its size variants as ``(key, bytes,
+    cache_control)``, display first.
 
-    Call before inserting the ``productimages`` row so a live row always has its
-    variants. The PNG is decoded once, capped at ``_WEBP_MAX_SIDE``, and every
-    encode derives from that copy; only one resized copy is alive at a time and
-    the whole call holds an encode slot (this runs on a 512 MB instance).
+    The PNG is decoded once, capped at ``_WEBP_MAX_SIDE``, and every encode
+    derives from that copy; only one resized copy is alive at a time. Holds an
+    encode slot for the decode only — the results are small enough to keep while
+    they upload.
     """
     with _ENCODE_SLOTS, Image.open(BytesIO(png)) as img:
         img.thumbnail((_WEBP_MAX_SIDE, _WEBP_MAX_SIDE))
-        _path, public_url = storage_client.upload_mockup(
-            productid, _webp_bytes(img, _WEBP_QUALITY), key,
-            ext="webp", content_type="image/webp",
-        )
+        encoded = [(key, _webp_bytes(img, _WEBP_QUALITY), None)]
         # Palette images would resize with NEAREST (Pillow forces it for "P").
         src = img.convert("RGBA") if img.mode in ("P", "1") else img
         for width in _VARIANT_WIDTHS:
@@ -85,12 +83,30 @@ def upload_web_images(productid: str, png: bytes, key: str) -> str:
                 variant = src.resize((width, height), Image.LANCZOS)
             else:
                 variant = src
-            storage_client.upload_mockup(
-                productid, _webp_bytes(variant, _VARIANT_QUALITY), f"{key}_{width}",
-                ext="webp", content_type="image/webp",
-                cache_control=_VARIANT_CACHE_CONTROL,
-            )
+            encoded.append((f"{key}_{width}", _webp_bytes(variant, _VARIANT_QUALITY),
+                            _VARIANT_CACHE_CONTROL))
             del variant
+    return encoded
+
+
+def upload_web_images(productid: str, png: bytes, key: str) -> str:
+    """Upload the display WEBP ``{key}.webp`` plus its fixed-width variants and
+    return the display WEBP's public URL.
+
+    Call before inserting the ``productimages`` row so a live row always has its
+    variants. Uploads run in parallel, outside the encode slot; every one settles
+    before this returns or raises, so a failure leaves nothing still running.
+    """
+    encoded = _encode_web_images(png, key)
+    with ThreadPoolExecutor(max_workers=len(encoded)) as pool:
+        futures = [
+            pool.submit(storage_client.upload_mockup, productid, data, k,
+                        ext="webp", content_type="image/webp", cache_control=cache)
+            for k, data, cache in encoded
+        ]
+    _path, public_url = futures[0].result()
+    for f in futures[1:]:
+        f.result()
     return public_url
 
 
@@ -120,8 +136,12 @@ def publish_image(
     key = f"{stem}_{storage_client.short_hex()}"
     # Keep the PNG as archival; the DB references the web-optimized WEBP under
     # the same key stem (different extension, no collision).
-    storage_client.upload_mockup(productid, png, key)
-    public_url = upload_web_images(productid, png, key)
+    # The archival PNG is the largest upload, so it goes up while the WEBPs
+    # encode rather than after them.
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        archival = pool.submit(storage_client.upload_mockup, productid, png, key)
+        public_url = upload_web_images(productid, png, key)
+    archival.result()
 
     row = mockup_variations_repo.insert(
         db, productid=productid, prompt_text=prompt_text, image_url=public_url,

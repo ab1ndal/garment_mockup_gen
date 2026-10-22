@@ -1,5 +1,8 @@
+import threading
+import time
 from io import BytesIO
 
+import pytest
 from PIL import Image
 
 from mockup_generator.generation import publish
@@ -180,3 +183,63 @@ def test_encode_webp_unchanged():
     out = publish._encode_webp(_png_sized(300, 200))
     with Image.open(BytesIO(out)) as img:
         assert img.format == "WEBP" and img.size == (300, 200)
+
+
+# ---------------- parallel uploads ----------------
+
+_UPLOADS_PER_PUBLISH = 5  # archival PNG + display WEBP + 150/600/1200 variants
+
+
+def test_publish_uploads_run_concurrently(monkeypatch):
+    """Every upload of one publish is in flight at once: the barrier only opens
+    when all of them are waiting on it, so serial uploads time out."""
+    barrier = threading.Barrier(_UPLOADS_PER_PUBLISH, timeout=3)
+
+    def _upload(pid, data, key, **kw):
+        barrier.wait()
+        ext = kw.get("ext", "png")
+        return f"{pid}/{key}.{ext}", f"https://public/{pid}/{key}.{ext}"
+
+    _wire(monkeypatch, {})
+    monkeypatch.setattr(publish.storage_client, "upload_mockup", _upload)
+    out = _publish(_png_sized(2048, 2048))
+    assert out["image_url"] == "https://public/BC1/red_0_deadbeef.webp"
+
+
+def test_web_uploads_do_not_hold_an_encode_slot(monkeypatch):
+    """Network uploads run after the encode slot is released, so a slow upload
+    can't keep another approval from encoding."""
+    free_slots = []
+
+    def _upload(pid, data, key, **kw):
+        if kw.get("ext") == "webp":
+            got = [publish._ENCODE_SLOTS.acquire(blocking=False) for _ in range(2)]
+            free_slots.append(sum(got))
+            for ok in got:
+                if ok:
+                    publish._ENCODE_SLOTS.release()
+        return f"{pid}/{key}", f"https://public/{pid}/{key}"
+
+    monkeypatch.setattr(publish.storage_client, "upload_mockup", _upload)
+    publish.upload_web_images("BC1", _png_sized(800, 800), "k")
+    assert free_slots == [2, 2, 2, 2]
+
+
+def test_failed_upload_fails_publish_after_others_settle(monkeypatch):
+    """One failed upload fails the publish with no DB rows written, and only
+    once every other upload has finished — nothing keeps running behind it."""
+    calls, finished = {}, []
+
+    def _upload(pid, data, key, **kw):
+        if key.endswith("_600"):
+            raise RuntimeError("storage down")
+        time.sleep(0.05)
+        finished.append(key)
+        return f"{pid}/{key}", f"https://public/{pid}/{key}"
+
+    _wire(monkeypatch, calls)
+    monkeypatch.setattr(publish.storage_client, "upload_mockup", _upload)
+    with pytest.raises(RuntimeError, match="storage down"):
+        _publish(_png_sized(800, 800))
+    assert len(finished) == _UPLOADS_PER_PUBLISH - 1
+    assert "image" not in calls and "variation" not in calls
