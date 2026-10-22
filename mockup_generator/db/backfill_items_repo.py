@@ -37,9 +37,14 @@ class BackfillRow:
     filename: str
     thumbnail_link: str | None
     status: str
+    # Filled only by ``page`` (embedded from ``products``); ``product_found`` is
+    # False when productid is NULL or names no product.
+    product_name: str | None = None
+    product_found: bool = False
 
 
 def _row(r: dict) -> BackfillRow:
+    product = r.get("products")
     return BackfillRow(
         file_id=r["file_id"],
         productid=r.get("productid"),
@@ -47,6 +52,8 @@ def _row(r: dict) -> BackfillRow:
         filename=r["filename"],
         thumbnail_link=r.get("thumbnail_link"),
         status=r["status"],
+        product_name=product.get("name") if product else None,
+        product_found=product is not None,
     )
 
 
@@ -54,10 +61,11 @@ def page(client: Client, *, status: str, offset: int, limit: int) -> tuple[list[
     """Return ``(rows, total)`` for one page of a status, ordered by filename.
 
     ``total`` is the full count for the status (for the pager), fetched in the same
-    request via Supabase's exact count.
+    request via Supabase's exact count. Product names are embedded through the
+    ``productid`` foreign key, so the page needs no second lookup.
     """
     resp = (
-        client.table("backfill_items").select(_COLS, count="exact")
+        client.table("backfill_items").select(f"{_COLS}, products(name)", count="exact")
         .eq("status", status)
         .order("filename")
         .range(offset, offset + limit - 1)

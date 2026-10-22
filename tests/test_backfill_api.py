@@ -1,3 +1,4 @@
+import threading
 from io import BytesIO
 
 import pytest
@@ -29,18 +30,18 @@ def client():
     app.dependency_overrides.clear()
 
 
-def _row(fid, pid="BC25001"):
+def _row(fid, pid="BC25001", name=None):
     return BackfillRow(file_id=fid, productid=pid, alpha=None,
-                       filename=f"{pid}.png", thumbnail_link=f"l-{fid}", status="pending")
+                       filename=f"{pid}.png", thumbnail_link=f"l-{fid}", status="pending",
+                       product_name=name, product_found=name is not None)
 
 
 # ----- reads ---------------------------------------------------------------
 
 def test_items_paginates_and_enriches(client, monkeypatch):
     monkeypatch.setattr(bf.items_repo, "page",
-                        lambda db, *, status, offset, limit: ([_row("a"), _row("b", "BCBAD")], 2))
-    monkeypatch.setattr(bf.products_repo, "names_for",
-                        lambda db, pids: {"BC25001": "Saree"})
+                        lambda db, *, status, offset, limit: ([_row("a", name="Saree"),
+                                                               _row("b", "BCBAD")], 2))
     monkeypatch.setattr(bf.drive_client, "thumbnails_for",
                         lambda items: {i["file_id"]: f"data:{i['file_id']}" for i in items})
 
@@ -236,3 +237,73 @@ def test_approve_default_skips_inpaint(client, monkeypatch):
     assert r.status_code == 200
     assert "inpaint" not in calls
     assert calls["png"] == b"RAW"
+
+
+# ----- sources --------------------------------------------------------------
+
+def _png_wh(w, h) -> bytes:
+    buf = BytesIO()
+    Image.new("RGB", (w, h)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _product(url="https://drive.google.com/drive/folders/FOLDER1"):
+    return Product(productid="BC25001", name="Saree", categoryid=None,
+                   category_name=None, base_mockup=False, producturl=url)
+
+
+def test_sources_returns_originals_colors_preview_and_aspect(client, monkeypatch):
+    monkeypatch.setattr(bf.products_repo, "get_product", lambda db, pid: _product())
+    monkeypatch.setattr(bf.variants_repo, "list_colors", lambda db, pid: ["Red"])
+    monkeypatch.setattr(bf.drive_client, "list_folder_image_groups",
+                        lambda fid: {"loose": [{"id": fid}], "groups": []})
+    monkeypatch.setattr(bf.drive_client, "download_file", lambda fid: _png_wh(80, 100))
+
+    r = client.get("/api/backfill/F1/sources?productid=BC25001")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["originals"]["loose"] == [{"id": "FOLDER1"}]
+    assert body["colors"] == ["Red"]
+    assert body["generated_preview"].startswith("data:image/png;base64,")
+    assert body["suggested_aspect"] == "4:5"
+
+
+def test_sources_unknown_product_has_no_colors_or_originals(client, monkeypatch):
+    monkeypatch.setattr(bf.products_repo, "get_product", lambda db, pid: None)
+    monkeypatch.setattr(bf.variants_repo, "list_colors", lambda db, pid: ["Stray"])
+    monkeypatch.setattr(bf.drive_client, "download_file", lambda fid: _png_wh(10, 10))
+
+    body = client.get("/api/backfill/F1/sources?productid=BCBAD").json()
+    assert body["colors"] == [] and body["originals"] == {"loose": [], "groups": []}
+
+
+def test_sources_downloads_while_looking_up_the_product(client, monkeypatch):
+    """The Drive download must overlap the DB lookups, not follow them. The
+    product lookup waits for the download to start; run in sequence, it never
+    would, and the lookup times out."""
+    download_started = threading.Event()
+
+    def get_product(db, pid):
+        assert download_started.wait(timeout=5), "download did not start in parallel"
+        return _product(url=None)
+
+    def download(fid):
+        download_started.set()
+        return _png_wh(10, 10)
+
+    monkeypatch.setattr(bf.products_repo, "get_product", get_product)
+    monkeypatch.setattr(bf.variants_repo, "list_colors", lambda db, pid: [])
+    monkeypatch.setattr(bf.drive_client, "download_file", download)
+
+    assert client.get("/api/backfill/F1/sources?productid=BC25001").status_code == 200
+
+
+def test_sources_download_failure_is_502(client, monkeypatch):
+    monkeypatch.setattr(bf.products_repo, "get_product", lambda db, pid: None)
+
+    def boom(fid):
+        raise RuntimeError("drive down")
+    monkeypatch.setattr(bf.drive_client, "download_file", boom)
+
+    r = client.get("/api/backfill/F1/sources")
+    assert r.status_code == 502 and "drive down" in r.json()["detail"]
