@@ -35,12 +35,8 @@ def _wire(monkeypatch, calls):
                         # First upload is the PNG; web WEBP + size variants follow.
                         lambda pid, data, key, **kw: (calls.setdefault("key", key) and None
                                                       or (f"{pid}/{key}.png", f"https://public/{pid}/{key}.png")))
-    monkeypatch.setattr(gen.publish.mockup_variations_repo, "insert",
-                        lambda db, **kw: (calls.__setitem__("variation", kw) or {"variation_id": 42}))
-    monkeypatch.setattr(gen.publish.mockups_repo, "set_base_mockup",
-                        lambda db, pid, value=True: calls.__setitem__("flag", (pid, value)))
-    monkeypatch.setattr(gen.publish.productimages_repo, "insert",
-                        lambda db, **kw: (calls.__setitem__("image", kw) or {"imageid": 1}))
+    monkeypatch.setattr(gen.publish.publish_repo, "write_rows",
+                        lambda db, **kw: (calls.__setitem__("rows", kw) or 42))
     # Append model: the next display order is baked into the storage key.
     monkeypatch.setattr(gen.publish.productimages_repo, "next_display_order",
                         lambda db, pid: calls.get("order", 0))
@@ -66,14 +62,14 @@ def test_approve_generated_publishes(client, monkeypatch):
     assert body["image_url"] == "https://public/BC25001/parrot-green_0_deadbeef.png"
     assert body["variation_id"] == 42
     assert calls["key"] == "parrot-green_0_deadbeef"
-    assert calls["variation"]["color"] == "Parrot Green"
-    assert calls["variation"]["prompt_text"] == "a saree"
-    assert calls["variation"]["image_url"] == "https://public/BC25001/parrot-green_0_deadbeef.png"
-    assert calls["flag"] == ("BC25001", True)
-    assert calls["image"]["imageurl"] == "https://public/BC25001/parrot-green_0_deadbeef.png"
-    assert calls["image"]["productcolor"] == "Parrot Green"
-    assert calls["image"]["theme"] == "Default"  # no theme/aspect sent -> Default
-    assert calls["image"]["displayorder"] == 0
+    rows = calls["rows"]
+    assert rows["productid"] == "BC25001"
+    assert rows["color"] == "Parrot Green"
+    assert rows["prompt_text"] == "a saree"
+    assert rows["imageurl"] == "https://public/BC25001/parrot-green_0_deadbeef.png"
+    assert rows["theme"] == "Default"  # no theme/aspect sent -> Default
+    assert rows["displayorder"] == 0
+    assert rows["created_by"] == "u1"
     assert "deleted_for" not in calls  # append model -> never replace
     assert "removed" not in calls      # no prior PNG deleted
 
@@ -89,7 +85,7 @@ def test_approve_appends_keeping_prior_design(client, monkeypatch):
                     files={"image": ("m.png", _png_bytes(), "image/png")})
     assert r.status_code == 200
     assert calls["key"] == "red_1_deadbeef"
-    assert calls["image"]["displayorder"] == 1
+    assert calls["rows"]["displayorder"] == 1
     assert "deleted_for" not in calls  # old row kept
     assert "removed" not in calls      # old PNG kept
 
@@ -102,7 +98,7 @@ def test_approve_builds_phototheme_from_label_and_aspect(client, monkeypatch):
                           "theme_name": "Studio", "aspect_ratio": "9:16"},
                     files={"image": ("m.png", _png_bytes(), "image/png")})
     assert r.status_code == 200
-    assert calls["image"]["theme"] == "Studio·9:16"      # non-1:1 -> aspect suffix
+    assert calls["rows"]["theme"] == "Studio·9:16"      # non-1:1 -> aspect suffix
 
 
 def test_approve_theme_label_without_aspect_suffix_at_1to1(client, monkeypatch):
@@ -113,7 +109,7 @@ def test_approve_theme_label_without_aspect_suffix_at_1to1(client, monkeypatch):
                           "theme_name": "Studio", "aspect_ratio": "1:1"},
                     files={"image": ("m.png", _png_bytes(), "image/png")})
     assert r.status_code == 200
-    assert calls["image"]["theme"] == "Studio"           # 1:1 -> no suffix
+    assert calls["rows"]["theme"] == "Studio"           # 1:1 -> no suffix
 
 
 def test_approve_corrected_defaults_prompt_text(client, monkeypatch):
@@ -123,8 +119,8 @@ def test_approve_corrected_defaults_prompt_text(client, monkeypatch):
                     data={"productid": "BC1", "source": "corrected"},
                     files={"image": ("m.png", _png_bytes(), "image/png")})
     assert r.status_code == 200
-    assert calls["variation"]["prompt_text"] == "(manual upload)"
-    assert calls["variation"]["color"] is None  # repo omits None from the payload
+    assert calls["rows"]["prompt_text"] == "(manual upload)"
+    assert calls["rows"]["color"] is None
     assert calls["key"] == "0_deadbeef"  # no color -> order + hex
 
 
@@ -165,8 +161,7 @@ def test_approve_logs_every_stage(client, monkeypatch, caplog):
     assert "outcome=ok" in pub
     for stage in ("next_order", "upload_png", "encode_webp", "upload_webp",
                   "upload_webp_150", "upload_webp_600", "upload_webp_1200",
-                  "upload_webp_all", "wait_png", "insert_variation",
-                  "set_base_mockup", "insert_productimage", "total"):
+                  "upload_webp_all", "wait_png", "write_rows", "total"):
         assert f" {stage}=" in pub
     assert any(m.startswith("request method=POST path=/api/generate/approve status=200 ms=")
                for m in lines)
