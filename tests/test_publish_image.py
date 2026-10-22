@@ -164,6 +164,18 @@ def test_publish_variants_handle_palette_png(monkeypatch):
     assert _variants(events)["red_0_deadbeef_600"][2] == (600, 300)
 
 
+def test_publish_display_webp_capped_at_max_side(monkeypatch):
+    """A 4K output is shrunk once to _WEBP_MAX_SIDE for the display WEBP; the
+    archival PNG keeps full size and variants still derive at their widths."""
+    events = []
+    _record_uploads(monkeypatch, events)
+    _publish(_png_sized(3000, 4000))
+    displays = [e for e in events if e[0] == "upload" and e[1] == "red_0_deadbeef"]
+    assert {(e[2], e[3].get("ext", "png")) for e in displays} == {
+        ((3000, 4000), "png"), ((1536, 2048), "webp")}
+    assert _variants(events)["red_0_deadbeef_1200"][2] == (1200, 1600)
+
+
 def test_encode_webp_unchanged():
     out = publish._encode_webp(_png_sized(300, 200))
     with Image.open(BytesIO(out)) as img:
