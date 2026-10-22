@@ -91,6 +91,13 @@ export default function BatchTab() {
   // Last counts fingerprint the page was rendered against. The poll compares
   // against this to decide whether a refetch is actually needed.
   const lastCountsSigRef = useRef("");
+  // Cards with a review action still in flight. They are removed from the grid
+  // on click, and every load filters them out so a refresh landing before the
+  // request settles can't resurrect a card the reviewer has already handled.
+  const pendingRef = useRef<Set<number>>(new Set());
+  // The tab on screen, for a background action that settles after the reviewer
+  // has switched tabs.
+  const tabRef = useRef<BatchTabId>("ready");
 
   const lightbox = useImageLightbox();
 
@@ -127,18 +134,19 @@ export default function BatchTab() {
         // Drop a response for a page the reviewer has since navigated away from,
         // so a slow poll can't clobber a fresh page change.
         if (r.offset !== offsetRef.current) return;
+        const fresh = r.items.filter((it) => !pendingRef.current.has(it.id));
         // Staged thumbnails are signed per read, so each poll returns a fresh URL
         // for the same image. Reuse the URL a card already rendered with — the
         // bytes never change once staged — so the browser doesn't re-download
         // every thumbnail on each poll.
         setItems((prev) => {
           const seen = new Map(prev.map((x) => [x.id, x.generated_thumb_url]));
-          return r.items.map((it) => {
+          return fresh.map((it) => {
             const kept = seen.get(it.id);
             return kept ? { ...it, generated_thumb_url: kept } : it;
           });
         });
-        setTotal(r.total); setOffset(r.offset);
+        setTotal(r.total - (r.items.length - fresh.length)); setOffset(r.offset);
       })
       .catch((e) => { if (!quiet) setError(e instanceof ApiError ? e.message : "Failed to load."); })
       .finally(() => { if (!quiet) setLoading(false); });
@@ -161,6 +169,7 @@ export default function BatchTab() {
   useEffect(() => {
     categoryFiltersRef.current = categoryFilters;
     searchRef.current = searchApplied;
+    tabRef.current = tab;
     load(tab, 0); loadCounts(); loadSummary();
   }, [tab, categoryFilters, searchApplied, load, loadCounts, loadSummary]);
 
@@ -172,8 +181,10 @@ export default function BatchTab() {
 
   // Cards move queued -> generating -> ready on a background worker, so a static
   // page goes stale on its own. Poll while anything is still in flight, and stop
-  // once the queue drains. Paused while a card is open for review or mid-action:
-  // a reload must not swap the card out from under the reviewer.
+  // once the queue drains. Paused while a card is open for review or a Retry is
+  // mid-flight: a reload must not swap the card out from under the reviewer.
+  // Background review actions don't pause it — the pending filter in load()
+  // keeps their cards off the grid.
   const inFlight = countFor("in_progress", counts);
   useEffect(() => {
     if (inFlight === 0 || review || busyId !== null) return;
@@ -237,6 +248,36 @@ export default function BatchTab() {
     } finally {
       setBusyId(null);
     }
+  }
+
+  // Accept / Reject / Edit on a Ready card. The card leaves the grid and the
+  // modal closes at once; the request runs in the background so the reviewer can
+  // move straight to the next card. A failed request names the card (the
+  // reviewer has moved on by then) and the refresh on settle brings it back to
+  // Ready, since the server reverts a failed action.
+  function actInBackground(it: BatchItem, failedVerb: string,
+                           fn: () => Promise<{ warning: string | null }>) {
+    pendingRef.current.add(it.id);
+    setItems((xs) => xs.filter((x) => x.id !== it.id));
+    setTotal((t) => Math.max(0, t - 1));
+    setCounts((c) => ({ ...c, ready: Math.max(0, (c.ready || 0) - 1) }));
+    setReview(null);
+    const name = it.productid + (it.color ? ` (${it.color})` : "");
+    fn()
+      .then((r) => { if (r.warning) setNotice(`${name}: ${r.warning}`); })
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 409) {
+          setNotice(`${name} was already handled.`);
+        } else {
+          setError(`${name} could not be ${failedVerb}: ${e instanceof ApiError ? e.message : "request failed"}`);
+        }
+      })
+      .finally(() => {
+        pendingRef.current.delete(it.id);
+        load(tabRef.current, offsetRef.current, true);
+        loadCounts();
+        loadSummary();
+      });
   }
 
   const start = total === 0 ? 0 : offset + 1;
@@ -391,12 +432,14 @@ export default function BatchTab() {
                   <Card key={it.id} item={it}
                         onEnlarge={() => it.generated_thumb_url
                           && lightbox.show(it.generated_thumb_url, it.productid)}>
-                    <button className="btn-primary" disabled={busyId === it.id}
-                            onClick={() => setReview(it)}>Review</button>
-                    <button disabled={busyId === it.id}
-                            onClick={() => run(it.id, () => acceptBatch(it.id))}>Accept</button>
-                    <button className="btn-danger" disabled={busyId === it.id}
-                            onClick={() => run(it.id, () => rejectBatch(it.id))}>Reject</button>
+                    <button className="btn-primary" onClick={() => setReview(it)}>Review</button>
+                    <button onClick={() => actInBackground(it, "published", () => acceptBatch(it.id))}>
+                      Accept
+                    </button>
+                    <button className="btn-danger"
+                            onClick={() => actInBackground(it, "rejected", () => rejectBatch(it.id))}>
+                      Reject
+                    </button>
                   </Card>
                 ))}
               </div>
@@ -440,11 +483,12 @@ export default function BatchTab() {
       {review && (
         <ReviewModal
           item={review}
-          busy={busyId === review.id}
           onClose={() => setReview(null)}
-          onAccept={(c) => run(review.id, () => acceptBatch(review.id, { color: c }))}
-          onEdit={(note, ids) => run(review.id, () => editBatch(review.id, { prompt_note: note, image_ids: ids }))}
-          onReject={() => run(review.id, () => rejectBatch(review.id))}
+          onAccept={(c) => actInBackground(review, "published",
+            () => acceptBatch(review.id, { color: c }))}
+          onEdit={(note, ids) => actInBackground(review, "sent back for editing",
+            () => editBatch(review.id, { prompt_note: note, image_ids: ids }))}
+          onReject={() => actInBackground(review, "rejected", () => rejectBatch(review.id))}
         />
       )}
 
@@ -612,12 +656,12 @@ function Modal({ title, onClose, children }: {
 }
 
 function ReviewModal(props: {
-  item: BatchItem; busy: boolean; onClose: () => void;
+  item: BatchItem; onClose: () => void;
   onAccept: (color: string | null) => void;
   onEdit: (note: string, imageIds: string[]) => void;
   onReject: () => void;
 }) {
-  const { item, busy, onClose, onAccept, onEdit, onReject } = props;
+  const { item, onClose, onAccept, onEdit, onReject } = props;
   const [src, setSrc] = useState<BatchSources | null>(null);
   const [note, setNote] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -705,13 +749,13 @@ function ReviewModal(props: {
 
       <div className="modal-foot">
         <div className="modal-foot-group">
-          <button className="btn-danger" disabled={busy} onClick={onReject}>Reject</button>
+          <button className="btn-danger" onClick={onReject}>Reject</button>
         </div>
         <div className="modal-foot-group">
-          <button disabled={busy || !note.trim()} onClick={() => onEdit(note, Array.from(picked))}>
+          <button disabled={!note.trim()} onClick={() => onEdit(note, Array.from(picked))}>
             Edit &amp; regenerate
           </button>
-          <button className="btn-primary" disabled={busy} onClick={() => onAccept(color)}>
+          <button className="btn-primary" onClick={() => onAccept(color)}>
             Accept &amp; publish
           </button>
         </div>
