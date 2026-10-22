@@ -21,15 +21,14 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from io import BytesIO
 
 from google.genai import errors as genai_errors
-from PIL import Image
 from supabase import Client
 
 from mockup_generator.config import settings
 from mockup_generator.db import batch_items_repo as repo
 from mockup_generator.generation import service
+from mockup_generator.generation.common import load_reference_image
 from mockup_generator.generation.service import NoImageReturned
 from mockup_generator.integrations import drive_client, storage_client
 
@@ -118,15 +117,21 @@ def run_one(db: Client, model: str) -> bool:
     log.info("batch item %s (%s) generating: attempt %d/%d",
              row.id, row.productid, attempt, _MAX_ATTEMPTS)
     try:
-        images = [Image.open(BytesIO(drive_client.download_file(fid))) for fid in row.image_ids]
+        images = [load_reference_image(drive_client.download_file(fid)) for fid in row.image_ids]
         png = service.generate_mockup_bytes(
             images, row.prompt_text, model=row.model,
             resolution=row.resolution, aspect_ratio=row.aspect_ratio,
         )
+        # The references are dead once the request is built, but the upload below
+        # is a network round trip — holding them across it widens the window in
+        # which every drainer in the pool is simultaneously at its peak, which is
+        # what decides whether the instance fits in memory.
+        del images
         # Keyed by item id, so a re-generated card (edit -> queued -> ready)
         # overwrites its own staged object instead of orphaning one.
         path, _ = storage_client.upload_mockup(
             row.productid, png, f"batch-{row.id}", bucket=storage_client.TEMP_BUCKET)
+        del png
         repo.transition(db, item_id=row.id, expect=repo.GENERATING, to=repo.READY,
                         storage_path=path, attempts=attempt, error=None)
         log.info("batch item %s (%s) ready in %.1fs (attempt %d)",
