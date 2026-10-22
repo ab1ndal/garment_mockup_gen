@@ -32,7 +32,8 @@ def client():
 def _wire(monkeypatch, calls):
     monkeypatch.setattr(gen.publish.storage_client, "short_hex", lambda: "deadbeef")
     monkeypatch.setattr(gen.publish.storage_client, "upload_mockup",
-                        lambda pid, data, key, **kw: (calls.__setitem__("key", key)
+                        # First upload is the PNG; web WEBP + size variants follow.
+                        lambda pid, data, key, **kw: (calls.setdefault("key", key) and None
                                                       or (f"{pid}/{key}.png", f"https://public/{pid}/{key}.png")))
     monkeypatch.setattr(gen.publish.mockup_variations_repo, "insert",
                         lambda db, **kw: (calls.__setitem__("variation", kw) or {"variation_id": 42}))

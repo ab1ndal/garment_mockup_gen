@@ -84,3 +84,87 @@ def test_publish_image_allows_null_prompt_text(monkeypatch):
         theme_name=None, aspect_ratio=None, created_by="u1", prompt_text=None,
     )
     assert calls["variation"]["prompt_text"] is None
+
+
+# ---------------- web size variants ----------------
+
+def _png_sized(w: int, h: int, mode: str = "RGB") -> bytes:
+    buf = BytesIO()
+    Image.new(mode, (w, h)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _record_uploads(monkeypatch, events):
+    """Capture every upload (key, decoded size, kwargs) and the DB insert, in order."""
+    def _upload(pid, data, key, **kw):
+        size = Image.open(BytesIO(data)).size
+        events.append(("upload", key, size, kw))
+        ext = kw.get("ext", "png")
+        return f"{pid}/{key}.{ext}", f"https://public/{pid}/{key}.{ext}"
+    _wire(monkeypatch, {})
+    monkeypatch.setattr(publish.storage_client, "upload_mockup", _upload)
+    monkeypatch.setattr(publish.productimages_repo, "insert",
+                        lambda db, **kw: events.append(("insert", kw["imageurl"])) or {"imageid": 1})
+
+
+def _publish(png):
+    return publish.publish_image(
+        object(), productid="BC1", png=png, color="Red",
+        theme_name=None, aspect_ratio=None, created_by="u1",
+    )
+
+
+def _variants(events):
+    return {e[1]: e for e in events if e[0] == "upload" and e[1].startswith("red_0_deadbeef_")}
+
+
+def test_publish_uploads_three_webp_variants_before_insert(monkeypatch):
+    events = []
+    _record_uploads(monkeypatch, events)
+    out = _publish(_png_sized(2048, 2048))
+
+    variants = _variants(events)
+    assert set(variants) == {"red_0_deadbeef_150", "red_0_deadbeef_600", "red_0_deadbeef_1200"}
+    for w in (150, 600, 1200):
+        _, _, size, kw = variants[f"red_0_deadbeef_{w}"]
+        assert size == (w, w)
+        assert kw["ext"] == "webp" and kw["content_type"] == "image/webp"
+        assert kw["cache_control"] == "31536000"
+    # The DB still references the full-size display WEBP, inserted only after
+    # every variant is in Storage.
+    assert out["image_url"] == "https://public/BC1/red_0_deadbeef.webp"
+    assert events[-1] == ("insert", "https://public/BC1/red_0_deadbeef.webp")
+    assert all(e[0] == "upload" for e in events[:-1])
+
+
+def test_publish_variants_never_enlarge(monkeypatch):
+    events = []
+    _record_uploads(monkeypatch, events)
+    _publish(_png_sized(800, 800))
+    variants = _variants(events)
+    assert variants["red_0_deadbeef_150"][2] == (150, 150)
+    assert variants["red_0_deadbeef_600"][2] == (600, 600)
+    assert variants["red_0_deadbeef_1200"][2] == (800, 800)
+
+
+def test_publish_variants_keep_aspect_ratio(monkeypatch):
+    events = []
+    _record_uploads(monkeypatch, events)
+    _publish(_png_sized(1500, 2000))  # 3:4 portrait
+    variants = _variants(events)
+    assert variants["red_0_deadbeef_150"][2] == (150, 200)
+    assert variants["red_0_deadbeef_600"][2] == (600, 800)
+    assert variants["red_0_deadbeef_1200"][2] == (1200, 1600)
+
+
+def test_publish_variants_handle_palette_png(monkeypatch):
+    events = []
+    _record_uploads(monkeypatch, events)
+    _publish(_png_sized(1000, 500, mode="P"))
+    assert _variants(events)["red_0_deadbeef_600"][2] == (600, 300)
+
+
+def test_encode_webp_unchanged():
+    out = publish._encode_webp(_png_sized(300, 200))
+    with Image.open(BytesIO(out)) as img:
+        assert img.format == "WEBP" and img.size == (300, 200)

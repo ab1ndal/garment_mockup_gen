@@ -23,19 +23,18 @@ def _clear_source_cache():
     im._SOURCE_CACHE.clear()
 
 
-def test_publish_uploads_webp_only_and_inserts_one_row(client, monkeypatch):
+def test_publish_uploads_web_images_and_inserts_one_row(client, monkeypatch):
     calls = {}
     monkeypatch.setattr(im, "_render", lambda fid, params: b"PNG")
-    monkeypatch.setattr(im.publish, "_encode_webp", lambda png: b"WEBP")
     monkeypatch.setattr(im.storage_client, "slugify", lambda c: "red")
     monkeypatch.setattr(im.storage_client, "short_hex", lambda: "abcd1234")
     monkeypatch.setattr(im.productimages_repo, "next_product_shot_order",
                         lambda db, pid: 20)
 
-    def _upload(pid, data, key, *, ext, content_type):
-        calls["upload"] = {"data": data, "ext": ext, "content_type": content_type, "key": key}
-        return (f"{pid}/{key}.{ext}", "https://pub/red_20_abcd1234.webp")
-    monkeypatch.setattr(im.storage_client, "upload_mockup", _upload)
+    def _upload(pid, png, key):
+        calls["upload"] = {"png": png, "key": key}
+        return "https://pub/red_20_abcd1234.webp"
+    monkeypatch.setattr(im.publish, "upload_web_images", _upload)
 
     def _insert(db, *, productid, imageurl, productcolor, theme, displayorder):
         calls["insert"] = {"theme": theme, "order": displayorder, "url": imageurl,
@@ -48,9 +47,8 @@ def test_publish_uploads_webp_only_and_inserts_one_row(client, monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body["image_url"].endswith(".webp") and body["displayorder"] == 20
-    assert calls["upload"]["ext"] == "webp"
-    assert calls["upload"]["content_type"] == "image/webp"
-    assert calls["upload"]["data"] == b"WEBP"
+    # Routed through the shared web-image path so size variants are uploaded too.
+    assert calls["upload"]["png"] == b"PNG"
     assert calls["insert"]["theme"] == "Product Shot"
     assert calls["insert"]["order"] == 20
 
