@@ -323,7 +323,7 @@ def generate_image(req: GenerateRequest, user: CurrentUser = Depends(get_current
 
 
 @router.post("/image/upload", response_model=GenerateUploadPreview)
-async def generate_image_upload(
+def generate_image_upload(
     prompt: str = Form(...),
     model: str | None = Form(None),
     resolution: str | None = Form(None),
@@ -363,7 +363,7 @@ async def generate_image_upload(
 
     images: list[Image.Image] = []
     for f in files[:_MAX_REFS]:
-        raw = await f.read()
+        raw = f.file.read()
         if len(raw) > _MAX_UPLOAD_BYTES:
             raise HTTPException(status_code=413, detail="An uploaded image is too large.")
         try:
@@ -399,7 +399,7 @@ async def generate_image_upload(
 
 
 @router.post("/approve", response_model=ApproveResponse)
-async def approve_mockup(
+def approve_mockup(
     productid: str = Form(...),
     color: str | None = Form(None),
     prompt_text: str | None = Form(None),
@@ -410,7 +410,7 @@ async def approve_mockup(
     user: CurrentUser = Depends(get_current_user),
     db: Client = Depends(get_db),
 ):
-    raw = await image.read()
+    raw = image.file.read()
     if len(raw) > _MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="Image is too large.")
     try:
