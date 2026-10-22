@@ -20,12 +20,8 @@ def _wire(monkeypatch, calls, order=0):
                         lambda pid, data, key, **kw: (f"{pid}/{key}.png", f"https://public/{pid}/{key}.png"))
     monkeypatch.setattr(publish.productimages_repo, "next_display_order",
                         lambda db, pid: order)
-    monkeypatch.setattr(publish.productimages_repo, "insert",
-                        lambda db, **kw: (calls.__setitem__("image", kw) or {"imageid": 1}))
-    monkeypatch.setattr(publish.mockup_variations_repo, "insert",
-                        lambda db, **kw: (calls.__setitem__("variation", kw) or {"variation_id": 7}))
-    monkeypatch.setattr(publish.mockups_repo, "set_base_mockup",
-                        lambda db, pid, value=True: calls.__setitem__("flag", (pid, value)))
+    monkeypatch.setattr(publish.publish_repo, "write_rows",
+                        lambda db, **kw: (calls.__setitem__("rows", kw) or 7))
     # Append model: the replace path must NOT run — old rows/PNGs are kept.
     monkeypatch.setattr(publish.productimages_repo, "delete_for",
                         lambda *a, **k: calls.__setitem__("deleted_for", True))
@@ -48,10 +44,13 @@ def test_publish_image_writes_all_rows(monkeypatch):
     )
     assert out["image_url"] == "https://public/BC25001/red_0_deadbeef.png"
     assert out["variation_id"] == 7
-    assert calls["flag"] == ("BC25001", True)
-    assert calls["image"]["productcolor"] == "Red"
-    assert calls["image"]["theme"] == "Default"
-    assert calls["variation"]["color"] == "Red"
+    rows = calls["rows"]
+    assert rows["productid"] == "BC25001"
+    assert rows["imageurl"] == out["image_url"]
+    assert rows["color"] == "Red"
+    assert rows["theme"] == "Default"
+    assert rows["displayorder"] == 0
+    assert rows["created_by"] == "u1"
 
 
 def test_publish_image_appends_without_replacing(monkeypatch):
@@ -64,7 +63,7 @@ def test_publish_image_appends_without_replacing(monkeypatch):
         theme_name=None, aspect_ratio=None, created_by="u1",
     )
     assert out["image_url"] == "https://public/BC25001/red_2_deadbeef.png"
-    assert calls["image"]["displayorder"] == 2
+    assert calls["rows"]["displayorder"] == 2
     assert "deleted_for" not in calls       # prior productimages row kept
     assert "storage_deleted" not in calls   # prior PNG kept
 
@@ -86,7 +85,7 @@ def test_publish_image_allows_null_prompt_text(monkeypatch):
         object(), productid="BC1", png=_png(), color="Blue",
         theme_name=None, aspect_ratio=None, created_by="u1", prompt_text=None,
     )
-    assert calls["variation"]["prompt_text"] is None
+    assert calls["rows"]["prompt_text"] is None
 
 
 # ---------------- web size variants ----------------
@@ -106,8 +105,8 @@ def _record_uploads(monkeypatch, events):
         return f"{pid}/{key}.{ext}", f"https://public/{pid}/{key}.{ext}"
     _wire(monkeypatch, {})
     monkeypatch.setattr(publish.storage_client, "upload_mockup", _upload)
-    monkeypatch.setattr(publish.productimages_repo, "insert",
-                        lambda db, **kw: events.append(("insert", kw["imageurl"])) or {"imageid": 1})
+    monkeypatch.setattr(publish.publish_repo, "write_rows",
+                        lambda db, **kw: events.append(("insert", kw["imageurl"])) or 1)
 
 
 def _publish(png):
@@ -251,7 +250,7 @@ def test_failed_publish_still_logs_timings(monkeypatch, caplog):
 
     def fail(db, **kw):
         raise RuntimeError("db down")
-    monkeypatch.setattr(publish.mockup_variations_repo, "insert", fail)
+    monkeypatch.setattr(publish.publish_repo, "write_rows", fail)
     caplog.set_level("INFO")
 
     with pytest.raises(RuntimeError):
@@ -261,5 +260,5 @@ def test_failed_publish_still_logs_timings(monkeypatch, caplog):
     line = next(r.getMessage() for r in caplog.records
                 if r.getMessage().startswith("publish timing"))
     assert "outcome=failed" in line
-    assert " insert_variation=" in line  # the failing stage is still timed
+    assert " write_rows=" in line  # the failing stage is still timed
     assert " total=" in line

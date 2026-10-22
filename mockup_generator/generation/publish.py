@@ -21,7 +21,7 @@ from io import BytesIO
 
 from PIL import Image
 
-from mockup_generator.db import mockup_variations_repo, mockups_repo, productimages_repo
+from mockup_generator.db import productimages_repo, publish_repo
 from mockup_generator.integrations import storage_client
 from mockup_generator.timing import format_timings, timed
 
@@ -187,14 +187,10 @@ def _publish_image(
         with timed(timings, "wait_png"):
             archival.result()
 
-    with timed(timings, "insert_variation"):
-        row = mockup_variations_repo.insert(
-            db, productid=productid, prompt_text=prompt_text, image_url=public_url,
-            color=color, created_by=created_by, prompt_id=prompt_id,
+    with timed(timings, "write_rows"):
+        variation_id = publish_repo.write_rows(
+            db, productid=productid, imageurl=public_url, color=color, theme=theme,
+            displayorder=order, prompt_text=prompt_text, prompt_id=prompt_id,
+            created_by=created_by,
         )
-    with timed(timings, "set_base_mockup"):
-        mockups_repo.set_base_mockup(db, productid, True)
-    with timed(timings, "insert_productimage"):
-        productimages_repo.insert(db, productid=productid, imageurl=public_url,
-                                  productcolor=color, theme=theme, displayorder=order)
-    return {"image_url": public_url, "variation_id": row.get("variation_id")}
+    return {"image_url": public_url, "variation_id": variation_id}

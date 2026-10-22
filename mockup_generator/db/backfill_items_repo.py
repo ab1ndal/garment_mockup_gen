@@ -69,15 +69,15 @@ def page(client: Client, *, status: str, offset: int, limit: int) -> tuple[list[
 
 
 def counts(client: Client) -> dict[str, int]:
-    """Return ``{status: count}`` for each sub-tab status (one head query each)."""
-    out: dict[str, int] = {}
-    for s in TAB_STATUSES:
-        resp = (
-            client.table("backfill_items").select("file_id", count="exact")
-            .eq("status", s).limit(1).execute()
-        )
-        out[s] = resp.count or 0
-    return out
+    """Return ``{status: count}`` for each sub-tab status.
+
+    One grouped round-trip via the backfill_status_counts() SQL function instead
+    of an exact-count query per status (4 x ~650ms to the Mumbai database).
+    Statuses with no rows are absent from the result, so fill them with 0.
+    """
+    resp = client.rpc("backfill_status_counts").execute()
+    seen = {r["status"]: int(r["n"]) for r in (resp.data or [])}
+    return {s: seen.get(s, 0) for s in TAB_STATUSES}
 
 
 def get(client: Client, file_id: str) -> BackfillRow | None:
