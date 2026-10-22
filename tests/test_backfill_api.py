@@ -30,6 +30,13 @@ def client():
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def _display_order(monkeypatch):
+    """Approve looks up the next display order itself (overlapping the Drive
+    download) and hands it to publish."""
+    monkeypatch.setattr(bf.productimages_repo, "next_display_order", lambda db, pid: 3)
+
+
 def _row(fid, pid="BC25001", name=None):
     return BackfillRow(file_id=fid, productid=pid, alpha=None,
                        filename=f"{pid}.png", thumbnail_link=f"l-{fid}", status="pending",
@@ -89,8 +96,27 @@ def test_approve_claims_publishes_then_archives(client, monkeypatch):
     body = r.json()
     assert body["image_url"] == "https://pub/x.png" and body["variation_id"] == 9
     assert calls["claims"] == [("pending", "published")]   # claimed, not reverted
+    assert calls["display_order"] == 3                      # looked up here, passed through
+    # Archive runs as a background task; TestClient completes it before returning.
     assert calls["archive_into"] == "published"
     assert calls["moved"] == ("a", "ARCHIVE")
+
+
+def test_approve_succeeds_when_background_archive_fails(client, monkeypatch, caplog):
+    monkeypatch.setattr(bf.items_repo, "transition", lambda db, **kw: True)
+    monkeypatch.setattr(bf.drive_client, "download_file", lambda fid: _png())
+    monkeypatch.setattr(bf.publish, "publish_image",
+                        lambda db, **kw: {"image_url": "u", "variation_id": 1})
+
+    def boom(*a):
+        raise RuntimeError("drive down")
+    monkeypatch.setattr(bf.drive_client, "ensure_subfolder", boom)
+    caplog.set_level("WARNING")
+
+    r = client.post("/api/backfill/approve",
+                    json={"file_id": "a", "productid": "BC25001", "color": "Red"})
+    assert r.status_code == 200 and r.json()["warning"] is None
+    assert any("Drive archive failed" in rec.getMessage() for rec in caplog.records)
 
 
 def test_approve_409_when_already_handled(client, monkeypatch):
@@ -252,9 +278,8 @@ def _product(url="https://drive.google.com/drive/folders/FOLDER1"):
                    category_name=None, base_mockup=False, producturl=url)
 
 
-def test_sources_returns_originals_colors_preview_and_aspect(client, monkeypatch):
+def test_sources_returns_originals_preview_and_aspect(client, monkeypatch):
     monkeypatch.setattr(bf.products_repo, "get_product", lambda db, pid: _product())
-    monkeypatch.setattr(bf.variants_repo, "list_colors", lambda db, pid: ["Red"])
     monkeypatch.setattr(bf.drive_client, "list_folder_image_groups",
                         lambda fid: {"loose": [{"id": fid}], "groups": []})
     monkeypatch.setattr(bf.drive_client, "download_file", lambda fid: _png_wh(80, 100))
@@ -263,18 +288,17 @@ def test_sources_returns_originals_colors_preview_and_aspect(client, monkeypatch
     assert r.status_code == 200
     body = r.json()
     assert body["originals"]["loose"] == [{"id": "FOLDER1"}]
-    assert body["colors"] == ["Red"]
+    assert "colors" not in body   # the card fetches colors separately, without Drive
     assert body["generated_preview"].startswith("data:image/png;base64,")
     assert body["suggested_aspect"] == "4:5"
 
 
-def test_sources_unknown_product_has_no_colors_or_originals(client, monkeypatch):
+def test_sources_unknown_product_has_no_originals(client, monkeypatch):
     monkeypatch.setattr(bf.products_repo, "get_product", lambda db, pid: None)
-    monkeypatch.setattr(bf.variants_repo, "list_colors", lambda db, pid: ["Stray"])
     monkeypatch.setattr(bf.drive_client, "download_file", lambda fid: _png_wh(10, 10))
 
     body = client.get("/api/backfill/F1/sources?productid=BCBAD").json()
-    assert body["colors"] == [] and body["originals"] == {"loose": [], "groups": []}
+    assert body["originals"] == {"loose": [], "groups": []}
 
 
 def test_sources_downloads_while_looking_up_the_product(client, monkeypatch):
@@ -292,7 +316,6 @@ def test_sources_downloads_while_looking_up_the_product(client, monkeypatch):
         return _png_wh(10, 10)
 
     monkeypatch.setattr(bf.products_repo, "get_product", get_product)
-    monkeypatch.setattr(bf.variants_repo, "list_colors", lambda db, pid: [])
     monkeypatch.setattr(bf.drive_client, "download_file", download)
 
     assert client.get("/api/backfill/F1/sources?productid=BC25001").status_code == 200

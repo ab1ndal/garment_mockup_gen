@@ -136,11 +136,14 @@ def publish_image(
     db, *, productid: str, png: bytes, color: str | None,
     theme_name: str | None, aspect_ratio: str | None, created_by: str | None,
     prompt_text: str | None = None, prompt_id: int | None = None,
+    display_order: int | None = None,
 ) -> dict:
     """Publish ``png`` for ``productid`` + ``color``. Returns
     ``{"image_url", "variation_id"}``.
 
-    Logs one line with every stage's duration, success or failure."""
+    ``display_order`` lets a caller that already holds it (fetched while it was
+    waiting on something else) skip the lookup. Logs one line with every
+    stage's duration, success or failure."""
     timings: dict[str, int] = {}
     start = time.perf_counter()
     outcome = "failed"
@@ -148,7 +151,7 @@ def publish_image(
         result = _publish_image(
             db, timings, productid=productid, png=png, color=color,
             theme_name=theme_name, aspect_ratio=aspect_ratio, created_by=created_by,
-            prompt_text=prompt_text, prompt_id=prompt_id,
+            prompt_text=prompt_text, prompt_id=prompt_id, display_order=display_order,
         )
         outcome = "ok"
         return result
@@ -161,14 +164,17 @@ def publish_image(
 def _publish_image(
     db, timings: dict[str, int], *, productid: str, png: bytes, color: str | None,
     theme_name: str | None, aspect_ratio: str | None, created_by: str | None,
-    prompt_text: str | None, prompt_id: int | None,
+    prompt_text: str | None, prompt_id: int | None, display_order: int | None,
 ) -> dict:
     theme = build_photo_theme(theme_name, aspect_ratio)
 
     # Append: never overwrite a prior design. The next display order goes into
     # the Storage key so each variant gets its own permanent object.
-    with timed(timings, "next_order"):
-        order = productimages_repo.next_display_order(db, productid)
+    if display_order is None:
+        with timed(timings, "next_order"):
+            order = productimages_repo.next_display_order(db, productid)
+    else:
+        order = display_order
     slug = storage_client.slugify(color)
     stem = "_".join(p for p in (slug, str(order)) if p)
     key = f"{stem}_{storage_client.short_hex()}"

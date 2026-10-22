@@ -467,7 +467,6 @@ export interface BackfillItems {
 export interface BackfillSources {
   originals: ProductImages;
   generated_preview: string;
-  colors: string[];
   suggested_aspect: string;
 }
 
