@@ -55,9 +55,9 @@ def load_examples() -> dict[str, str]:
 
 def build_prompt(facts: ProductFacts, owner_note: str | None = None) -> str:
     # Tag values are limited to what the product's category family may use (tag_vocab.json).
+    # retail's build_prompt.js throws for a category in no family; Backfill still needs
+    # descriptions for those (child wear), so their tags are all "always empty" instead.
     family = family_of(facts.categoryid)
-    if family is None:
-        raise ValueError(f"product {facts.productid}: category {facts.categoryid} is in no tag_vocab family")
     data = (
         f"name: {facts.name}\ncategory: {facts.category_name}\nfabric: {facts.fabric}\n"
         f"colours: {', '.join(facts.colours)}\nsizes: {', '.join(facts.sizes)}"

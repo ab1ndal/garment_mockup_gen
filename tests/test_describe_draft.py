@@ -65,12 +65,6 @@ def test_owner_note_reaches_prompt():
     assert "has mirror work" in _blocks(c.calls[0])[-1]["text"]
 
 
-def test_unknown_category_fails_draft():
-    facts = ProductFacts("BC1", "X", "XX", "X", None, [], [], None)
-    with pytest.raises(d.DraftFailed, match="no tag_vocab family"):
-        d.draft_description(facts, [_img()], None, client=FakeClient(_msg(json.dumps(_OK))))
-
-
 def test_parses_draft():
     out = d.draft_description(_FACTS, [_img()], None, client=FakeClient(_msg(json.dumps(_OK))))
     assert out == d.Draft("Flowing drape with a resham jaal.", "saree", ["border width"], [])

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+import json
 import shutil
 import subprocess
 
@@ -69,9 +70,11 @@ def test_tags_block_uses_category_family():
     assert "office" not in prompt_block("lehenga").split("- work:")[0]
 
 
-def test_unknown_category_raises():
-    with pytest.raises(ValueError, match="category XX is in no tag_vocab family"):
-        build_prompt(_facts(categoryid="XX"))
+def test_category_outside_vocab_gets_empty_tags():
+    # Child wear etc. still need descriptions; their tags are left empty.
+    p = build_prompt(_facts(categoryid="C-KP"))
+    assert prompt_block(None) in p
+    assert "- occasion: always empty for this product" in p
 
 
 def test_family_of():
@@ -82,13 +85,13 @@ def test_family_of():
 
 
 @pytest.mark.parametrize("family", ["saree", "lehenga", "dress_material", "women_ready",
-                                    "men_ethnic", "men_western"])
+                                    "men_ethnic", "men_western", None])
 def test_prompt_block_matches_retail_js(family):
     js = _RETAIL / "scripts" / "describe" / "tag_vocab.js"
     if not js.exists() or shutil.which("node") is None:
         pytest.skip("no sibling retail-inventory checkout or node")
     out = subprocess.run(
-        ["node", "-e", f"process.stdout.write(require({str(js)!r}).promptBlock({family!r}))"],
+        ["node", "-e", f"process.stdout.write(require({str(js)!r}).promptBlock({json.dumps(family)}))"],
         capture_output=True, text=True, check=True).stdout
     assert prompt_block(family) == out
 

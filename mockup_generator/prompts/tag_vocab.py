@@ -33,7 +33,7 @@ def allowed(group: str, family: str | None) -> list[str]:
     return [v["value"] for v in g["values"] if family in v.get("families", g["families"])]
 
 
-def prompt_block(family: str) -> str:
+def prompt_block(family: str | None) -> str:
     """The TAGS block of prompt.md for one family."""
     def line(group: str, how: str) -> str:
         vals = allowed(group, family)

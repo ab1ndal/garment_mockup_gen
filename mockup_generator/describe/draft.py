@@ -91,10 +91,7 @@ def draft_description(facts: ProductFacts, originals: list[bytes], mockup: bytes
                       client: anthropic.Anthropic | None = None) -> Draft:
     if not originals and mockup is None:
         raise DraftFailed("no images to draft from")
-    try:
-        content = _content(facts, originals, mockup, owner_note)
-    except ValueError as exc:  # category outside the tag vocabulary
-        raise DraftFailed(str(exc)) from exc
+    content = _content(facts, originals, mockup, owner_note)
     try:
         resp = (client or _client()).messages.create(
             model=settings.description_model,
