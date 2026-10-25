@@ -1,31 +1,34 @@
 {
-  "_note": "DRAFT 2026-10-24, awaiting owner approval. Allowed tag values per category family. A value with no 'families' applies to every family the group applies to. 'aliases' map free-text model output to a canonical value; anything unmapped goes to the review list.",
+  "_note": "Approved by the owner 2026-10-25 (all 52 categories). Allowed tag values per category family. A value with no 'families' applies to every family the group applies to. 'aliases' map free-text model output to a canonical value; anything unmapped goes to the review list.",
   "families": {
     "saree":          { "label": "Sarees",                 "categories": ["SA"] },
-    "lehenga":        { "label": "Lehengas",               "categories": ["LE"] },
+    "lehenga":        { "label": "Lehengas",               "categories": ["LE", "LCH"] },
     "dress_material": { "label": "Suits (dress material)", "categories": ["ST"] },
-    "women_ready":    { "label": "Women ready-made",       "categories": ["KUR", "RMS", "GWN", "DRS", "CRD", "TOP", "SHR", "SKT-TOP"] },
-    "men_ethnic":     { "label": "Men ethnic",             "categories": ["KP", "SW", "SK", "NHJ", "IW", "SJ-2P", "SJ-3P"] },
-    "men_western":    { "label": "Men western",            "categories": ["SHT", "T-SHT", "BLZ", "S2P", "S3P", "S5P", "PNT", "FRMP"] }
+    "women_ready":    { "label": "Women ready-made",       "categories": ["KUR", "RMS", "GWN", "DRS", "CRD", "TOP", "SHR", "SKT-TOP", "LG", "PL"] },
+    "men_ethnic":     { "label": "Men & boys ethnic",      "categories": ["KP", "SW", "SK", "NHJ", "IW", "SJ-2P", "SJ-3P", "C-KP", "C-SW", "C-IW", "IP", "IH", "GD"] },
+    "men_western":    { "label": "Men & boys western",     "categories": ["SHT", "T-SHT", "BLZ", "S2P", "S3P", "S5P", "PNT", "FRMP", "JNS", "TRS", "SWT-SHT", "C-S5P", "C-S3P"] },
+    "dupatta_shawl":  { "label": "Dupattas & shawls",      "categories": ["DPT", "SHWL"] },
+    "men_fabric":     { "label": "Men's fabric & joda",    "categories": ["JDA", "J-PS", "J-SF", "J-S", "FAB-V", "FAB-R", "FAB-S"] },
+    "accessories":    { "label": "Accessories",            "categories": ["GSFa", "GMala", "ACC"] }
   },
   "groups": {
     "occasion": {
       "label": "Occasion", "shop_filter": true,
-      "families": ["saree", "lehenga", "dress_material", "women_ready", "men_ethnic", "men_western"],
+      "families": ["saree", "lehenga", "dress_material", "women_ready", "men_ethnic", "men_western", "dupatta_shawl", "men_fabric", "accessories"],
       "values": [
         { "value": "wedding",      "label": "Wedding" },
         { "value": "reception",    "label": "Reception" },
-        { "value": "sangeet",      "label": "Sangeet",        "families": ["saree", "lehenga", "dress_material", "women_ready", "men_ethnic"] },
-        { "value": "mehndi-haldi", "label": "Mehndi & Haldi", "families": ["saree", "lehenga", "dress_material", "women_ready", "men_ethnic"] },
+        { "value": "sangeet",      "label": "Sangeet",        "families": ["saree", "lehenga", "dress_material", "women_ready", "men_ethnic", "dupatta_shawl", "accessories"] },
+        { "value": "mehndi-haldi", "label": "Mehndi & Haldi", "families": ["saree", "lehenga", "dress_material", "women_ready", "men_ethnic", "dupatta_shawl", "accessories"] },
         { "value": "festive",      "label": "Festive" },
         { "value": "party",        "label": "Party" },
-        { "value": "casual",       "label": "Casual",         "families": ["saree", "dress_material", "women_ready", "men_ethnic", "men_western"] },
-        { "value": "office",       "label": "Office",         "families": ["saree", "dress_material", "women_ready", "men_western"] }
+        { "value": "casual",       "label": "Casual",         "families": ["saree", "dress_material", "women_ready", "men_ethnic", "men_western", "dupatta_shawl", "men_fabric"] },
+        { "value": "office",       "label": "Office",         "families": ["saree", "dress_material", "women_ready", "men_western", "dupatta_shawl", "men_fabric"] }
       ]
     },
     "work": {
       "label": "Work", "shop_filter": true,
-      "families": ["saree", "lehenga", "dress_material", "women_ready", "men_ethnic", "men_western"],
+      "families": ["saree", "lehenga", "dress_material", "women_ready", "men_ethnic", "men_western", "dupatta_shawl", "accessories"],
       "values": [
         { "value": "embroidery",       "label": "Embroidery" },
         { "value": "thread",           "label": "Thread work" },
@@ -49,7 +52,7 @@
     },
     "print_weave": {
       "label": "Print / weave",
-      "families": ["saree", "lehenga", "dress_material", "women_ready", "men_ethnic", "men_western"],
+      "families": ["saree", "lehenga", "dress_material", "women_ready", "men_ethnic", "men_western", "dupatta_shawl", "men_fabric", "accessories"],
       "values": [
         { "value": "plain",          "label": "Plain" },
         { "value": "self-design",    "label": "Self design" },

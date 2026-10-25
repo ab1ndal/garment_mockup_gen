@@ -71,8 +71,8 @@ def test_tags_block_uses_category_family():
 
 
 def test_category_outside_vocab_gets_empty_tags():
-    # Child wear etc. still need descriptions; their tags are left empty.
-    p = build_prompt(_facts(categoryid="C-KP"))
+    # A category added after the vocab still needs a description; its tags are left empty.
+    p = build_prompt(_facts(categoryid="NEW-CAT"))
     assert prompt_block(None) in p
     assert "- occasion: always empty for this product" in p
 
