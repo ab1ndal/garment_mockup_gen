@@ -115,6 +115,16 @@ class Settings:
         return _get("GEMINI_TEXT_MODEL", default="gemini-2.5-pro")  # type: ignore[return-value]
 
     @property
+    def anthropic_api_key(self) -> str:
+        """Claude API key for product description drafts."""
+        return _get("ANTHROPIC_API_KEY", required=True)  # type: ignore[return-value]
+
+    @property
+    def description_model(self) -> str:
+        """Claude model that drafts product descriptions."""
+        return _get("DESCRIPTION_MODEL", default="claude-opus-5-5")  # type: ignore[return-value]
+
+    @property
     def veo_model(self) -> str:
         """VEO video-generation model. Override for fast/lite variants."""
         return _get("VEO_MODEL", default="veo-3.1-generate-001")  # type: ignore[return-value]
