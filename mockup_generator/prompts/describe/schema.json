@@ -1,0 +1,12 @@
+{"type":"object","additionalProperties":false,
+ "required":["description","includes","work","print_weave","silhouette","length","neck","sleeve","occasion","uncertain","conflicts"],
+ "properties":{
+  "description":{"type":"string"},
+  "includes":{"type":"string"},
+  "work":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["type","placement","confidence"],"properties":{"type":{"type":"string"},"placement":{"type":"string"},"confidence":{"type":"number"}}}},
+  "print_weave":{"type":"array","items":{"type":"string"}},
+  "silhouette":{"type":"string"},"length":{"type":"string"},"neck":{"type":"string"},"sleeve":{"type":"string"},
+  "occasion":{"type":"array","items":{"type":"string"},"maxItems":3},
+   "uncertain":{"type":"array","items":{"type":"string"}},
+  "conflicts":{"type":"array","items":{"type":"string"}}
+ }}
