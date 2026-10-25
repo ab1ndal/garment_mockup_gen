@@ -47,6 +47,11 @@ All prompts live in **`mockup_generator/prompt.py`**. Each garment type has a de
 
 When updating prompts, preserve the structure: garment specs → model requirements → technical quality specs → safety instructions (remove tags, no mannequins, pixel-perfect replication).
 
+### Product Descriptions
+Backfill review shows a product's `products.description` and drafts a new one with Claude on click (`mockup_generator/describe/draft.py`, model `DESCRIPTION_MODEL`, default `claude-opus-5-5`). Approving the image saves an open draft as `description_source='ai_reviewed'`, only if the text and `description_reviewed_at` are unchanged since load.
+
+The prompt, schema and approved examples in `mockup_generator/prompts/describe/` are **verbatim copies** of retail-inventory's `scripts/describe/` (see `SOURCE.md`). Never edit them here: change them in retail-inventory, re-copy, and keep `tests/test_describe_prompt.py::test_vendored_matches_retail` green. Retail-inventory owns descriptions of already-live products; this app writes descriptions only for new products going live through Backfill.
+
 ### Data Flow
 1. User uploads images or points to a folder
 2. `app.py` selects the appropriate prompt from `prompt.py` based on garment type
@@ -57,6 +62,7 @@ When updating prompts, preserve the structure: garment specs → model requireme
 Stored in `.env` (gitignored):
 - `OPENAI_API_KEY`
 - `GOOGLE_API_KEY`
+- `ANTHROPIC_API_KEY` — Claude, for product description drafts (also an HF Space secret)
 
 ### Key Constants in `create_base.py`
 - Max input images per generation: 2 (loaded from folder sorted alphabetically)
