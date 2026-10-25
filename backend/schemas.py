@@ -159,6 +159,13 @@ class BackfillCountsResponse(BaseModel):
     counts: dict[str, int]   # {status: count} for each sub-tab
 
 
+class TagPick(BaseModel):
+    group: str
+    value: str
+    source: str  # "ai_reviewed" (kept from the AI) or "manual" (added by the reviewer)
+    confidence: float | None = None
+
+
 class BackfillApproveRequest(BaseModel):
     file_id: str
     productid: str
@@ -174,6 +181,10 @@ class BackfillApproveRequest(BaseModel):
     description: str | None = None
     expected_description: str | None = None
     expected_reviewed_at: str | None = None
+    # The reviewer's complete tag set, sent with a description draft. Saved only
+    # if the description saved. Fields are checked in the route for the same
+    # reason as the description length: bad tags must not block the image.
+    tags: list[TagPick] | None = None
 
 
 class BackfillDescription(BaseModel):
@@ -189,11 +200,43 @@ class BackfillDraftRequest(BaseModel):
     note: str | None = Field(default=None, max_length=MAX_DRAFT_NOTE_CHARS)
 
 
+class ProposedTagOut(BaseModel):
+    group: str
+    value: str
+    confidence: float | None
+
+
 class BackfillDraftResponse(BaseModel):
     description: str
     includes: str
     uncertain: list[str]
     conflicts: list[str]
+    tags: list[ProposedTagOut]
+
+
+class TagValue(BaseModel):
+    value: str
+    label: str
+
+
+class TagGroupOut(BaseModel):
+    group: str
+    label: str
+    single: bool
+    values: list[TagValue]
+
+
+class TagOut(BaseModel):
+    group: str
+    value: str
+    source: str
+    confidence: float | None
+
+
+class BackfillTags(BaseModel):
+    family: str | None
+    groups: list[TagGroupOut]
+    current: list[TagOut]
 
 
 class BackfillFlagRequest(BaseModel):
