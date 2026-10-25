@@ -40,7 +40,9 @@ from mockup_generator.db import (
     mockups_repo, product_descriptions_repo as descriptions_repo,
     productimages_repo, products_repo,
 )
-from mockup_generator.describe.draft import MAX_ORIGINALS, DraftFailed, draft_description
+from mockup_generator.describe.draft import (
+    MAX_DESCRIPTION_CHARS, MAX_ORIGINALS, DraftFailed, draft_description,
+)
 from mockup_generator.generation import publish, watermark
 from mockup_generator.integrations import drive_client
 from mockup_generator.integrations.drive_client import DriveNotConfigured
@@ -55,6 +57,8 @@ _STD_ASPECTS = [("1:1", 1.0), ("4:5", 0.8), ("3:4", 0.75), ("9:16", 0.5625), ("1
 _ALREADY_HANDLED = "This mockup was already handled by another reviewer."
 _DESCRIPTION_CHANGED = "Image approved, but the description changed since you opened it. Not saved."
 _DESCRIPTION_SAVE_FAILED = "Image approved, but the description could not be saved."
+_DESCRIPTION_TOO_LONG = (
+    f"Image approved, but the description is over {MAX_DESCRIPTION_CHARS} characters. Not saved.")
 
 
 def _suggest_aspect(w: int, h: int) -> str:
@@ -218,9 +222,12 @@ def approve(req: BackfillApproveRequest, background: BackgroundTasks,
 def _save_description(db: Client, req: BackfillApproveRequest) -> str | None:
     """Save the reviewer's draft once the image is published. Never raises: the
     image approval already happened, so a failure is returned as a warning."""
+    text = req.description.strip()
+    if len(text) > MAX_DESCRIPTION_CHARS:
+        return _DESCRIPTION_TOO_LONG
     try:
         saved = descriptions_repo.save_reviewed(
-            db, req.productid, req.description.strip(),
+            db, req.productid, text,
             expected_description=req.expected_description,
             expected_reviewed_at=req.expected_reviewed_at)
     except Exception as exc:  # noqa: BLE001 - image is published; report, don't fail

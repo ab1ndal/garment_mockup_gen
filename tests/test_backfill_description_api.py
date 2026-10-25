@@ -186,10 +186,18 @@ def test_approve_description_error_warns(client, approving, monkeypatch, caplog)
     assert any("description save failed" in rec.getMessage() for rec in caplog.records)
 
 
-def test_approve_description_over_cap_422(client, approving):
+def test_approve_description_over_cap_still_approves(client, approving):
     r = _approve(client, description="x" * 601)
-    assert r.status_code == 422
-    assert "published" not in approving
+    assert r.status_code == 200 and approving["published"]
+    assert "saved" not in approving
+    assert r.json()["description_warning"] == (
+        "Image approved, but the description is over 600 characters. Not saved.")
+
+
+def test_approve_description_cap_counts_trimmed_text(client, approving):
+    r = _approve(client, description=" " * 10 + "x" * 600 + "\n")
+    assert r.status_code == 200 and r.json()["description_warning"] is None
+    assert approving["saved"][1] == "x" * 600
 
 
 def test_description_routes_are_sync():

@@ -5,8 +5,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from mockup_generator.describe.draft import MAX_DESCRIPTION_CHARS
-
 MAX_DRAFT_NOTE_CHARS = 500
 
 
@@ -171,7 +169,9 @@ class BackfillApproveRequest(BaseModel):
     # Present only when the reviewer has a description draft open: it is saved
     # after the image publishes, if the product's description and review stamp
     # still equal the values the panel loaded.
-    description: str | None = Field(default=None, max_length=MAX_DESCRIPTION_CHARS)
+    # Length is checked in the route, not here: an over-long draft must not
+    # block the image approval.
+    description: str | None = None
     expected_description: str | None = None
     expected_reviewed_at: str | None = None
 

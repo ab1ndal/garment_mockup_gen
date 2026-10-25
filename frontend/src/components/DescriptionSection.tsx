@@ -5,6 +5,7 @@ import {
 } from "../api";
 
 const NOTE_MAX = 500;
+const DESCRIPTION_MAX = 600;  // backend cap; longer text is not saved
 const WORDS_MIN = 15;
 const WORDS_MAX = 60;
 
@@ -141,6 +142,7 @@ export default function DescriptionSection({
               id="bf-desc-draft"
               value={draft}
               rows={4}
+              maxLength={DESCRIPTION_MAX}
               onChange={(e) => onDraftChange(e.target.value)}
               aria-describedby="bf-desc-count"
             />

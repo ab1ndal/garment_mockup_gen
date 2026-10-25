@@ -116,3 +116,15 @@ def test_api_error_raises_draft_failed():
                 "overloaded", response=httpx2.Response(529, request=req), body=None)
     with pytest.raises(d.DraftFailed, match="Claude API error"):
         d.draft_description(_FACTS, [_img()], None, client=Boom(None))
+
+
+def test_unreadable_image_raises_draft_failed():
+    with pytest.raises(d.DraftFailed, match="could not read image orig_2"):
+        d.draft_description(_FACTS, [_img(), b"not an image"], None,
+                            client=FakeClient(_msg(json.dumps(_OK))))
+
+
+def test_empty_model_draft_raises():
+    with pytest.raises(d.DraftFailed, match="empty"):
+        d.draft_description(_FACTS, [_img()], None,
+                            client=FakeClient(_msg(json.dumps({**_OK, "description": "  "}))))

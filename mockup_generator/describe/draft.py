@@ -75,18 +75,22 @@ def _system() -> str:
     return f"{_STYLE_INTRO}\n\n{examples}"
 
 
-def _image_block(raw: bytes) -> dict:
-    return {"type": "image",
-            "source": {"type": "base64", "media_type": "image/jpeg", "data": prepare_image(raw)}}
+def _image_block(raw: bytes, label: str) -> dict:
+    try:
+        data = prepare_image(raw)
+    except (OSError, ValueError, Image.DecompressionBombError) as exc:
+        # Drive folders can hold truncated JPEGs, SVGs or HEICs Pillow can't open.
+        raise DraftFailed(f"could not read image {label}") from exc
+    return {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": data}}
 
 
 def _content(facts: ProductFacts, originals: list[bytes], mockup: bytes | None,
              owner_note: str | None) -> list[dict]:
     blocks: list[dict] = []
     for i, raw in enumerate(originals[:MAX_ORIGINALS], start=1):
-        blocks += [{"type": "text", "text": f"orig_{i}"}, _image_block(raw)]
+        blocks += [{"type": "text", "text": f"orig_{i}"}, _image_block(raw, f"orig_{i}")]
     if mockup is not None:
-        blocks += [{"type": "text", "text": "mockup_1"}, _image_block(mockup)]
+        blocks += [{"type": "text", "text": "mockup_1"}, _image_block(mockup, "mockup_1")]
     blocks.append({"type": "text", "text": build_prompt(facts, owner_note)})
     return blocks
 
@@ -121,6 +125,9 @@ def draft_description(facts: ProductFacts, originals: list[bytes], mockup: bytes
     except json.JSONDecodeError as exc:
         raise DraftFailed("model returned invalid JSON") from exc
     description = (data.get("description") or "").strip()
+    if not description:
+        # Approving an empty draft would wipe the current description.
+        raise DraftFailed("model returned an empty description")
     if len(description) > MAX_DESCRIPTION_CHARS:
         raise DraftFailed(f"draft is {len(description)} chars, over {MAX_DESCRIPTION_CHARS}")
     return Draft(description=description, includes=(data.get("includes") or "").strip(),
