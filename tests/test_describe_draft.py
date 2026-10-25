@@ -103,3 +103,16 @@ def test_prepare_image_keeps_small_and_converts_rgba():
     Image.new("RGBA", (50, 20), (0, 0, 0, 0)).save(buf, format="PNG")
     out = Image.open(BytesIO(base64.b64decode(d.prepare_image(buf.getvalue()))))
     assert out.size == (50, 20) and out.mode == "RGB"
+
+
+def test_api_error_raises_draft_failed():
+    import anthropic
+    import httpx2
+
+    class Boom(FakeClient):
+        def create(self, **kw):
+            req = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+            raise anthropic.InternalServerError(
+                "overloaded", response=httpx2.Response(529, request=req), body=None)
+    with pytest.raises(d.DraftFailed, match="Claude API error"):
+        d.draft_description(_FACTS, [_img()], None, client=Boom(None))

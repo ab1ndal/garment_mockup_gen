@@ -100,13 +100,17 @@ def draft_description(facts: ProductFacts, originals: list[bytes], mockup: bytes
                       client: anthropic.Anthropic | None = None) -> Draft:
     if not originals and mockup is None:
         raise DraftFailed("no images to draft from")
-    resp = (client or _client()).messages.create(
-        model=settings.description_model,
-        max_tokens=_MAX_TOKENS,
-        system=_system(),
-        output_config={"effort": _EFFORT, "format": {"type": "json_schema", "schema": _api_schema()}},
-        messages=[{"role": "user", "content": _content(facts, originals, mockup, owner_note)}],
-    )
+    try:
+        resp = (client or _client()).messages.create(
+            model=settings.description_model,
+            max_tokens=_MAX_TOKENS,
+            system=_system(),
+            output_config={"effort": _EFFORT, "format": {"type": "json_schema", "schema": _api_schema()}},
+            messages=[{"role": "user", "content": _content(facts, originals, mockup, owner_note)}],
+        )
+    except anthropic.APIError as exc:  # the SDK has already retried 429/5xx
+        log.warning("description draft for %s: Claude API error: %s", facts.productid, exc)
+        raise DraftFailed(f"Claude API error: {exc}") from exc
     if resp.stop_reason != "end_turn":
         log.warning("description draft for %s stopped with %s (request %s)",
                     facts.productid, resp.stop_reason, getattr(resp, "_request_id", None))
