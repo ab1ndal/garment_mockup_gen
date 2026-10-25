@@ -8,9 +8,9 @@ from PIL import Image
 
 from mockup_generator.config import settings
 from mockup_generator.describe import draft as d
-from mockup_generator.prompts.describe_prompt import ProductFacts
+from mockup_generator.prompts.describe_prompt import ProductFacts, load_schema
 
-_FACTS = ProductFacts("BC25008", "Georgette Saree", "Saree", "Georgette", ["Red"], ["Free Size"], None)
+_FACTS = ProductFacts("BC25008", "Georgette Saree", "SA", "Saree", "Georgette", ["Red"], ["Free Size"], None)
 _OK = {"description": "Flowing drape with a resham jaal.", "includes": "saree", "work": [],
        "print_weave": [], "silhouette": "", "length": "", "neck": "", "sleeve": "",
        "occasion": [], "uncertain": ["border width"], "conflicts": []}
@@ -50,7 +50,7 @@ def test_request_shape():
     assert call["output_config"]["effort"] == "medium"
     fmt = call["output_config"]["format"]
     assert fmt["type"] == "json_schema"
-    assert "maxItems" not in json.dumps(fmt["schema"])
+    assert fmt["schema"] == load_schema()
     kinds = [(b["type"], b.get("text")) for b in _blocks(call)]
     assert kinds[:6] == [("text", "orig_1"), ("image", None), ("text", "orig_2"), ("image", None),
                          ("text", "mockup_1"), ("image", None)]
@@ -63,6 +63,12 @@ def test_owner_note_reaches_prompt():
     c = FakeClient(_msg(json.dumps(_OK)))
     d.draft_description(_FACTS, [_img()], None, owner_note="has mirror work", client=c)
     assert "has mirror work" in _blocks(c.calls[0])[-1]["text"]
+
+
+def test_unknown_category_fails_draft():
+    facts = ProductFacts("BC1", "X", "XX", "X", None, [], [], None)
+    with pytest.raises(d.DraftFailed, match="no tag_vocab family"):
+        d.draft_description(facts, [_img()], None, client=FakeClient(_msg(json.dumps(_OK))))
 
 
 def test_parses_draft():

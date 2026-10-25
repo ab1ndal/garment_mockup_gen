@@ -67,14 +67,14 @@ def test_get_current_maps_row():
 def test_get_facts_dedupes_colours_and_sizes():
     c = FakeClient({
         "products": [{"productid": "BC1", "name": "Georgette Saree", "fabric": "Georgette",
-                      "description": None, "categories": {"name": "Saree"}}],
+                      "categoryid": "SA", "description": None, "categories": {"name": "Saree"}}],
         "productsizecolors": [
             {"color": "Red ", "size": "Free Size"}, {"color": "red", "size": "free size"},
             {"color": "Blue", "size": None}, {"color": None, "size": "XL"},
         ],
     })
     f = repo.get_facts(c, "BC1")
-    assert f.name == "Georgette Saree" and f.category_name == "Saree"
+    assert f.name == "Georgette Saree" and f.categoryid == "SA" and f.category_name == "Saree"
     assert f.colours == ["Blue", "Red"]
     assert f.sizes == ["Free Size", "XL"]
 

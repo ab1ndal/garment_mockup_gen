@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from importlib import resources
 
+from mockup_generator.prompts.tag_vocab import family_of, prompt_block
+
 # Long or markdown-styled descriptions are earlier AI photo captions (owner: often
 # wrong); short ones are the shop's own. Same rule as build_prompt.js.
 _AI_CAPTION_MIN_CHARS = 201
@@ -24,6 +26,7 @@ _SHOP_SOURCE = "written by the shop; facts here are true unless a photo clearly 
 class ProductFacts:
     productid: str
     name: str
+    categoryid: str | None
     category_name: str | None
     fabric: str | None
     colours: list[str]
@@ -51,6 +54,10 @@ def load_examples() -> dict[str, str]:
 
 
 def build_prompt(facts: ProductFacts, owner_note: str | None = None) -> str:
+    # Tag values are limited to what the product's category family may use (tag_vocab.json).
+    family = family_of(facts.categoryid)
+    if family is None:
+        raise ValueError(f"product {facts.productid}: category {facts.categoryid} is in no tag_vocab family")
     data = (
         f"name: {facts.name}\ncategory: {facts.category_name}\nfabric: {facts.fabric}\n"
         f"colours: {', '.join(facts.colours)}\nsizes: {', '.join(facts.sizes)}"
@@ -67,4 +74,5 @@ def build_prompt(facts: ProductFacts, owner_note: str | None = None) -> str:
         .replace("{TEXT_SOURCE}", _AI_SOURCE if ai_written else _SHOP_SOURCE)
         .replace("{TEXT}", text or "(none)")
         .replace("{OWNER_NOTE}", note)
+        .replace("{TAGS}", prompt_block(family))
     )
