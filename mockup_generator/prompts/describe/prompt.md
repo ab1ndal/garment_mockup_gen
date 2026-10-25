@@ -35,6 +35,6 @@ DESCRIPTION RULES:
 - If the photos are too unclear, keep it short and list what is unknown in "uncertain".
 - Anything you list in "uncertain" must NOT appear in the description or "includes".
 
-TAGS: use short lowercase values. occasion: up to 3 from [wedding, reception, sangeet, mehndi-haldi, party, festive, casual, office]; use "festive" when the piece suits festivals (there is no separate festival tag). work: "type" is the technique only (e.g. "zari", "thread embroidery"), with no placement or detail in it; put where it sits in "placement"; each item carries confidence 0–1. silhouette/length/neck/sleeve: "" if not applicable, not visible, or the piece is flat fabric (e.g. saree, blouse piece).
+{TAGS}
 
 "conflicts": only where the shop's own text or catalogue data and the photos clearly disagree about something other than stitching. When the current description is marked as earlier AI-written, trust the photos instead and do not report its errors as conflicts.

@@ -51,7 +51,7 @@ def _distinct(values) -> list[str]:
 def get_facts(client: Client, productid: str) -> ProductFacts | None:
     resp = (
         client.table("products")
-        .select("productid, name, fabric, description, categories(name)")
+        .select("productid, name, categoryid, fabric, description, categories(name)")
         .eq("productid", productid).limit(1).execute()
     )
     rows = resp.data or []
@@ -63,7 +63,7 @@ def get_facts(client: Client, productid: str) -> ProductFacts | None:
         .eq("productid", productid).execute()
     ).data or []
     return ProductFacts(
-        productid=p["productid"], name=p["name"],
+        productid=p["productid"], name=p["name"], categoryid=p.get("categoryid"),
         category_name=(p.get("categories") or {}).get("name"), fabric=p.get("fabric"),
         colours=_distinct(v.get("color") for v in variants),
         sizes=_distinct(v.get("size") for v in variants),

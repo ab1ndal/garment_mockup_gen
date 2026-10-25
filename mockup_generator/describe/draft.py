@@ -7,7 +7,6 @@ output schema. Stateless: returns a draft, writes nothing.
 from __future__ import annotations
 
 import base64
-import copy
 import json
 import logging
 from dataclasses import dataclass
@@ -29,8 +28,6 @@ _MAX_EDGE = 1568          # larger images are downscaled by the API anyway; send
 _JPEG_QUALITY = 85
 _MAX_TOKENS = 16000
 _EFFORT = "medium"
-# Structured outputs reject some JSON Schema keywords the shared schema uses.
-_UNSUPPORTED_SCHEMA_KEYS = ("maxItems",)
 
 _STYLE_INTRO = (
     "Below are product descriptions the shop owner approved. "
@@ -58,16 +55,6 @@ def prepare_image(raw: bytes) -> str:
         buf = BytesIO()
         img.save(buf, format="JPEG", quality=_JPEG_QUALITY)
     return base64.standard_b64encode(buf.getvalue()).decode("ascii")
-
-
-def _api_schema() -> dict:
-    def strip(node):
-        if isinstance(node, dict):
-            return {k: strip(v) for k, v in node.items() if k not in _UNSUPPORTED_SCHEMA_KEYS}
-        if isinstance(node, list):
-            return [strip(v) for v in node]
-        return node
-    return strip(copy.deepcopy(load_schema()))
 
 
 def _system() -> str:
@@ -104,13 +91,14 @@ def draft_description(facts: ProductFacts, originals: list[bytes], mockup: bytes
                       client: anthropic.Anthropic | None = None) -> Draft:
     if not originals and mockup is None:
         raise DraftFailed("no images to draft from")
+    content = _content(facts, originals, mockup, owner_note)
     try:
         resp = (client or _client()).messages.create(
             model=settings.description_model,
             max_tokens=_MAX_TOKENS,
             system=_system(),
-            output_config={"effort": _EFFORT, "format": {"type": "json_schema", "schema": _api_schema()}},
-            messages=[{"role": "user", "content": _content(facts, originals, mockup, owner_note)}],
+            output_config={"effort": _EFFORT, "format": {"type": "json_schema", "schema": load_schema()}},
+            messages=[{"role": "user", "content": content}],
         )
     except anthropic.APIError as exc:  # the SDK has already retried 429/5xx
         log.warning("description draft for %s: Claude API error: %s", facts.productid, exc)

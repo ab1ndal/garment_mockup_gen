@@ -8,9 +8,9 @@ from PIL import Image
 
 from mockup_generator.config import settings
 from mockup_generator.describe import draft as d
-from mockup_generator.prompts.describe_prompt import ProductFacts
+from mockup_generator.prompts.describe_prompt import ProductFacts, load_schema
 
-_FACTS = ProductFacts("BC25008", "Georgette Saree", "Saree", "Georgette", ["Red"], ["Free Size"], None)
+_FACTS = ProductFacts("BC25008", "Georgette Saree", "SA", "Saree", "Georgette", ["Red"], ["Free Size"], None)
 _OK = {"description": "Flowing drape with a resham jaal.", "includes": "saree", "work": [],
        "print_weave": [], "silhouette": "", "length": "", "neck": "", "sleeve": "",
        "occasion": [], "uncertain": ["border width"], "conflicts": []}
@@ -50,7 +50,7 @@ def test_request_shape():
     assert call["output_config"]["effort"] == "medium"
     fmt = call["output_config"]["format"]
     assert fmt["type"] == "json_schema"
-    assert "maxItems" not in json.dumps(fmt["schema"])
+    assert fmt["schema"] == load_schema()
     kinds = [(b["type"], b.get("text")) for b in _blocks(call)]
     assert kinds[:6] == [("text", "orig_1"), ("image", None), ("text", "orig_2"), ("image", None),
                          ("text", "mockup_1"), ("image", None)]

@@ -14,7 +14,7 @@ from mockup_generator.db.profiles_repo import Profile
 from mockup_generator.describe.draft import Draft, DraftFailed
 from mockup_generator.prompts.describe_prompt import ProductFacts
 
-_FACTS = ProductFacts("BC25001", "Georgette Saree", "Saree", "Georgette", [], [], "old")
+_FACTS = ProductFacts("BC25001", "Georgette Saree", "SA", "Saree", "Georgette", [], [], "old")
 
 
 def _png() -> bytes:

@@ -3,10 +3,13 @@
  "properties":{
   "description":{"type":"string"},
   "includes":{"type":"string"},
-  "work":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["type","placement","confidence"],"properties":{"type":{"type":"string"},"placement":{"type":"string"},"confidence":{"type":"number"}}}},
-  "print_weave":{"type":"array","items":{"type":"string"}},
-  "silhouette":{"type":"string"},"length":{"type":"string"},"neck":{"type":"string"},"sleeve":{"type":"string"},
-  "occasion":{"type":"array","items":{"type":"string"},"maxItems":3},
-   "uncertain":{"type":"array","items":{"type":"string"}},
+  "work":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["type","placement","confidence"],"properties":{"type":{"type":"string","enum":["embroidery","thread","resham","zari","zardosi","aari","chikankari","sequin","cutdana","nalki","stone","moti","mirror","gota-patti","patch","cut-work","lace","pintuck"]},"placement":{"type":"string"},"confidence":{"type":"number"}}}},
+  "print_weave":{"type":"array","items":{"type":"string","enum":["plain","self-design","floral-print","geometric-print","paisley","digital-print","foil-print","block-print","bandhej","leheriya","butis","checks","stripes","banarasi","brocade","jacquard"]}},
+  "silhouette":{"type":"string","enum":["","straight","a-line","anarkali","flared","kalidar","mermaid","fit-and-flare","angrakha","asymmetric","kaftan","slim-fit","regular-fit"]},
+  "length":{"type":"string","enum":["","crop","hip","thigh","knee","below-knee","calf","ankle","floor"]},
+  "neck":{"type":"string","enum":["","round","v-neck","band-collar","shirt-collar","boat","square","sweetheart","high-neck","off-shoulder","notched","lapel","polo"]},
+  "sleeve":{"type":"string","enum":["","sleeveless","short","elbow","three-quarter","full","bell","puff","cold-shoulder"]},
+  "occasion":{"type":"array","items":{"type":"string","enum":["wedding","reception","sangeet","mehndi-haldi","festive","party","casual","office"]}},
+  "uncertain":{"type":"array","items":{"type":"string"}},
   "conflicts":{"type":"array","items":{"type":"string"}}
  }}

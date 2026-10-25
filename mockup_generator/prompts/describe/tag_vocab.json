@@ -1,0 +1,178 @@
+{
+  "_note": "Approved by the owner 2026-10-25 (all 52 categories). Allowed tag values per category family. A value with no 'families' applies to every family the group applies to. 'aliases' map free-text model output to a canonical value; anything unmapped goes to the review list.",
+  "families": {
+    "saree":          { "label": "Sarees",                 "categories": ["SA"] },
+    "lehenga":        { "label": "Lehengas",               "categories": ["LE", "LCH"] },
+    "dress_material": { "label": "Suits (dress material)", "categories": ["ST"] },
+    "women_ready":    { "label": "Women ready-made",       "categories": ["KUR", "RMS", "GWN", "DRS", "CRD", "TOP", "SHR", "SKT-TOP", "LG", "PL"] },
+    "men_ethnic":     { "label": "Men & boys ethnic",      "categories": ["KP", "SW", "SK", "NHJ", "IW", "SJ-2P", "SJ-3P", "C-KP", "C-SW", "C-IW", "IP", "IH", "GD"] },
+    "men_western":    { "label": "Men & boys western",     "categories": ["SHT", "T-SHT", "BLZ", "S2P", "S3P", "S5P", "PNT", "FRMP", "JNS", "TRS", "SWT-SHT", "C-S5P", "C-S3P"] },
+    "dupatta_shawl":  { "label": "Dupattas & shawls",      "categories": ["DPT", "SHWL"] },
+    "men_fabric":     { "label": "Men's fabric & joda",    "categories": ["JDA", "J-PS", "J-SF", "J-S", "FAB-V", "FAB-R", "FAB-S"] },
+    "accessories":    { "label": "Accessories",            "categories": ["GSFa", "GMala", "ACC"] }
+  },
+  "groups": {
+    "occasion": {
+      "label": "Occasion", "shop_filter": true,
+      "families": ["saree", "lehenga", "dress_material", "women_ready", "men_ethnic", "men_western", "dupatta_shawl", "men_fabric", "accessories"],
+      "values": [
+        { "value": "wedding",      "label": "Wedding" },
+        { "value": "reception",    "label": "Reception" },
+        { "value": "sangeet",      "label": "Sangeet",        "families": ["saree", "lehenga", "dress_material", "women_ready", "men_ethnic", "dupatta_shawl", "accessories"] },
+        { "value": "mehndi-haldi", "label": "Mehndi & Haldi", "families": ["saree", "lehenga", "dress_material", "women_ready", "men_ethnic", "dupatta_shawl", "accessories"] },
+        { "value": "festive",      "label": "Festive" },
+        { "value": "party",        "label": "Party" },
+        { "value": "casual",       "label": "Casual",         "families": ["saree", "dress_material", "women_ready", "men_ethnic", "men_western", "dupatta_shawl", "men_fabric"] },
+        { "value": "office",       "label": "Office",         "families": ["saree", "dress_material", "women_ready", "men_western", "dupatta_shawl", "men_fabric"] }
+      ]
+    },
+    "work": {
+      "label": "Work", "shop_filter": true,
+      "families": ["saree", "lehenga", "dress_material", "women_ready", "men_ethnic", "men_western", "dupatta_shawl", "accessories"],
+      "values": [
+        { "value": "embroidery",       "label": "Embroidery" },
+        { "value": "thread",           "label": "Thread work" },
+        { "value": "resham",           "label": "Resham" },
+        { "value": "zari",             "label": "Zari" },
+        { "value": "zardosi",          "label": "Zardosi" },
+        { "value": "aari",             "label": "Aari" },
+        { "value": "chikankari",       "label": "Chikankari" },
+        { "value": "sequin",           "label": "Sequin" },
+        { "value": "cutdana",          "label": "Cutdana" },
+        { "value": "nalki",            "label": "Nalki" },
+        { "value": "stone",            "label": "Stone" },
+        { "value": "moti",             "label": "Moti & beads" },
+        { "value": "mirror",           "label": "Mirror" },
+        { "value": "gota-patti",       "label": "Gota patti" },
+        { "value": "patch",            "label": "Patch work" },
+        { "value": "cut-work",         "label": "Cut work" },
+        { "value": "lace",             "label": "Lace & trims" },
+        { "value": "pintuck",          "label": "Pintucks" }
+      ]
+    },
+    "print_weave": {
+      "label": "Print / weave",
+      "families": ["saree", "lehenga", "dress_material", "women_ready", "men_ethnic", "men_western", "dupatta_shawl", "men_fabric", "accessories"],
+      "values": [
+        { "value": "plain",          "label": "Plain" },
+        { "value": "self-design",    "label": "Self design" },
+        { "value": "floral-print",   "label": "Floral print" },
+        { "value": "geometric-print","label": "Geometric / abstract print" },
+        { "value": "paisley",        "label": "Paisley" },
+        { "value": "digital-print",  "label": "Digital print" },
+        { "value": "foil-print",     "label": "Foil print" },
+        { "value": "block-print",    "label": "Block print" },
+        { "value": "bandhej",        "label": "Bandhej" },
+        { "value": "leheriya",       "label": "Leheriya" },
+        { "value": "butis",          "label": "Butis" },
+        { "value": "checks",         "label": "Checks" },
+        { "value": "stripes",        "label": "Stripes" },
+        { "value": "banarasi",       "label": "Banarasi weave" },
+        { "value": "brocade",        "label": "Brocade" },
+        { "value": "jacquard",       "label": "Jacquard" }
+      ]
+    },
+    "silhouette": {
+      "label": "Silhouette",
+      "families": ["lehenga", "women_ready", "men_ethnic", "men_western"],
+      "values": [
+        { "value": "straight",      "label": "Straight",      "families": ["women_ready", "men_ethnic"] },
+        { "value": "a-line",        "label": "A-line",        "families": ["lehenga", "women_ready"] },
+        { "value": "anarkali",      "label": "Anarkali",      "families": ["women_ready"] },
+        { "value": "flared",        "label": "Flared",        "families": ["lehenga", "women_ready"] },
+        { "value": "kalidar",       "label": "Kalidar",       "families": ["lehenga", "women_ready"] },
+        { "value": "mermaid",       "label": "Mermaid",       "families": ["lehenga", "women_ready"] },
+        { "value": "fit-and-flare", "label": "Fit and flare", "families": ["women_ready"] },
+        { "value": "angrakha",      "label": "Angrakha",      "families": ["women_ready", "men_ethnic"] },
+        { "value": "asymmetric",    "label": "Asymmetric",    "families": ["women_ready", "men_ethnic"] },
+        { "value": "kaftan",        "label": "Kaftan",        "families": ["women_ready"] },
+        { "value": "slim-fit",      "label": "Slim fit",      "families": ["men_ethnic", "men_western"] },
+        { "value": "regular-fit",   "label": "Regular fit",   "families": ["men_ethnic", "men_western"] }
+      ]
+    },
+    "length": {
+      "label": "Length",
+      "families": ["women_ready", "men_ethnic"],
+      "values": [
+        { "value": "crop",       "label": "Crop",       "families": ["women_ready"] },
+        { "value": "hip",        "label": "Hip length" },
+        { "value": "thigh",      "label": "Thigh length" },
+        { "value": "knee",       "label": "Knee length" },
+        { "value": "below-knee", "label": "Below knee" },
+        { "value": "calf",       "label": "Calf length", "families": ["women_ready"] },
+        { "value": "ankle",      "label": "Ankle length", "families": ["women_ready"] },
+        { "value": "floor",      "label": "Floor length", "families": ["women_ready"] }
+      ]
+    },
+    "neck": {
+      "label": "Neck",
+      "families": ["women_ready", "men_ethnic", "men_western"],
+      "values": [
+        { "value": "round",        "label": "Round neck",   "families": ["women_ready", "men_ethnic", "men_western"] },
+        { "value": "v-neck",       "label": "V-neck",       "families": ["women_ready", "men_ethnic", "men_western"] },
+        { "value": "band-collar",  "label": "Band collar",  "families": ["women_ready", "men_ethnic", "men_western"] },
+        { "value": "shirt-collar", "label": "Shirt collar", "families": ["women_ready", "men_ethnic", "men_western"] },
+        { "value": "boat",         "label": "Boat neck",    "families": ["women_ready"] },
+        { "value": "square",       "label": "Square neck",  "families": ["women_ready"] },
+        { "value": "sweetheart",   "label": "Sweetheart",   "families": ["women_ready"] },
+        { "value": "high-neck",    "label": "High neck",    "families": ["women_ready"] },
+        { "value": "off-shoulder", "label": "Off-shoulder", "families": ["women_ready"] },
+        { "value": "notched",      "label": "Notched neck", "families": ["women_ready", "men_ethnic"] },
+        { "value": "lapel",        "label": "Lapel",        "families": ["men_western"] },
+        { "value": "polo",         "label": "Polo collar",  "families": ["men_western"] }
+      ]
+    },
+    "sleeve": {
+      "label": "Sleeve",
+      "families": ["women_ready", "men_ethnic", "men_western"],
+      "values": [
+        { "value": "sleeveless",     "label": "Sleeveless" },
+        { "value": "short",          "label": "Short sleeves" },
+        { "value": "elbow",          "label": "Elbow sleeves",         "families": ["women_ready"] },
+        { "value": "three-quarter",  "label": "Three-quarter sleeves", "families": ["women_ready", "men_ethnic"] },
+        { "value": "full",           "label": "Full sleeves" },
+        { "value": "bell",           "label": "Bell sleeves",          "families": ["women_ready"] },
+        { "value": "puff",           "label": "Puff sleeves",          "families": ["women_ready"] },
+        { "value": "cold-shoulder",  "label": "Cold-shoulder",         "families": ["women_ready"] }
+      ]
+    }
+  },
+  "aliases": {
+    "work": {
+      "thread embroidery": "thread", "hand embroidery": "embroidery", "resham embroidery": "resham",
+      "mirror work": "mirror", "bead embroidery": "moti", "pearl": "moti", "pom-pom trim": "lace",
+      "patch work": "patch", "gota patti": "gota-patti", "pintuck lines": "pintuck", "pintuck stitching": "pintuck",
+      "print": "MOVE:print_weave", "floral print": "MOVE:print_weave", "checks": "MOVE:print_weave",
+      "self-weave": "MOVE:print_weave", "banarasi weave": "MOVE:print_weave"
+    },
+    "print_weave": {
+      "banarasi weave": "banarasi", "woven checks": "checks", "self-textured weave": "self-design",
+      "self-stripes": "stripes", "vertical stripes": "stripes", "vertical textured stripes": "stripes",
+      "fine horizontal stripe detail": "stripes", "marble-effect self-design": "self-design",
+      "marble print": "geometric-print", "textured abstract print": "geometric-print", "geometric border": "geometric-print",
+      "tonal floral print": "floral-print", "floral print": "floral-print", "paisley motif": "paisley",
+      "scattered butis": "butis", "buti": "butis", "buti motifs": "butis", "zari buti": "butis", "dupatta butis": "butis",
+      "brocade border": "brocade", "self-design": "self-design", "all-over print": "UNCLEAR", "printed": "UNCLEAR",
+      "patterned body": "UNCLEAR", "geometric striped dupatta border": "stripes"
+    },
+    "silhouette": {
+      "flared lehenga": "flared", "gathered flared kurta": "flared", "regular fit": "regular-fit",
+      "asymmetric long jacket": "asymmetric", "wide-leg palazzo set": "UNCLEAR"
+    },
+    "length": {
+      "knee-length": "knee", "hip length": "hip", "calf length": "calf", "calf": "calf", "floor length": "floor",
+      "floor-length": "floor", "ankle length": "ankle", "full-length": "floor", "short": "UNCLEAR",
+      "short, 32 inch": "UNCLEAR", "longline": "UNCLEAR", "long": "UNCLEAR"
+    },
+    "neck": {
+      "band collar": "band-collar", "mandarin collar": "band-collar", "notched band collar": "band-collar",
+      "band collar with slit": "band-collar", "split band neckline": "band-collar", "round neck": "round",
+      "notched v-neck": "v-neck", "collared": "shirt-collar", "shirt collar": "shirt-collar", "notched lapel": "lapel"
+    },
+    "sleeve": {
+      "three-quarter sleeves": "three-quarter", "full sleeves": "full", "full sleeve": "full", "long sleeves": "full",
+      "long sleeves with cuffs": "full", "loose elbow-length sleeves": "elbow", "three-quarter bell sleeves": "bell"
+    }
+  },
+  "not_tags": "Work placement (neckline, yoke, border, pallu...) stays in the description text only; it is not a tag."
+}
