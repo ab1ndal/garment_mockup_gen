@@ -72,12 +72,14 @@ follows:
   source, confidence}]}`. It reads the vocab and the product's rows. No AI call.
 - The draft response gains `tags: [{group, value, confidence}]`. These are the
   AI proposals, already filtered. The draft still writes nothing.
-- `POST /api/backfill/approve` gains an optional `tags: [{group, value}] | null`,
-  the reviewer's final picks. Null means tags are left untouched. After the image
-  is published and the description saved, the server works out each value's
-  `source`/`confidence` from the draft proposals, then calls the RPC.
-  - Proposals are sent back from the client as `tags_proposed`, because drafts
-    are not stored.
+- `POST /api/backfill/approve` gains an optional
+  `tags: [{group, value, source, confidence}] | null`, the reviewer's final picks.
+  Null means tags are left untouched. The panel sets `source`: `ai_reviewed` with
+  the AI's confidence for a kept proposal, `manual` with null confidence for a
+  value the reviewer added. The server checks source, confidence and value, then
+  calls the RPC. (Plan-stage refinement: this replaced sending the proposals back
+  separately. The reviewers are trusted staff, so a wrong source only mis-marks a
+  tag.)
   - Order: image, then description, then tags. Tags are written only if the
     description saved. If the description changed since load (conflict) or failed,
     tags are skipped too, so a product never gets new tags over a stale

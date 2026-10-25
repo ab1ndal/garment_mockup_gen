@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import {
-  type ApiError, type DescriptionDraft, type ProductDescription,
-  draftBackfillDescription, getBackfillDescription,
+  type ApiError, type DescriptionDraft, type ProductDescription, type ProductTags,
+  type ProposedTag, type TagPick, type TagRow,
+  draftBackfillDescription, getBackfillDescription, getBackfillTags,
 } from "../api";
+import TagEditor, { CurrentTags } from "./TagEditor";
 
 const NOTE_MAX = 500;
 const DESCRIPTION_MAX = 600;  // backend cap; longer text is not saved
@@ -25,19 +27,30 @@ function sourceLabel(cur: ProductDescription): string {
 
 const wordCount = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
 
+// Proposals start selected, except where a hand-entered row already covers them:
+// the save keeps manual rows, and re-sending one would collide with it.
+function initialPicks(proposed: ProposedTag[], manual: TagRow[], single: Set<string>): TagPick[] {
+  return proposed
+    .filter((t) => !manual.some((m) => m.group === t.group && (m.value === t.value || single.has(t.group))))
+    .map((t) => ({ group: t.group, value: t.value, source: "ai_reviewed", confidence: t.confidence }));
+}
+
 /**
- * The product's storefront description inside a Backfill review. Shows what is
- * in the database on open (no AI call); drafts only on click. The draft lives
- * in the parent (`draft`, null = no draft) because Approve saves it.
+ * The product's storefront description and tags inside a Backfill review.
+ * Shows what is in the database on open (no AI call); drafts only on click.
+ * The draft and tag picks live in the parent (`draft`/`tags`, null = no draft)
+ * because Approve saves them.
  */
 export default function DescriptionSection({
-  productid, fileId, draft, onDraftChange, onLoaded,
+  productid, fileId, draft, onDraftChange, onLoaded, tags, onTagsChange,
 }: {
   productid: string;
   fileId: string;
   draft: string | null;
   onDraftChange: (d: string | null) => void;
   onLoaded: (cur: ProductDescription) => void;
+  tags: TagPick[] | null;
+  onTagsChange: (t: TagPick[] | null) => void;
 }) {
   const [cur, setCur] = useState<ProductDescription | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -47,12 +60,18 @@ export default function DescriptionSection({
   const [drafting, setDrafting] = useState(false);
   const [draftErr, setDraftErr] = useState<string | null>(null);
   const [flags, setFlags] = useState<Pick<DescriptionDraft, "uncertain" | "conflicts"> | null>(null);
+  const [tagInfo, setTagInfo] = useState<ProductTags | null>(null);
+  const [tagErr, setTagErr] = useState<string | null>(null);
+  const [proposed, setProposed] = useState<ProposedTag[]>([]);
 
   useEffect(() => {
     let stale = false;
     getBackfillDescription(productid)
       .then((d) => { if (!stale) { setCur(d); onLoaded(d); } })
       .catch((e: ApiError) => { if (!stale) setLoadErr(e.message); });
+    getBackfillTags(productid)
+      .then((t) => { if (!stale) setTagInfo(t); })
+      .catch((e: ApiError) => { if (!stale) setTagErr(e.message); });
     return () => { stale = true; };
     // Keyed on productid only: onLoaded is a fresh parent callback each render.
   }, [productid]);
@@ -67,12 +86,17 @@ export default function DescriptionSection({
       .then((d) => {
         onDraftChange(d.description);
         setFlags({ uncertain: d.uncertain, conflicts: d.conflicts });
+        setProposed(d.tags);
+        // Without the vocab there is nothing to edit against, so tags stay untouched.
+        onTagsChange(tagInfo && tagInfo.groups.length > 0 ? initialPicks(d.tags, manual, singleGroups) : null);
       })
       .catch((e: ApiError) => setDraftErr(e.message))
       .finally(() => setDrafting(false));
   };
 
-  const discard = () => { onDraftChange(null); setFlags(null); };
+  const manual = (tagInfo?.current ?? []).filter((t) => t.source === "manual");
+  const singleGroups = new Set((tagInfo?.groups ?? []).filter((g) => g.single).map((g) => g.group));
+  const discard = () => { onDraftChange(null); setFlags(null); setProposed([]); onTagsChange(null); };
   const noSource = !useOriginals && !useMockup;
   // Drafting waits for the current text: approve sends it back as the expected value.
   const words = draft === null ? 0 : wordCount(draft);
@@ -92,6 +116,19 @@ export default function DescriptionSection({
         </div>
       )}
 
+      <div className="stack-sm">
+        <span className="section-label" id="bf-tags-label">Tags</span>
+        {tagErr ? (
+          <p className="alert alert-error" role="alert">Could not load the tags: {tagErr}</p>
+        ) : !tagInfo ? (
+          <p className="muted">Loading…</p>
+        ) : tagInfo.groups.length === 0 ? (
+          <p className="muted">No tags for this category.</p>
+        ) : (
+          <CurrentTags groups={tagInfo.groups} current={tagInfo.current} />
+        )}
+      </div>
+
       <div className="desc-controls">
         <label className="check">
           <input type="checkbox" checked={useOriginals} onChange={(e) => setUseOriginals(e.target.checked)} />
@@ -101,7 +138,9 @@ export default function DescriptionSection({
           <input type="checkbox" checked={useMockup} onChange={(e) => setUseMockup(e.target.checked)} />
           <span>Mockup</span>
         </label>
-        <button type="button" disabled={drafting || noSource || !cur} onClick={doDraft} aria-busy={drafting}>
+        {/* Also waits for the tags: the picks are built from them when the draft returns. */}
+        <button type="button" disabled={drafting || noSource || !cur || !(tagInfo || tagErr)}
+          onClick={doDraft} aria-busy={drafting}>
           {drafting ? "Drafting…" : draft === null ? "Draft description" : "Regenerate"}
         </button>
       </div>
@@ -119,7 +158,7 @@ export default function DescriptionSection({
       </div>
 
       {draftErr && (
-        <p className="alert alert-error" role="alert">{draftErr} Try again, or approve without a description.</p>
+        <p className="alert alert-error" role="alert">{draftErr} Try again, or approve without a description and tags.</p>
       )}
 
       {draft !== null && (
@@ -150,6 +189,15 @@ export default function DescriptionSection({
               {words} words (target {WORDS_MIN}–{WORDS_MAX})
             </span>
           </div>
+          {tags !== null && tagInfo && tagInfo.groups.length > 0 && (
+            <div className="stack-sm" aria-labelledby="bf-tags-draft-label">
+              <span className="section-label" id="bf-tags-draft-label">
+                Tags for this draft (saved when you approve the image)
+              </span>
+              <TagEditor groups={tagInfo.groups} manual={manual} proposed={proposed}
+                picks={tags} onChange={onTagsChange} />
+            </div>
+          )}
           <div>
             <button type="button" onClick={discard}>Discard draft</button>
           </div>

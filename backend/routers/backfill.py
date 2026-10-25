@@ -32,19 +32,22 @@ from backend.deps import get_db
 from backend.schemas import (
     BackfillApproveRequest, BackfillCountsResponse, BackfillDescription,
     BackfillDraftRequest, BackfillDraftResponse, BackfillEditRequest,
-    BackfillFlagRequest, BackfillItem, BackfillItemsResponse,
+    BackfillFlagRequest, BackfillItem, BackfillItemsResponse, BackfillTags,
+    ProposedTagOut, TagGroupOut, TagOut, TagValue,
 )
 from mockup_generator.config import settings
 from mockup_generator.db import (
     backfill_edits_repo, backfill_items_repo as items_repo,
     mockups_repo, product_descriptions_repo as descriptions_repo,
-    productimages_repo, products_repo,
+    product_tags_repo as tags_repo, productimages_repo, products_repo,
 )
+from mockup_generator.db.product_tags_repo import TagRow
 from mockup_generator.describe.draft import (
     MAX_DESCRIPTION_CHARS, MAX_ORIGINALS, DraftFailed, draft_description,
 )
 from mockup_generator.generation import publish, watermark
 from mockup_generator.integrations import drive_client
+from mockup_generator.prompts.tag_vocab import SINGLE, allowed, family_of, groups_for
 from mockup_generator.integrations.drive_client import DriveNotConfigured
 from mockup_generator.services import backfill_sync
 from mockup_generator.timing import format_timings, timed
@@ -59,6 +62,12 @@ _DESCRIPTION_CHANGED = "Image approved, but the description changed since you op
 _DESCRIPTION_SAVE_FAILED = "Image approved, but the description could not be saved."
 _DESCRIPTION_TOO_LONG = (
     f"Image approved, but the description is over {MAX_DESCRIPTION_CHARS} characters. Not saved.")
+
+_TAGS_NOT_SAVED = "Tags not saved because the description was not saved."
+_TAGS_INVALID = "Tags not saved: {detail}."
+_TAGS_SAVE_FAILED = "Image approved, but the tags could not be saved: {detail}"
+_TAGS_SKIPPED = "Kept hand-entered tags; not saved: {values}."
+_TAG_SOURCES = ("ai_reviewed", "manual")
 
 
 def _suggest_aspect(w: int, h: int) -> str:
@@ -205,6 +214,11 @@ def approve(req: BackfillApproveRequest, background: BackgroundTasks,
         raise HTTPException(status_code=502, detail=f"Could not publish the mockup: {exc}") from exc
 
     description_warning = _save_description(db, req) if req.description is not None else None
+    tags_warning = None
+    if req.tags is not None:
+        # New tags over a description that didn't save would describe a stale product.
+        saved = req.description is not None and description_warning is None
+        tags_warning = _save_tags(db, req) if saved else _TAGS_NOT_SAVED
 
     # Archiving the Drive original takes ~1.8s and the reviewer doesn't need to
     # wait for it: the row is already `published`, and a failed move is
@@ -216,7 +230,7 @@ def approve(req: BackfillApproveRequest, background: BackgroundTasks,
 
     return {"status": "ok", "image_url": result["image_url"],
             "variation_id": result["variation_id"], "warning": None,
-            "description_warning": description_warning}
+            "description_warning": description_warning, "tags_warning": tags_warning}
 
 
 def _save_description(db: Client, req: BackfillApproveRequest) -> str | None:
@@ -238,6 +252,62 @@ def _save_description(db: Client, req: BackfillApproveRequest) -> str | None:
         log.info("description for %s changed since load; draft not saved", req.productid)
         return _DESCRIPTION_CHANGED
     return None
+
+
+def _tag_problem(tags: list[TagRow], family: str | None) -> str | None:
+    for t in tags:
+        if t.source not in _TAG_SOURCES:
+            return f"{t.group}: {t.value} has source {t.source!r}"
+        if t.confidence is not None and not 0 <= t.confidence <= 1:
+            return f"{t.group}: {t.value} has confidence {t.confidence}"
+        if t.value not in allowed(t.group, family):
+            return f"{t.group}: {t.value} is not allowed for this category"
+    for group in SINGLE:
+        if sum(t.group == group for t in tags) > 1:
+            return f"more than one {group}"
+    return None
+
+
+def _save_tags(db: Client, req: BackfillApproveRequest) -> str | None:
+    """Replace the product's AI tags with the reviewer's set after the image and
+    description are saved. Never raises; problems come back as a warning."""
+    tags = [TagRow(t.group, t.value, t.source, t.confidence) for t in req.tags or []]
+    try:
+        product = products_repo.get_product(db, req.productid)
+        family = family_of(product.categoryid if product else None)
+        if not groups_for(family):
+            # No vocab for this category here (retail's may be newer): an empty
+            # set would delete AI tags the reviewer never saw.
+            return None
+        problem = _tag_problem(tags, family)
+        if problem:
+            return _TAGS_INVALID.format(detail=problem)
+        stored = tags_repo.replace_ai_tags(db, req.productid, tags)
+    except Exception as exc:  # noqa: BLE001 - image is published; report, don't fail
+        log.warning("tag save failed for %s after approving %s: %s",
+                    req.productid, req.file_id, exc, exc_info=True)
+        # PostgREST errors stringify as a dict; the reviewer needs only the message.
+        return _TAGS_SAVE_FAILED.format(detail=getattr(exc, "message", None) or exc)
+    kept = {(t.group, t.value) for t in stored}
+    skipped = [f"{t.group}: {t.value}" for t in tags if (t.group, t.value) not in kept]
+    return _TAGS_SKIPPED.format(values=", ".join(skipped)) if skipped else None
+
+
+@router.get("/tags/{productid}", response_model=BackfillTags)
+def get_tags(productid: str, user: CurrentUser = Depends(get_current_user),
+             db: Client = Depends(get_db)):
+    product = products_repo.get_product(db, productid)
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found.")
+    family = family_of(product.categoryid)
+    return BackfillTags(
+        family=family,
+        groups=[TagGroupOut(group=g.group, label=g.label, single=g.single,
+                            values=[TagValue(value=v, label=lbl) for v, lbl in g.values])
+                for g in groups_for(family)],
+        current=[TagOut(group=t.group, value=t.value, source=t.source, confidence=t.confidence)
+                 for t in tags_repo.get_tags(db, productid)],
+    )
 
 
 @router.get("/description/{productid}", response_model=BackfillDescription)
@@ -286,7 +356,9 @@ def draft_description_route(file_id: str, req: BackfillDraftRequest,
         log.warning("description draft failed for %s (%s): %s", req.productid, file_id, exc)
         raise HTTPException(status_code=502, detail=f"Could not draft a description: {exc}") from exc
     return BackfillDraftResponse(description=d.description, includes=d.includes,
-                                 uncertain=d.uncertain, conflicts=d.conflicts)
+                                 uncertain=d.uncertain, conflicts=d.conflicts,
+                                 tags=[ProposedTagOut(group=t.group, value=t.value, confidence=t.confidence)
+                                       for t in d.tags])
 
 
 def _archive_original(file_id: str) -> None:

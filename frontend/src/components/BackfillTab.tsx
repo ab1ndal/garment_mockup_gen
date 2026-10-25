@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   listBackfill, getBackfillCounts, rescanBackfill, getBackfillSources, getProductColors,
   approveBackfill, flagBackfill, flagEditBackfill, skipBackfill, unskipBackfill,
-  type BackfillItem, type BackfillSources, type BackfillStatus, type ProductDescription, ApiError,
+  type BackfillItem, type BackfillSources, type BackfillStatus, type ProductDescription, type TagPick, ApiError,
 } from "../api";
 import DescriptionSection from "./DescriptionSection";
 import { useImageLightbox } from "./Lightbox";
@@ -369,6 +369,8 @@ function ReviewPanel({
   // null = no draft open; "" is a real (empty) draft and is saved on approve.
   const [descDraft, setDescDraft] = useState<string | null>(null);
   const [descLoaded, setDescLoaded] = useState<ProductDescription | null>(null);
+  // null = tags untouched; sent only together with a description draft.
+  const [tagPicks, setTagPicks] = useState<TagPick[] | null>(null);
   const lightbox = useImageLightbox();
 
   useEffect(() => {
@@ -412,11 +414,16 @@ function ReviewPanel({
         description: draftText,
         expected_description: descLoaded.description,
         expected_reviewed_at: descLoaded.description_reviewed_at,
+        ...(tagPicks !== null ? { tags: tagPicks } : {}),
       } : {}),
     })
-      .then((r) => onResolved(item.file_id, "approved", r.description_warning
-        ? `${item.productid}: ${r.description_warning} Your draft: "${draftText}"`
-        : null))
+      .then((r) => {
+        const notes = [
+          r.description_warning && `${r.description_warning} Your draft: "${draftText}"`,
+          r.tags_warning,
+        ].filter(Boolean);
+        onResolved(item.file_id, "approved", notes.length ? `${item.productid}: ${notes.join(" ")}` : null);
+      })
       .catch(onErr)
       .finally(() => setBusy(false));
   };
@@ -566,6 +573,8 @@ function ReviewPanel({
             draft={descDraft}
             onDraftChange={setDescDraft}
             onLoaded={setDescLoaded}
+            tags={tagPicks}
+            onTagsChange={setTagPicks}
           />
         )}
 

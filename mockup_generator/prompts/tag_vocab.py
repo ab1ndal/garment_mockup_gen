@@ -8,10 +8,19 @@ Port of retail-inventory's ``scripts/describe/tag_vocab.js`` (``familyOf``,
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from functools import lru_cache
 from importlib import resources
 
 SINGLE = ("silhouette", "length", "neck", "sleeve")
+
+
+@dataclass(frozen=True)
+class TagGroup:
+    group: str
+    label: str
+    single: bool
+    values: list[tuple[str, str]]  # (value, label)
 
 
 @lru_cache(maxsize=1)
@@ -31,6 +40,17 @@ def allowed(group: str, family: str | None) -> list[str]:
     if not family or family not in g["families"]:
         return []
     return [v["value"] for v in g["values"] if family in v.get("families", g["families"])]
+
+
+def groups_for(family: str | None) -> list[TagGroup]:
+    """Groups with at least one value allowed for ``family``, in vocab order, for the review UI."""
+    out = []
+    for name, g in _vocab()["groups"].items():
+        vals = set(allowed(name, family))
+        if vals:
+            out.append(TagGroup(name, g["label"], name in SINGLE,
+                                [(v["value"], v["label"]) for v in g["values"] if v["value"] in vals]))
+    return out
 
 
 def prompt_block(family: str | None) -> str:

@@ -11,7 +11,7 @@ from backend.main import app
 from backend.routers import backfill as bf
 from mockup_generator.db.product_descriptions_repo import CurrentDescription
 from mockup_generator.db.profiles_repo import Profile
-from mockup_generator.describe.draft import Draft, DraftFailed
+from mockup_generator.describe.draft import Draft, DraftFailed, ProposedTag
 from mockup_generator.prompts.describe_prompt import ProductFacts
 
 _FACTS = ProductFacts("BC25001", "Georgette Saree", "SA", "Saree", "Georgette", [], [], "old")
@@ -52,7 +52,7 @@ def drafting(monkeypatch):
 
     def fake_draft(facts, originals, mockup, owner_note=None):
         calls.update(originals=originals, mockup=mockup, note=owner_note)
-        return Draft("New text", "saree", ["length"], [])
+        return Draft("New text", "saree", ["length"], [], calls.get("tags", []))
     monkeypatch.setattr(bf, "draft_description", fake_draft)
     return calls
 
@@ -98,7 +98,7 @@ def test_draft_uses_first_three_originals_and_mockup(client, drafting):
     r = client.post("/api/backfill/f1/description/draft", json={"productid": "BC25001"})
     assert r.status_code == 200
     assert r.json() == {"description": "New text", "includes": "saree",
-                        "uncertain": ["length"], "conflicts": []}
+                        "uncertain": ["length"], "conflicts": [], "tags": []}
     assert drafting["originals"] == [b"bytes:a", b"bytes:b", b"bytes:r1"]
     assert drafting["mockup"] == b"bytes:f1"
 
@@ -203,3 +203,9 @@ def test_approve_description_cap_counts_trimmed_text(client, approving):
 def test_description_routes_are_sync():
     for fn in (bf.get_description, bf.draft_description_route, bf.approve):
         assert not inspect.iscoroutinefunction(fn)
+
+
+def test_draft_returns_proposed_tags(client, drafting):
+    drafting["tags"] = [ProposedTag("work", "zari", 0.9)]
+    r = client.post("/api/backfill/f1/description/draft", json={"productid": "BC25001"})
+    assert r.json()["tags"] == [{"group": "work", "value": "zari", "confidence": 0.9}]

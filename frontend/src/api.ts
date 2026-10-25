@@ -507,10 +507,13 @@ export const approveBackfill = (b: {
   description?: string;
   expected_description?: string | null;
   expected_reviewed_at?: string | null;
+  // The complete tag set; saved only if the description above saved.
+  tags?: TagPick[];
 }) =>
   apiFetch<{
     status: string; image_url: string; variation_id?: number;
     warning?: string | null; description_warning?: string | null;
+    tags_warning?: string | null;
   }>(
     "/api/backfill/approve",
     { method: "POST", body: JSON.stringify(b) }
@@ -529,7 +532,47 @@ export interface DescriptionDraft {
   includes: string;
   uncertain: string[];
   conflicts: string[];
+  tags: ProposedTag[];
 }
+
+export type TagSource = "manual" | "ai" | "ai_reviewed";
+
+export interface TagGroup {
+  group: string;
+  label: string;
+  single: boolean;
+  values: { value: string; label: string }[];
+}
+
+export interface TagRow {
+  group: string;
+  value: string;
+  source: TagSource;
+  confidence: number | null;
+}
+
+export interface ProposedTag {
+  group: string;
+  value: string;
+  confidence: number | null;
+}
+
+/** A tag the reviewer is approving: kept from the AI, or added by hand. */
+export interface TagPick {
+  group: string;
+  value: string;
+  source: "ai_reviewed" | "manual";
+  confidence: number | null;
+}
+
+export interface ProductTags {
+  family: string | null;
+  groups: TagGroup[];
+  current: TagRow[];
+}
+
+export const getBackfillTags = (productid: string) =>
+  apiFetch<ProductTags>(`/api/backfill/tags/${encodeURIComponent(productid)}`);
 
 export const getBackfillDescription = (productid: string) =>
   apiFetch<ProductDescription>(`/api/backfill/description/${encodeURIComponent(productid)}`);

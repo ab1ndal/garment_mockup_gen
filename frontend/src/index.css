@@ -1168,3 +1168,83 @@ td.mono,
   color: var(--warn);
   font-weight: 600;
 }
+
+/* Product tags in Backfill review */
+.tag-current {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+}
+.tag-current-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.tag-current-row dt {
+  min-width: 96px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.tag-current-row dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+}
+.tag-group {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.tag-group legend {
+  padding: 0;
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.tag-note {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-sm);
+}
+.tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.tag-chip {
+  min-height: 44px;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-full);
+  touch-action: manipulation;
+}
+.tag-chip-on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.tag-chip-static {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-sm);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-full);
+  background: var(--surface);
+}
+.tag-mark {
+  margin-left: var(--sp-1);
+  padding: 0 var(--sp-1);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.tag-check {
+  flex: none;
+}
