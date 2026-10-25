@@ -274,14 +274,20 @@ def _save_tags(db: Client, req: BackfillApproveRequest) -> str | None:
     tags = [TagRow(t.group, t.value, t.source, t.confidence) for t in req.tags or []]
     try:
         product = products_repo.get_product(db, req.productid)
-        problem = _tag_problem(tags, family_of(product.categoryid if product else None))
+        family = family_of(product.categoryid if product else None)
+        if not groups_for(family):
+            # No vocab for this category here (retail's may be newer): an empty
+            # set would delete AI tags the reviewer never saw.
+            return None
+        problem = _tag_problem(tags, family)
         if problem:
             return _TAGS_INVALID.format(detail=problem)
         stored = tags_repo.replace_ai_tags(db, req.productid, tags)
     except Exception as exc:  # noqa: BLE001 - image is published; report, don't fail
         log.warning("tag save failed for %s after approving %s: %s",
                     req.productid, req.file_id, exc, exc_info=True)
-        return _TAGS_SAVE_FAILED.format(detail=exc)
+        # PostgREST errors stringify as a dict; the reviewer needs only the message.
+        return _TAGS_SAVE_FAILED.format(detail=getattr(exc, "message", None) or exc)
     kept = {(t.group, t.value) for t in stored}
     skipped = [f"{t.group}: {t.value}" for t in tags if (t.group, t.value) not in kept]
     return _TAGS_SKIPPED.format(values=", ".join(skipped)) if skipped else None

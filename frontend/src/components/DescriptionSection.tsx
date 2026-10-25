@@ -88,7 +88,7 @@ export default function DescriptionSection({
         setFlags({ uncertain: d.uncertain, conflicts: d.conflicts });
         setProposed(d.tags);
         // Without the vocab there is nothing to edit against, so tags stay untouched.
-        onTagsChange(tagInfo ? initialPicks(d.tags, manual, singleGroups) : null);
+        onTagsChange(tagInfo && tagInfo.groups.length > 0 ? initialPicks(d.tags, manual, singleGroups) : null);
       })
       .catch((e: ApiError) => setDraftErr(e.message))
       .finally(() => setDrafting(false));
@@ -138,7 +138,9 @@ export default function DescriptionSection({
           <input type="checkbox" checked={useMockup} onChange={(e) => setUseMockup(e.target.checked)} />
           <span>Mockup</span>
         </label>
-        <button type="button" disabled={drafting || noSource || !cur} onClick={doDraft} aria-busy={drafting}>
+        {/* Also waits for the tags: the picks are built from them when the draft returns. */}
+        <button type="button" disabled={drafting || noSource || !cur || !(tagInfo || tagErr)}
+          onClick={doDraft} aria-busy={drafting}>
           {drafting ? "Drafting…" : draft === null ? "Draft description" : "Regenerate"}
         </button>
       </div>

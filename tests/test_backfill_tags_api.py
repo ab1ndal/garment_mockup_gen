@@ -150,3 +150,19 @@ def test_approve_bad_tag_fields_warn_not_block(client, approving, tag):
     r = _approve(client, tags=[tag])
     assert r.status_code == 200 and r.json()["tags_warning"].startswith("Tags not saved:")
     assert approving["rpc"] == []
+
+
+def test_approve_no_family_does_not_wipe_ai_tags(client, approving):
+    approving["cat"] = "NEW-CAT"
+    r = _approve(client, tags=[])
+    assert r.status_code == 200 and r.json()["tags_warning"] is None
+    assert approving["rpc"] == []
+
+
+def test_approve_rpc_postgrest_error_shows_message(client, approving):
+    from postgrest.exceptions import APIError
+    approving["rpc_error"] = APIError({"message": "value office not allowed for LE", "code": "P0001",
+                                       "hint": None, "details": None})
+    r = _approve(client, tags=_TAGS)
+    assert r.json()["tags_warning"] == (
+        "Image approved, but the tags could not be saved: value office not allowed for LE")
