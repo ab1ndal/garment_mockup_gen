@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   listBackfill, getBackfillCounts, rescanBackfill, getBackfillSources, getProductColors,
   approveBackfill, flagBackfill, flagEditBackfill, skipBackfill, unskipBackfill,
-  type BackfillItem, type BackfillSources, type BackfillStatus, ApiError,
+  type BackfillItem, type BackfillSources, type BackfillStatus, type ProductDescription, ApiError,
 } from "../api";
+import DescriptionSection from "./DescriptionSection";
 import { useImageLightbox } from "./Lightbox";
 
 const PAGE = 20;
@@ -115,11 +116,12 @@ export default function BackfillTab() {
   const onUnskip = (it: BackfillItem) =>
     run(it, () => unskipBackfill({ file_id: it.file_id, productid: it.productid }), "pending");
 
-  const onResolved = (fileId: string, dest: Dest) => {
+  const onResolved = (fileId: string, dest: Dest, warning?: string | null) => {
     const to: BackfillStatus | "published" =
       dest === "approved" ? "published" : dest;
     afterAction(fileId, status, to);
     setActive(null);
+    setNotice(warning ?? null);
   };
 
   const onRescan = () => {
@@ -353,7 +355,7 @@ function ReviewPanel({
   item: BackfillItem;
   status: BackfillStatus;
   onClose: () => void;
-  onResolved: (fileId: string, dest: Dest) => void;
+  onResolved: (fileId: string, dest: Dest, warning?: string | null) => void;
 }) {
   const [data, setData] = useState<BackfillSources | null>(null);
   const [colors, setColors] = useState<string[]>([]);
@@ -364,6 +366,9 @@ function ReviewPanel({
   const [removeWm, setRemoveWm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  // null = no draft open; "" is a real (empty) draft and is saved on approve.
+  const [descDraft, setDescDraft] = useState<string | null>(null);
+  const [descLoaded, setDescLoaded] = useState<ProductDescription | null>(null);
   const lightbox = useImageLightbox();
 
   useEffect(() => {
@@ -397,12 +402,21 @@ function ReviewPanel({
     if (!item.productid) return;
     setBusy(true);
     setMsg(null);
+    const withDescription = descDraft !== null && descLoaded !== null;
+    const draftText = descDraft?.trim() ?? "";
     approveBackfill({
       file_id: item.file_id, productid: item.productid,
       color: color || undefined, theme_name: theme, aspect_ratio: aspect,
       remove_watermark: removeWm,
+      ...(withDescription ? {
+        description: draftText,
+        expected_description: descLoaded.description,
+        expected_reviewed_at: descLoaded.description_reviewed_at,
+      } : {}),
     })
-      .then(() => onResolved(item.file_id, "approved"))
+      .then((r) => onResolved(item.file_id, "approved", r.description_warning
+        ? `${item.productid}: ${r.description_warning} Your draft: "${draftText}"`
+        : null))
       .catch(onErr)
       .finally(() => setBusy(false));
   };
@@ -544,6 +558,16 @@ function ReviewPanel({
             rows={2}
           />
         </div>
+
+        {item.productid && !item.unknown_product && (
+          <DescriptionSection
+            productid={item.productid}
+            fileId={item.file_id}
+            draft={descDraft}
+            onDraftChange={setDescDraft}
+            onLoaded={setDescLoaded}
+          />
+        )}
 
         {item.unknown_product && (
           <p className="alert alert-info" role="note">
