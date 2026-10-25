@@ -128,3 +128,36 @@ def test_empty_model_draft_raises():
     with pytest.raises(d.DraftFailed, match="empty"):
         d.draft_description(_FACTS, [_img()], None,
                             client=FakeClient(_msg(json.dumps({**_OK, "description": "  "}))))
+
+
+def _draft_with(facts, **fields):
+    reply = {**_OK, **fields}
+    return d.draft_description(facts, [_img()], None, client=FakeClient(_msg(json.dumps(reply))))
+
+
+def test_parses_tags():
+    out = _draft_with(_FACTS, occasion=["wedding", "festive"],
+                      work=[{"type": "zari", "placement": "border", "confidence": 0.9}],
+                      print_weave=["banarasi"])
+    assert out.tags == [d.ProposedTag("occasion", "wedding", None), d.ProposedTag("occasion", "festive", None),
+                        d.ProposedTag("work", "zari", 0.9), d.ProposedTag("print_weave", "banarasi", None)]
+
+
+def test_single_value_tags():
+    kurti = ProductFacts("BC2", "Kurti", "KUR", "Kurti", "Rayon", [], [], None)
+    out = _draft_with(kurti, neck="v-neck", sleeve="", length="knee")
+    assert d.ProposedTag("neck", "v-neck", None) in out.tags
+    assert d.ProposedTag("length", "knee", None) in out.tags
+    assert all(t.group != "sleeve" for t in out.tags)
+
+
+def test_out_of_family_tag_dropped():
+    lehenga = ProductFacts("BC3", "Lehenga", "LE", "Lehenga", "Silk", [], [], None)
+    out = _draft_with(lehenga, occasion=["office", "wedding"], neck="v-neck")
+    assert out.tags == [d.ProposedTag("occasion", "wedding", None)]
+
+
+def test_duplicate_work_keeps_max_confidence():
+    out = _draft_with(_FACTS, work=[{"type": "zari", "placement": "border", "confidence": 0.4},
+                                    {"type": "zari", "placement": "pallu", "confidence": 0.8}])
+    assert out.tags == [d.ProposedTag("work", "zari", 0.8)]

@@ -9,7 +9,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import BytesIO
 
 import anthropic
@@ -19,6 +19,7 @@ from mockup_generator.config import settings
 from mockup_generator.prompts.describe_prompt import (
     ProductFacts, build_prompt, load_examples, load_schema,
 )
+from mockup_generator.prompts.tag_vocab import SINGLE, allowed, family_of
 
 log = logging.getLogger(__name__)
 
@@ -35,12 +36,20 @@ _STYLE_INTRO = (
 )
 
 
+@dataclass(frozen=True)
+class ProposedTag:
+    group: str
+    value: str
+    confidence: float | None
+
+
 @dataclass
 class Draft:
     description: str
     includes: str
     uncertain: list[str]
     conflicts: list[str]
+    tags: list[ProposedTag] = field(default_factory=list)
 
 
 class DraftFailed(RuntimeError):
@@ -55,6 +64,38 @@ def prepare_image(raw: bytes) -> str:
         buf = BytesIO()
         img.save(buf, format="JPEG", quality=_JPEG_QUALITY)
     return base64.standard_b64encode(buf.getvalue()).decode("ascii")
+
+
+def _proposed_tags(data: dict, family: str | None, productid: str) -> list[ProposedTag]:
+    """Tag fields of a draft as one list, keeping only values the family may use.
+
+    The schema's enums cover every family, so the model can still pick e.g.
+    "office" for a lehenga; those are dropped rather than offered.
+    """
+    found: dict[tuple[str, str], float | None] = {}
+
+    def add(group: str, value: str, confidence: float | None = None) -> None:
+        if not value:
+            return
+        if value not in allowed(group, family):
+            log.info("description draft for %s: dropped %s=%s (not allowed for %s)",
+                     productid, group, value, family)
+            return
+        if confidence is not None:
+            confidence = min(max(float(confidence), 0.0), 1.0)
+        key = (group, value)
+        if key not in found or (confidence or 0) > (found[key] or 0):
+            found[key] = confidence
+
+    for v in data.get("occasion") or []:
+        add("occasion", v)
+    for w in data.get("work") or []:
+        add("work", w.get("type") or "", w.get("confidence"))
+    for v in data.get("print_weave") or []:
+        add("print_weave", v)
+    for k in SINGLE:
+        add(k, data.get(k) or "")
+    return [ProposedTag(g, v, c) for (g, v), c in found.items()]
 
 
 def _system() -> str:
@@ -119,4 +160,5 @@ def draft_description(facts: ProductFacts, originals: list[bytes], mockup: bytes
     if len(description) > MAX_DESCRIPTION_CHARS:
         raise DraftFailed(f"draft is {len(description)} chars, over {MAX_DESCRIPTION_CHARS}")
     return Draft(description=description, includes=(data.get("includes") or "").strip(),
-                 uncertain=list(data.get("uncertain") or []), conflicts=list(data.get("conflicts") or []))
+                 uncertain=list(data.get("uncertain") or []), conflicts=list(data.get("conflicts") or []),
+                 tags=_proposed_tags(data, family_of(facts.categoryid), facts.productid))
