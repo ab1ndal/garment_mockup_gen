@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+MAX_DRAFT_NOTE_CHARS = 500
+
 
 class CategoryOut(BaseModel):
     categoryid: str
@@ -164,6 +166,34 @@ class BackfillApproveRequest(BaseModel):
     theme_name: str | None = None
     aspect_ratio: str | None = None
     remove_watermark: bool = False
+    # Present only when the reviewer has a description draft open: it is saved
+    # after the image publishes, if the product's description and review stamp
+    # still equal the values the panel loaded.
+    # Length is checked in the route, not here: an over-long draft must not
+    # block the image approval.
+    description: str | None = None
+    expected_description: str | None = None
+    expected_reviewed_at: str | None = None
+
+
+class BackfillDescription(BaseModel):
+    description: str | None
+    description_source: str | None
+    description_reviewed_at: str | None
+
+
+class BackfillDraftRequest(BaseModel):
+    productid: str
+    use_originals: bool = True
+    use_mockup: bool = True
+    note: str | None = Field(default=None, max_length=MAX_DRAFT_NOTE_CHARS)
+
+
+class BackfillDraftResponse(BaseModel):
+    description: str
+    includes: str
+    uncertain: list[str]
+    conflicts: list[str]
 
 
 class BackfillFlagRequest(BaseModel):

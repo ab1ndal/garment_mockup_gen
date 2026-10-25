@@ -30,13 +30,18 @@ from supabase import Client
 from backend.auth import CurrentUser, get_current_user
 from backend.deps import get_db
 from backend.schemas import (
-    BackfillApproveRequest, BackfillCountsResponse, BackfillEditRequest,
+    BackfillApproveRequest, BackfillCountsResponse, BackfillDescription,
+    BackfillDraftRequest, BackfillDraftResponse, BackfillEditRequest,
     BackfillFlagRequest, BackfillItem, BackfillItemsResponse,
 )
 from mockup_generator.config import settings
 from mockup_generator.db import (
     backfill_edits_repo, backfill_items_repo as items_repo,
-    mockups_repo, productimages_repo, products_repo,
+    mockups_repo, product_descriptions_repo as descriptions_repo,
+    productimages_repo, products_repo,
+)
+from mockup_generator.describe.draft import (
+    MAX_DESCRIPTION_CHARS, MAX_ORIGINALS, DraftFailed, draft_description,
 )
 from mockup_generator.generation import publish, watermark
 from mockup_generator.integrations import drive_client
@@ -50,6 +55,10 @@ log = logging.getLogger(__name__)
 _STD_ASPECTS = [("1:1", 1.0), ("4:5", 0.8), ("3:4", 0.75), ("9:16", 0.5625), ("16:9", 1.7778)]
 
 _ALREADY_HANDLED = "This mockup was already handled by another reviewer."
+_DESCRIPTION_CHANGED = "Image approved, but the description changed since you opened it. Not saved."
+_DESCRIPTION_SAVE_FAILED = "Image approved, but the description could not be saved."
+_DESCRIPTION_TOO_LONG = (
+    f"Image approved, but the description is over {MAX_DESCRIPTION_CHARS} characters. Not saved.")
 
 
 def _suggest_aspect(w: int, h: int) -> str:
@@ -195,6 +204,8 @@ def approve(req: BackfillApproveRequest, background: BackgroundTasks,
         items_repo.transition(db, file_id=req.file_id, expect=items_repo.PUBLISHED, to=items_repo.PENDING)
         raise HTTPException(status_code=502, detail=f"Could not publish the mockup: {exc}") from exc
 
+    description_warning = _save_description(db, req) if req.description is not None else None
+
     # Archiving the Drive original takes ~1.8s and the reviewer doesn't need to
     # wait for it: the row is already `published`, and a failed move is
     # reconciled by the next rescan. So it runs after the response is sent, and a
@@ -204,7 +215,78 @@ def approve(req: BackfillApproveRequest, background: BackgroundTasks,
              req.file_id, req.productid, format_timings(timings))
 
     return {"status": "ok", "image_url": result["image_url"],
-            "variation_id": result["variation_id"], "warning": None}
+            "variation_id": result["variation_id"], "warning": None,
+            "description_warning": description_warning}
+
+
+def _save_description(db: Client, req: BackfillApproveRequest) -> str | None:
+    """Save the reviewer's draft once the image is published. Never raises: the
+    image approval already happened, so a failure is returned as a warning."""
+    text = req.description.strip()
+    if len(text) > MAX_DESCRIPTION_CHARS:
+        return _DESCRIPTION_TOO_LONG
+    try:
+        saved = descriptions_repo.save_reviewed(
+            db, req.productid, text,
+            expected_description=req.expected_description,
+            expected_reviewed_at=req.expected_reviewed_at)
+    except Exception as exc:  # noqa: BLE001 - image is published; report, don't fail
+        log.warning("description save failed for %s after approving %s: %s",
+                    req.productid, req.file_id, exc)
+        return _DESCRIPTION_SAVE_FAILED
+    if not saved:
+        log.info("description for %s changed since load; draft not saved", req.productid)
+        return _DESCRIPTION_CHANGED
+    return None
+
+
+@router.get("/description/{productid}", response_model=BackfillDescription)
+def get_description(productid: str, user: CurrentUser = Depends(get_current_user),
+                    db: Client = Depends(get_db)):
+    cur = descriptions_repo.get_current(db, productid)
+    if cur is None:
+        raise HTTPException(status_code=404, detail="Product not found.")
+    return BackfillDescription(description=cur.description, description_source=cur.source,
+                               description_reviewed_at=cur.reviewed_at)
+
+
+def _first_originals(db: Client, productid: str) -> list[bytes]:
+    """Up to MAX_ORIGINALS Drive photos of the product: loose images first, then
+    variant subfolders, in the folder's natural order. Downloaded one at a time."""
+    product = products_repo.get_product(db, productid)
+    fid = drive_client.extract_folder_id(getattr(product, "producturl", None))
+    if not fid:
+        return []
+    groups = drive_client.list_folder_image_groups(fid)
+    images = groups["loose"] + [i for g in groups["groups"] for i in g["images"]]
+    return [drive_client.download_file(i["id"]) for i in images[:MAX_ORIGINALS]]
+
+
+@router.post("/{file_id}/description/draft", response_model=BackfillDraftResponse)
+def draft_description_route(file_id: str, req: BackfillDraftRequest,
+                            user: CurrentUser = Depends(get_current_user),
+                            db: Client = Depends(get_db)):
+    if not (req.use_originals or req.use_mockup):
+        raise HTTPException(status_code=400, detail="Pick at least one image source.")
+    facts = descriptions_repo.get_facts(db, req.productid)
+    if facts is None:
+        raise HTTPException(status_code=404, detail="Product not found.")
+    try:
+        originals = _first_originals(db, req.productid) if req.use_originals else []
+        mockup = drive_client.download_file(file_id) if req.use_mockup else None
+    except DriveNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Drive access is not configured on the server") from exc
+    except Exception as exc:  # noqa: BLE001 - surface any Drive failure as upstream error
+        raise HTTPException(status_code=502, detail=f"Could not load the product photos: {exc}") from exc
+    if not originals and mockup is None:
+        raise HTTPException(status_code=400, detail="No images to draft from.")
+    try:
+        d = draft_description(facts, originals, mockup, req.note)
+    except DraftFailed as exc:
+        log.warning("description draft failed for %s (%s): %s", req.productid, file_id, exc)
+        raise HTTPException(status_code=502, detail=f"Could not draft a description: {exc}") from exc
+    return BackfillDraftResponse(description=d.description, includes=d.includes,
+                                 uncertain=d.uncertain, conflicts=d.conflicts)
 
 
 def _archive_original(file_id: str) -> None:

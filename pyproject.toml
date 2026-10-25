@@ -17,7 +17,8 @@ dependencies = [
   "google-auth (>=2,<3)",
   "python-multipart (>=0.0.32,<0.0.33)",
   "pillow-heif (>=1.4.0,<2.0.0)",
-  "numpy (>=1.26,<2.3)"
+  "numpy (>=1.26,<2.3)",
+  "anthropic (>=2.3.0,<3.0.0)"
 ]
 
 # Legacy Streamlit app (`app.py`) only. Excluded from the Docker image, which

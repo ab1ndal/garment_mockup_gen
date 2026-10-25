@@ -1130,3 +1130,41 @@ td.mono,
   font-size: var(--fs-sm);
   color: var(--text-muted);
 }
+
+/* Backfill review: product description */
+.desc-section {
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border);
+}
+.desc-current {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+.desc-text {
+  margin: 0;
+  white-space: pre-line;
+  line-height: var(--lh-body);
+  max-width: 70ch;
+}
+.desc-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.desc-controls .check {
+  min-height: 44px;
+}
+.desc-section .alert ul {
+  margin: var(--sp-1) 0 0;
+  padding-left: var(--sp-5);
+}
+.desc-count {
+  font-size: var(--fs-xs);
+}
+.desc-count-off {
+  color: var(--warn);
+  font-weight: 600;
+}

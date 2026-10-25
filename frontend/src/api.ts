@@ -502,9 +502,46 @@ export const approveBackfill = (b: {
   theme_name?: string;
   aspect_ratio?: string;
   remove_watermark?: boolean;
+  // Sent only with an open description draft; saved after the image publishes
+  // if the description is unchanged since it was loaded.
+  description?: string;
+  expected_description?: string | null;
+  expected_reviewed_at?: string | null;
 }) =>
-  apiFetch<{ status: string; image_url: string; variation_id?: number; warning?: string | null }>(
+  apiFetch<{
+    status: string; image_url: string; variation_id?: number;
+    warning?: string | null; description_warning?: string | null;
+  }>(
     "/api/backfill/approve",
+    { method: "POST", body: JSON.stringify(b) }
+  );
+
+export type DescriptionSource = "manual" | "ai" | "ai_reviewed";
+
+export interface ProductDescription {
+  description: string | null;
+  description_source: DescriptionSource | null;
+  description_reviewed_at: string | null;
+}
+
+export interface DescriptionDraft {
+  description: string;
+  includes: string;
+  uncertain: string[];
+  conflicts: string[];
+}
+
+export const getBackfillDescription = (productid: string) =>
+  apiFetch<ProductDescription>(`/api/backfill/description/${encodeURIComponent(productid)}`);
+
+export const draftBackfillDescription = (fileId: string, b: {
+  productid: string;
+  use_originals: boolean;
+  use_mockup: boolean;
+  note?: string;
+}) =>
+  apiFetch<DescriptionDraft>(
+    `/api/backfill/${encodeURIComponent(fileId)}/description/draft`,
     { method: "POST", body: JSON.stringify(b) }
   );
 
