@@ -3,6 +3,15 @@
 **Date:** 2026-10-24
 **Status:** Draft, pending owner approval
 
+> **Changed 2026-11-03 (owner decision):** drafts now run by themselves when a reviewer
+> opens a card or chooses an image, and are kept in `product_copy_drafts`. This reverses
+> "only on click", "No draft is ever made without a click" and "no draft persistence"
+> below. Why: the owner wants title, description and tags built from the final images
+> with a person approving all of it, and a step that can be skipped lets a product go
+> live with a shared title. The anti-goals still stand: nothing is saved without Approve, a
+> person's text is never silently replaced, and a slow or failed draft never blocks the
+> image. See "AI Drafts" in `CLAUDE.md`.
+
 ## Intent
 
 New products go live through the Backfill tab (products whose photos are in
