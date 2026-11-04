@@ -165,7 +165,51 @@ export interface ApproveResult {
   detail: string;
   image_url: string;
   variation_id?: number;
+  title_warning?: string | null;
 }
+
+/** The title detail field's state for one product. */
+export interface TitleEdit {
+  productid: string;
+  detail: string;
+  expected: string | null;  // what the database held when the field loaded
+  edited: boolean;          // the reviewer typed or chose this text
+}
+
+export interface TitleDetailFields {
+  title_detail?: string;
+  expected_title_detail?: string | null;
+  title_detail_edited?: boolean;
+}
+
+/** Request fields for a publish; none until the edit for this product has loaded. */
+export const titleFields = (t: TitleEdit | null, productid: string): TitleDetailFields =>
+  t?.productid === productid
+    ? { title_detail: t.detail, expected_title_detail: t.expected, title_detail_edited: t.edited }
+    : {};
+
+export interface TitlePreview {
+  title: string;
+  duplicate: boolean;
+}
+
+export interface TitleDraft {
+  title_detail: string;
+  title_detail_note: string;
+  colour_mismatch: string;
+}
+
+export const getProductTitle = (productid: string) =>
+  apiFetch<{ title_detail: string | null; display_title: string | null }>(
+    `/api/titles/${encodeURIComponent(productid)}`);
+
+export const getTitlePreview = (productid: string, detail: string) =>
+  apiFetch<TitlePreview>(
+    `/api/titles/${encodeURIComponent(productid)}/preview?detail=${encodeURIComponent(detail)}`);
+
+export const draftProductTitle = (productid: string) =>
+  apiFetch<TitleDraft>(`/api/titles/${encodeURIComponent(productid)}/draft`,
+    { method: "POST", body: JSON.stringify({}) });
 
 // Categories are a small, near-static list hit by every tab on mount.
 // Cache the in-flight promise so it's fetched once and shared (no refetch on
@@ -348,7 +392,7 @@ export const approveMockup = (form: FormData) =>
   apiUpload<ApproveResult>("/api/generate/approve", form);
 
 /** Publish a pre-made Drive mockup as a generation (no AI call). */
-export const approveExistingMockup = (b: {
+export const approveExistingMockup = (b: TitleDetailFields & {
   productid: string;
   file_id: string;
   color?: string;
@@ -495,7 +539,7 @@ export const getBackfillSources = (fileId: string, productid: string | null) =>
       (productid ? `?productid=${encodeURIComponent(productid)}` : "")
   );
 
-export const approveBackfill = (b: {
+export const approveBackfill = (b: TitleDetailFields & {
   file_id: string;
   productid: string;
   color?: string;
@@ -513,7 +557,7 @@ export const approveBackfill = (b: {
   apiFetch<{
     status: string; image_url: string; variation_id?: number;
     warning?: string | null; description_warning?: string | null;
-    tags_warning?: string | null;
+    tags_warning?: string | null; title_warning?: string | null;
   }>(
     "/api/backfill/approve",
     { method: "POST", body: JSON.stringify(b) }
@@ -527,7 +571,7 @@ export interface ProductDescription {
   description_reviewed_at: string | null;
 }
 
-export interface DescriptionDraft {
+export interface DescriptionDraft extends TitleDraft {
   description: string;
   includes: string;
   uncertain: string[];
@@ -691,7 +735,7 @@ export function getBatchSources(id: number): Promise<BatchSources> {
   return apiFetch<BatchSources>(`/api/batch/${id}/sources`);
 }
 
-export function acceptBatch(id: number, body: { color?: string | null; theme_name?: string | null; aspect_ratio?: string | null } = {}): Promise<{ status: string; warning: string | null }> {
+export function acceptBatch(id: number, body: TitleDetailFields & { color?: string | null; theme_name?: string | null; aspect_ratio?: string | null } = {}): Promise<{ status: string; warning: string | null }> {
   return apiFetch(`/api/batch/${id}/accept`, { method: "POST", body: JSON.stringify(body) });
 }
 
@@ -777,13 +821,13 @@ export const releaseImportShot = (file_id: string) =>
     body: JSON.stringify({ file_id }),
   });
 
-export const publishImportShot = (b: {
+export const publishImportShot = (b: TitleDetailFields & {
   productid: string;
   file_id: string;
   color: string | null;
   params: EditParams;
 }) =>
-  apiFetch<{ image_url: string; displayorder: number }>("/api/import/publish", {
+  apiFetch<{ image_url: string; displayorder: number; title_warning?: string | null }>("/api/import/publish", {
     method: "POST",
     body: JSON.stringify(b),
   });

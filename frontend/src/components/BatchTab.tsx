@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError, getCategories, getGenerationOptions,
   enqueueBatch, listBatchItems, getBatchCounts, getBatchSources, getBatchCategorySummary,
-  acceptBatch, editBatch, rejectBatch, retryBatch,
+  acceptBatch, editBatch, rejectBatch, retryBatch, titleFields,
   type BatchItem, type BatchTabId, type BatchSources, type Category, type GenOptions,
-  type BatchCategorySummary,
+  type BatchCategorySummary, type TitleEdit,
 } from "../api";
 import { useImageLightbox } from "./Lightbox";
+import TitleDetailField from "./TitleDetailField";
 
 const PAGE = 20;
 const POLL_MS = 5000;
@@ -484,8 +485,8 @@ export default function BatchTab() {
         <ReviewModal
           item={review}
           onClose={() => setReview(null)}
-          onAccept={(c) => actInBackground(review, "published",
-            () => acceptBatch(review.id, { color: c }))}
+          onAccept={(c, t) => actInBackground(review, "published",
+            () => acceptBatch(review.id, { color: c, ...titleFields(t, review.productid) }))}
           onEdit={(note, ids) => actInBackground(review, "sent back for editing",
             () => editBatch(review.id, { prompt_note: note, image_ids: ids }))}
           onReject={() => actInBackground(review, "rejected", () => rejectBatch(review.id))}
@@ -657,7 +658,7 @@ function Modal({ title, onClose, children }: {
 
 function ReviewModal(props: {
   item: BatchItem; onClose: () => void;
-  onAccept: (color: string | null) => void;
+  onAccept: (color: string | null, title: TitleEdit | null) => void;
   onEdit: (note: string, imageIds: string[]) => void;
   onReject: () => void;
 }) {
@@ -666,6 +667,7 @@ function ReviewModal(props: {
   const [note, setNote] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [color, setColor] = useState<string | null>(item.color);
+  const [titleEdit, setTitleEdit] = useState<TitleEdit | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const lightbox = useImageLightbox();
 
@@ -738,6 +740,8 @@ function ReviewModal(props: {
           </div>
         )}
 
+        <TitleDetailField productid={item.productid} value={titleEdit} onChange={setTitleEdit} />
+
         <div className="field">
           <label htmlFor="batch-note">Revision note</label>
           <textarea id="batch-note" value={note} onChange={(e) => setNote(e.target.value)} rows={2}
@@ -755,7 +759,7 @@ function ReviewModal(props: {
           <button disabled={!note.trim()} onClick={() => onEdit(note, Array.from(picked))}>
             Edit &amp; regenerate
           </button>
-          <button className="btn-primary" onClick={() => onAccept(color)}>
+          <button className="btn-primary" onClick={() => onAccept(color, titleEdit)}>
             Accept &amp; publish
           </button>
         </div>

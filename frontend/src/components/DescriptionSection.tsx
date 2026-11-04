@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import {
   type ApiError, type DescriptionDraft, type ProductDescription, type ProductTags,
-  type ProposedTag, type TagPick, type TagRow,
+  type ProposedTag, type TagPick, type TagRow, type TitleDraft, type TitleEdit,
   draftBackfillDescription, getBackfillDescription, getBackfillTags,
 } from "../api";
 import TagEditor, { CurrentTags } from "./TagEditor";
+import TitleDetailField from "./TitleDetailField";
 
 const NOTE_MAX = 500;
 const DESCRIPTION_MAX = 600;  // backend cap; longer text is not saved
@@ -42,7 +43,7 @@ function initialPicks(proposed: ProposedTag[], manual: TagRow[], single: Set<str
  * because Approve saves them.
  */
 export default function DescriptionSection({
-  productid, fileId, draft, onDraftChange, onLoaded, tags, onTagsChange,
+  productid, fileId, draft, onDraftChange, onLoaded, tags, onTagsChange, title, onTitleChange,
 }: {
   productid: string;
   fileId: string;
@@ -51,6 +52,8 @@ export default function DescriptionSection({
   onLoaded: (cur: ProductDescription) => void;
   tags: TagPick[] | null;
   onTagsChange: (t: TagPick[] | null) => void;
+  title: TitleEdit | null;
+  onTitleChange: (t: TitleEdit) => void;
 }) {
   const [cur, setCur] = useState<ProductDescription | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -63,6 +66,7 @@ export default function DescriptionSection({
   const [tagInfo, setTagInfo] = useState<ProductTags | null>(null);
   const [tagErr, setTagErr] = useState<string | null>(null);
   const [proposed, setProposed] = useState<ProposedTag[]>([]);
+  const [titleDraft, setTitleDraft] = useState<TitleDraft | null>(null);
 
   useEffect(() => {
     let stale = false;
@@ -87,6 +91,7 @@ export default function DescriptionSection({
         onDraftChange(d.description);
         setFlags({ uncertain: d.uncertain, conflicts: d.conflicts });
         setProposed(d.tags);
+        setTitleDraft(d);
         // Without the vocab there is nothing to edit against, so tags stay untouched.
         onTagsChange(tagInfo && tagInfo.groups.length > 0 ? initialPicks(d.tags, manual, singleGroups) : null);
       })
@@ -96,13 +101,15 @@ export default function DescriptionSection({
 
   const manual = (tagInfo?.current ?? []).filter((t) => t.source === "manual");
   const singleGroups = new Set((tagInfo?.groups ?? []).filter((g) => g.single).map((g) => g.group));
-  const discard = () => { onDraftChange(null); setFlags(null); setProposed([]); onTagsChange(null); };
+  const discard = () => { onDraftChange(null); setFlags(null); setProposed([]); setTitleDraft(null); onTagsChange(null); };
   const noSource = !useOriginals && !useMockup;
   // Drafting waits for the current text: approve sends it back as the expected value.
   const words = draft === null ? 0 : wordCount(draft);
 
   return (
     <section className="stack-sm desc-section" aria-labelledby="bf-desc-label">
+      <TitleDetailField productid={productid} value={title} onChange={onTitleChange} suggestion={titleDraft} />
+
       <span className="section-label" id="bf-desc-label">Description</span>
 
       {loadErr ? (
@@ -141,7 +148,7 @@ export default function DescriptionSection({
         {/* Also waits for the tags: the picks are built from them when the draft returns. */}
         <button type="button" disabled={drafting || noSource || !cur || !(tagInfo || tagErr)}
           onClick={doDraft} aria-busy={drafting}>
-          {drafting ? "Drafting…" : draft === null ? "Draft description" : "Regenerate"}
+          {drafting ? "Drafting…" : draft === null ? "Draft title and description" : "Regenerate"}
         </button>
       </div>
       {noSource && <p className="muted">Pick at least one image source.</p>}
