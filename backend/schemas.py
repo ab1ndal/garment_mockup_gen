@@ -146,10 +146,11 @@ class BackfillItem(BaseModel):
     filename: str
     thumbnail_url: str | None
     unknown_product: bool
+    categoryid: str | None = None
 
 
 class BackfillItemsResponse(BaseModel):
-    total: int            # full count for the requested status (drives the pager)
+    total: int            # full count for the requested status and category (drives the pager)
     offset: int
     limit: int
     items: list[BackfillItem]
@@ -157,6 +158,10 @@ class BackfillItemsResponse(BaseModel):
 
 class BackfillCountsResponse(BaseModel):
     counts: dict[str, int]   # {status: count} for each sub-tab
+
+
+class BackfillCategoryCountsResponse(BaseModel):
+    counts: dict[str, dict[str, int]]   # {status: {categoryid: count}}
 
 
 class TagPick(BaseModel):

@@ -12,8 +12,10 @@ reviewers acting on the same card can't both succeed.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 
+from postgrest.exceptions import APIError
 from supabase import Client
 
 # Status values mirror the reserved Drive subfolders (see the migration).
@@ -28,6 +30,12 @@ TAB_STATUSES = [PENDING, SKIPPED, EDIT, REGENERATE]
 
 _COLS = "file_id, productid, alpha, filename, thumbnail_link, status, created_at, updated_at"
 
+# Rows per request when scanning the worklist; PostgREST caps a response at 1000.
+_SCAN_PAGE = 1000
+
+# PostgREST's reply to an offset past the last row (HTTP 416).
+_RANGE_NOT_SATISFIABLE = "PGRST103"
+
 
 @dataclass
 class BackfillRow:
@@ -41,6 +49,7 @@ class BackfillRow:
     # False when productid is NULL or names no product.
     product_name: str | None = None
     product_found: bool = False
+    categoryid: str | None = None
 
 
 def _row(r: dict) -> BackfillRow:
@@ -54,23 +63,38 @@ def _row(r: dict) -> BackfillRow:
         status=r["status"],
         product_name=product.get("name") if product else None,
         product_found=product is not None,
+        categoryid=product.get("categoryid") if product else None,
     )
 
 
-def page(client: Client, *, status: str, offset: int, limit: int) -> tuple[list[BackfillRow], int]:
+def page(client: Client, *, status: str, offset: int, limit: int,
+         category: str | None = None) -> tuple[list[BackfillRow], int]:
     """Return ``(rows, total)`` for one page of a status, ordered by filename.
 
     ``total`` is the full count for the status (for the pager), fetched in the same
     request via Supabase's exact count. Product names are embedded through the
     ``productid`` foreign key, so the page needs no second lookup.
+
+    ``category`` narrows both the page and ``total`` to one ``categoryid``. Only
+    then is the embed an inner join: without it, rows with no product must stay.
+
+    An offset past the end (another reviewer shrank the list) returns no rows and
+    the real total, not an error, so the caller can step back to the last page.
     """
-    resp = (
-        client.table("backfill_items").select(f"{_COLS}, products(name)", count="exact")
+    embed = "products!inner" if category else "products"
+    query = (
+        client.table("backfill_items").select(f"{_COLS}, {embed}(name, categoryid)", count="exact")
         .eq("status", status)
-        .order("filename")
-        .range(offset, offset + limit - 1)
-        .execute()
     )
+    if category:
+        query = query.eq("products.categoryid", category)
+    query = query.order("filename")
+    try:
+        resp = query.range(offset, offset + limit - 1).execute()
+    except APIError as exc:
+        if exc.code != _RANGE_NOT_SATISFIABLE:
+            raise
+        return [], query.range(0, 0).execute().count or 0
     rows = [_row(r) for r in (resp.data or [])]
     total = resp.count if resp.count is not None else len(rows)
     return rows, total
@@ -86,6 +110,39 @@ def counts(client: Client) -> dict[str, int]:
     resp = client.rpc("backfill_status_counts").execute()
     seen = {r["status"]: int(r["n"]) for r in (resp.data or [])}
     return {s: seen.get(s, 0) for s in TAB_STATUSES}
+
+
+def category_counts(client: Client) -> dict[str, dict[str, int]]:
+    """Return ``{status: {categoryid: count}}`` for each sub-tab status.
+
+    Scans the open worklist in ranged pages and tallies here: PostgREST aggregates
+    are disabled on this project, and one exact-count query per category would be
+    far more round-trips than the three or so pages this takes. Published rows are
+    excluded to keep the scan bounded. Rows with no category are not tallied.
+    """
+    tally: Counter[tuple[str, str]] = Counter()
+    offset = 0
+    while True:
+        resp = (
+            client.table("backfill_items").select("status, products(categoryid)", count="exact")
+            .neq("status", PUBLISHED)
+            .order("file_id")
+            .range(offset, offset + _SCAN_PAGE - 1)
+            .execute()
+        )
+        rows = resp.data or []
+        for r in rows:
+            categoryid = (r.get("products") or {}).get("categoryid")
+            if categoryid:
+                tally[(r["status"], categoryid)] += 1
+        offset += len(rows)
+        if not rows or offset >= (resp.count or 0):
+            break
+    out: dict[str, dict[str, int]] = {s: {} for s in TAB_STATUSES}
+    for (status, categoryid), n in tally.items():
+        if status in out:
+            out[status][categoryid] = n
+    return out
 
 
 def get(client: Client, file_id: str) -> BackfillRow | None:
