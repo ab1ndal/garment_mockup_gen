@@ -29,7 +29,7 @@ import {
   type TitleEdit,
 } from "../api";
 import { CheckIcon, ImageIcon } from "./icons";
-import TitleDetailField from "./TitleDetailField";
+import { AutoTitleDetailField } from "./TitleDetailField";
 
 const PREVIEW_DEBOUNCE_MS = 450;
 const gridStyle: React.CSSProperties = {
@@ -581,7 +581,7 @@ export default function ProductShotsTab() {
                 </div>
               )}
 
-              <TitleDetailField
+              <AutoTitleDetailField
                 key={selected.productid}
                 productid={selected.productid}
                 value={title}

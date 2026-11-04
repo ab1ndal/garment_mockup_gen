@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  type ApiError, type DescriptionDraft, type ProductDescription, type ProductTags,
+  type ApiError, type CopyDraft, type DraftSource, type ProductDescription, type ProductTags,
   type ProposedTag, type TagPick, type TagRow, type TitleDraft, type TitleEdit,
-  draftBackfillDescription, getBackfillDescription, getBackfillTags,
+  getBackfillDescription, getBackfillTags,
 } from "../api";
+import CopyDraftStatus from "./CopyDraftStatus";
 import TagEditor, { CurrentTags } from "./TagEditor";
 import TitleDetailField from "./TitleDetailField";
+import { useCopyDraft } from "./useCopyDraft";
 
 const NOTE_MAX = 500;
 const DESCRIPTION_MAX = 600;  // backend cap; longer text is not saved
@@ -37,18 +39,22 @@ function initialPicks(proposed: ProposedTag[], manual: TagRow[], single: Set<str
 }
 
 /**
- * The product's storefront description and tags inside a Backfill review.
- * Shows what is in the database on open (no AI call); drafts only on click.
- * The draft and tag picks live in the parent (`draft`/`tags`, null = no draft)
- * because Approve saves them.
+ * The product's title, description and tags inside a review. Opening it asks for an
+ * AI draft, which fills in by itself so the reviewer only has to check it; nothing is
+ * saved until they approve the image. Text a person wrote is never replaced: the AI
+ * version waits beside it as a choice. The values live in the parent (`useReviewCopy`)
+ * because Approve sends them.
  */
 export default function DescriptionSection({
-  productid, fileId, draft, onDraftChange, onLoaded, tags, onTagsChange, title, onTitleChange,
+  productid, source, draft, onDraftChange, descriptionEdited, onDescriptionEdited,
+  onLoaded, tags, onTagsChange, title, onTitleChange,
 }: {
   productid: string;
-  fileId: string;
+  source: DraftSource;
   draft: string | null;
   onDraftChange: (d: string | null) => void;
+  descriptionEdited: boolean;
+  onDescriptionEdited: (edited: boolean) => void;
   onLoaded: (cur: ProductDescription) => void;
   tags: TagPick[] | null;
   onTagsChange: (t: TagPick[] | null) => void;
@@ -60,13 +66,15 @@ export default function DescriptionSection({
   const [useOriginals, setUseOriginals] = useState(true);
   const [useMockup, setUseMockup] = useState(true);
   const [note, setNote] = useState("");
-  const [drafting, setDrafting] = useState(false);
-  const [draftErr, setDraftErr] = useState<string | null>(null);
-  const [flags, setFlags] = useState<Pick<DescriptionDraft, "uncertain" | "conflicts"> | null>(null);
   const [tagInfo, setTagInfo] = useState<ProductTags | null>(null);
   const [tagErr, setTagErr] = useState<string | null>(null);
   const [proposed, setProposed] = useState<ProposedTag[]>([]);
   const [titleDraft, setTitleDraft] = useState<TitleDraft | null>(null);
+  // The AI description when it could not be filled in: someone wrote the current text,
+  // the reviewer has edited, or they discarded it. Using it costs nothing.
+  const [offered, setOffered] = useState<CopyDraft | null>(null);
+  const applied = useRef<number | null>(null);
+  const ai = useCopyDraft(source);
 
   useEffect(() => {
     let stale = false;
@@ -80,30 +88,44 @@ export default function DescriptionSection({
     // Keyed on productid only: onLoaded is a fresh parent callback each render.
   }, [productid]);
 
-  const doDraft = () => {
-    setDrafting(true);
-    setDraftErr(null);
-    draftBackfillDescription(fileId, {
-      productid, use_originals: useOriginals, use_mockup: useMockup,
-      note: note.trim() || undefined,
-    })
-      .then((d) => {
-        onDraftChange(d.description);
-        setFlags({ uncertain: d.uncertain, conflicts: d.conflicts });
-        setProposed(d.tags);
-        setTitleDraft(d);
-        // Without the vocab there is nothing to edit against, so tags stay untouched.
-        onTagsChange(tagInfo && tagInfo.groups.length > 0 ? initialPicks(d.tags, manual, singleGroups) : null);
-      })
-      .catch((e: ApiError) => setDraftErr(e.message))
-      .finally(() => setDrafting(false));
-  };
-
   const manual = (tagInfo?.current ?? []).filter((t) => t.source === "manual");
   const singleGroups = new Set((tagInfo?.groups ?? []).filter((g) => g.single).map((g) => g.group));
-  const discard = () => { onDraftChange(null); setFlags(null); setProposed([]); setTitleDraft(null); onTagsChange(null); };
+
+  const take = (d: CopyDraft) => {
+    onDraftChange(d.description ?? "");
+    // Without the vocab there is nothing to edit against, so tags stay untouched.
+    onTagsChange(tagInfo && tagInfo.groups.length > 0 ? initialPicks(d.tags, manual, singleGroups) : null);
+    setOffered(null);
+  };
+
+  // Waits for the current text, which decides fill or offer and which Approve sends
+  // back as the expected value, and for the tags, which the picks are built from.
+  useEffect(() => {
+    const d = ai.draft;
+    if (d?.status !== "ready" || d.id === null || !cur || !(tagInfo || tagErr) || applied.current === d.id) return;
+    applied.current = d.id;
+    setProposed(d.tags);
+    setTitleDraft(d);
+    if (cur.replaceable && !descriptionEdited) {
+      take(d);
+    } else {
+      setOffered(d);
+    }
+  }, [ai.draft, cur, tagInfo, tagErr]);
+
+  const flags = ai.draft?.status === "ready" ? ai.draft : null;
+  const inFlight = ai.asking || ai.draft?.status === "queued" || ai.draft?.status === "drafting";
   const noSource = !useOriginals && !useMockup;
-  // Drafting waits for the current text: approve sends it back as the expected value.
+  const discard = () => {
+    if (flags) setOffered(flags);
+    onDraftChange(null);
+    onDescriptionEdited(false);
+    setTitleDraft(null);
+    onTagsChange(null);
+  };
+  const askAgain = () => ai.ask({
+    force: true, use_originals: useOriginals, use_mockup: useMockup, note: note.trim() || undefined,
+  });
   const words = draft === null ? 0 : wordCount(draft);
 
   return (
@@ -111,6 +133,8 @@ export default function DescriptionSection({
       <TitleDetailField productid={productid} value={title} onChange={onTitleChange} suggestion={titleDraft} />
 
       <span className="section-label" id="bf-desc-label">Description</span>
+
+      <CopyDraftStatus draft={ai.draft} error={ai.error} asking={ai.asking} card={ai.card} onRetry={askAgain} />
 
       {loadErr ? (
         <p className="alert alert-error" role="alert">Could not load the description: {loadErr}</p>
@@ -136,36 +160,22 @@ export default function DescriptionSection({
         )}
       </div>
 
-      <div className="desc-controls">
-        <label className="check">
-          <input type="checkbox" checked={useOriginals} onChange={(e) => setUseOriginals(e.target.checked)} />
-          <span>Drive originals</span>
-        </label>
-        <label className="check">
-          <input type="checkbox" checked={useMockup} onChange={(e) => setUseMockup(e.target.checked)} />
-          <span>Mockup</span>
-        </label>
-        {/* Also waits for the tags: the picks are built from them when the draft returns. */}
-        <button type="button" disabled={drafting || noSource || !cur || !(tagInfo || tagErr)}
-          onClick={doDraft} aria-busy={drafting}>
-          {drafting ? "Drafting…" : draft === null ? "Draft title and description" : "Regenerate"}
-        </button>
-      </div>
-      {noSource && <p className="muted">Pick at least one image source.</p>}
+      {offered?.description && (
+        <div className="alert alert-info" role="note">
+          <p><strong>AI suggests:</strong> {offered.description}</p>
+          <button type="button" onClick={() => { take(offered); setTitleDraft(offered); onDescriptionEdited(true); }}>
+            Use this
+          </button>
+        </div>
+      )}
 
-      <div className="field">
-        <label htmlFor="bf-desc-note">Note for the draft (optional)</label>
-        <input
-          id="bf-desc-note"
-          value={note}
-          maxLength={NOTE_MAX}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="e.g. has mirror work on the sleeves"
-        />
-      </div>
-
-      {draftErr && (
-        <p className="alert alert-error" role="alert">{draftErr} Try again, or approve without a description and tags.</p>
+      {draft === null && (
+        <div>
+          <button type="button" disabled={!cur}
+            onClick={() => { onDraftChange(cur?.description ?? ""); onDescriptionEdited(true); }}>
+            Type a description
+          </button>
+        </div>
       )}
 
       {draft !== null && (
@@ -183,13 +193,13 @@ export default function DescriptionSection({
             </div>
           )}
           <div className="field">
-            <label htmlFor="bf-desc-draft">AI draft (saved when you approve the image)</label>
+            <label htmlFor="bf-desc-draft">New description (saved when you approve the image)</label>
             <textarea
               id="bf-desc-draft"
               value={draft}
               rows={4}
               maxLength={DESCRIPTION_MAX}
-              onChange={(e) => onDraftChange(e.target.value)}
+              onChange={(e) => { onDraftChange(e.target.value); onDescriptionEdited(true); }}
               aria-describedby="bf-desc-count"
             />
             <span id="bf-desc-count" className={words < WORDS_MIN || words > WORDS_MAX ? "desc-count desc-count-off" : "desc-count muted"}>
@@ -206,9 +216,41 @@ export default function DescriptionSection({
             </div>
           )}
           <div>
-            <button type="button" onClick={discard}>Discard draft</button>
+            <button type="button" onClick={discard}>Keep the current description</button>
           </div>
         </div>
+      )}
+
+      {ai.draft?.status !== "unavailable" && (
+        <details>
+          <summary>Ask the AI again</summary>
+          <div className="stack-sm">
+            <div className="desc-controls">
+              <label className="check">
+                <input type="checkbox" checked={useOriginals} onChange={(e) => setUseOriginals(e.target.checked)} />
+                <span>Drive originals</span>
+              </label>
+              <label className="check">
+                <input type="checkbox" checked={useMockup} onChange={(e) => setUseMockup(e.target.checked)} />
+                <span>Mockup</span>
+              </label>
+              <button type="button" disabled={inFlight || noSource} onClick={askAgain} aria-busy={inFlight}>
+                {inFlight ? "Writing…" : "Write again"}
+              </button>
+            </div>
+            {noSource && <p className="muted">Pick at least one image source.</p>}
+            <div className="field">
+              <label htmlFor="bf-desc-note">Note for the AI (optional)</label>
+              <input
+                id="bf-desc-note"
+                value={note}
+                maxLength={NOTE_MAX}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="e.g. has mirror work on the sleeves"
+              />
+            </div>
+          </div>
+        </details>
       )}
     </section>
   );

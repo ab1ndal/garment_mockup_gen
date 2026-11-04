@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import {
   type ApiError, type TitleDraft, type TitleEdit, type TitlePreview,
-  draftProductTitle, getProductTitle, getTitlePreview,
+  getProductTitle, getTitlePreview,
 } from "../api";
+import CopyDraftStatus from "./CopyDraftStatus";
+import { useCopyDraft } from "./useCopyDraft";
 
 export const TITLE_DETAIL_MAX = 60;  // database limit
 const PREVIEW_DEBOUNCE_MS = 400;
@@ -12,24 +14,17 @@ const PREVIEW_DEBOUNCE_MS = 400;
  * (a published photo puts the product live). The edit lives in the parent because
  * its publish request sends it. An AI draft fills only an empty field; over text
  * someone wrote it stays a suggestion the reviewer has to choose.
- *
- * `suggestion` is for a parent that drafts itself (Backfill's description panel).
- * Without it the field has its own draft button.
  */
 export default function TitleDetailField({ productid, value, onChange, suggestion }: {
   productid: string;
   value: TitleEdit | null;
   onChange: (t: TitleEdit) => void;
-  suggestion?: TitleDraft | null;
+  suggestion: TitleDraft | null;
 }) {
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [preview, setPreview] = useState<TitlePreview | null>(null);
-  const [ownDraft, setOwnDraft] = useState<TitleDraft | null>(null);
-  const [drafting, setDrafting] = useState(false);
-  const [draftErr, setDraftErr] = useState<string | null>(null);
 
-  const draftable = suggestion === undefined;
-  const ai = draftable ? ownDraft : suggestion;
+  const ai = suggestion;
   const edit = value?.productid === productid ? value : null;
   const loaded = edit !== null;
 
@@ -66,15 +61,6 @@ export default function TitleDetailField({ productid, value, onChange, suggestio
     return () => { stale = true; clearTimeout(timer); };
   }, [productid, detail]);
 
-  const doDraft = () => {
-    setDrafting(true);
-    setDraftErr(null);
-    draftProductTitle(productid)
-      .then(setOwnDraft)
-      .catch((e: ApiError) => setDraftErr(e.message))
-      .finally(() => setDrafting(false));
-  };
-
   const inputId = `title-detail-${productid}`;
   const suggested = ai?.title_detail && edit && ai.title_detail !== edit.detail ? ai.title_detail : null;
 
@@ -98,15 +84,6 @@ export default function TitleDetailField({ productid, value, onChange, suggestio
           {edit?.detail.length ?? 0}/{TITLE_DETAIL_MAX} characters
         </span>
       </div>
-
-      {draftable && (
-        <div>
-          <button type="button" disabled={drafting || !edit} onClick={doDraft} aria-busy={drafting}>
-            {drafting ? "Drafting…" : ownDraft ? "Draft again" : "Draft with AI"}
-          </button>
-        </div>
-      )}
-      {draftErr && <p className="alert alert-error" role="alert">{draftErr} Try again, or type the detail.</p>}
 
       {suggested && edit && (
         <p className="muted">
@@ -132,6 +109,26 @@ export default function TitleDetailField({ productid, value, onChange, suggestio
           Another product already has this title. You can still publish, but add something specific if you can.
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * The field for screens with no description panel. Mounting it asks for the product's
+ * AI draft, so mount it only once an image is chosen. These screens save only the title.
+ */
+export function AutoTitleDetailField({ productid, value, onChange }: {
+  productid: string;
+  value: TitleEdit | null;
+  onChange: (t: TitleEdit) => void;
+}) {
+  const ai = useCopyDraft({ kind: "product", productid });
+  return (
+    <div className="stack-sm">
+      <TitleDetailField productid={productid} value={value} onChange={onChange}
+        suggestion={ai.draft?.status === "ready" ? ai.draft : null} />
+      <CopyDraftStatus draft={ai.draft} error={ai.error} asking={ai.asking} card={ai.card}
+        onRetry={() => ai.ask({ force: true })} />
     </div>
   );
 }

@@ -7,7 +7,7 @@ import {
   type GenOptions, type TitleEdit,
 } from "../api";
 import RefineButton from "./RefineButton";
-import TitleDetailField from "./TitleDetailField";
+import { AutoTitleDetailField } from "./TitleDetailField";
 import { useImageLightbox } from "./Lightbox";
 import { ArrowUpRightIcon, CheckIcon, ExpandIcon, UploadIcon } from "./icons";
 
@@ -601,7 +601,7 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
               Publishes this Drive image directly — no AI generation.
             </p>
             <div className="mt-3">
-              <TitleDetailField productid={product.productid} value={title} onChange={setTitle} />
+              <AutoTitleDetailField productid={product.productid} value={title} onChange={setTitle} />
             </div>
             {useMsg && (
               <p className={`alert ${useMsg.kind === "error" ? "alert-error" : "alert-info"}`} role="alert">
@@ -820,7 +820,7 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
           {/* Publish — the single primary action */}
           <div className="mt-5 border-t border-line pt-4">
             <div className="mb-3">
-              <TitleDetailField productid={product.productid} value={title} onChange={setTitle} />
+              <AutoTitleDetailField productid={product.productid} value={title} onChange={setTitle} />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button className="btn-primary" onClick={approveGenerated} disabled={publishing || busy !== null}>

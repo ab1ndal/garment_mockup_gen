@@ -4,10 +4,11 @@ import {
   getBackfillSources, getProductColors,
   approveBackfill, flagBackfill, flagEditBackfill, skipBackfill, unskipBackfill,
   type BackfillCategoryCounts, type BackfillItem, type BackfillSources, type BackfillStatus,
-  type Category, type ProductDescription, type TagPick, type TitleEdit, titleFields, ApiError,
+  type Category, ApiError,
 } from "../api";
 import DescriptionSection from "./DescriptionSection";
 import { useImageLightbox } from "./Lightbox";
+import { useReviewCopy } from "./useReviewCopy";
 
 const PAGE = 20;
 const ASPECTS = ["1:1", "4:5", "3:4", "9:16", "16:9"];
@@ -449,12 +450,7 @@ function ReviewPanel({
   const [removeWm, setRemoveWm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  // null = no draft open; "" is a real (empty) draft and is saved on approve.
-  const [descDraft, setDescDraft] = useState<string | null>(null);
-  const [descLoaded, setDescLoaded] = useState<ProductDescription | null>(null);
-  // null = tags untouched; sent only together with a description draft.
-  const [tagPicks, setTagPicks] = useState<TagPick[] | null>(null);
-  const [titleEdit, setTitleEdit] = useState<TitleEdit | null>(null);
+  const copy = useReviewCopy(item.productid);
   const lightbox = useImageLightbox();
 
   useEffect(() => {
@@ -488,19 +484,12 @@ function ReviewPanel({
     if (!item.productid) return;
     setBusy(true);
     setMsg(null);
-    const withDescription = descDraft !== null && descLoaded !== null;
-    const draftText = descDraft?.trim() ?? "";
+    const draftText = copy.draftText;
     approveBackfill({
       file_id: item.file_id, productid: item.productid,
       color: color || undefined, theme_name: theme, aspect_ratio: aspect,
       remove_watermark: removeWm,
-      ...titleFields(titleEdit, item.productid),
-      ...(withDescription ? {
-        description: draftText,
-        expected_description: descLoaded.description,
-        expected_reviewed_at: descLoaded.description_reviewed_at,
-        ...(tagPicks !== null ? { tags: tagPicks } : {}),
-      } : {}),
+      ...copy.fields(),
     })
       .then((r) => {
         const notes = [
@@ -655,14 +644,8 @@ function ReviewPanel({
         {item.productid && !item.unknown_product && (
           <DescriptionSection
             productid={item.productid}
-            fileId={item.file_id}
-            draft={descDraft}
-            onDraftChange={setDescDraft}
-            onLoaded={setDescLoaded}
-            tags={tagPicks}
-            onTagsChange={setTagPicks}
-            title={titleEdit}
-            onTitleChange={setTitleEdit}
+            source={{ kind: "backfill", productid: item.productid, fileId: item.file_id }}
+            {...copy.section}
           />
         )}
 

@@ -207,9 +207,58 @@ export const getTitlePreview = (productid: string, detail: string) =>
   apiFetch<TitlePreview>(
     `/api/titles/${encodeURIComponent(productid)}/preview?detail=${encodeURIComponent(detail)}`);
 
-export const draftProductTitle = (productid: string) =>
-  apiFetch<TitleDraft>(`/api/titles/${encodeURIComponent(productid)}/draft`,
-    { method: "POST", body: JSON.stringify({}) });
+/** What a review screen sends with an image approval. */
+export interface ReviewedCopyFields extends TitleDetailFields {
+  // Sent only with an open description draft; saved after the image publishes
+  // if the description is unchanged since it was loaded.
+  description?: string;
+  expected_description?: string | null;
+  expected_reviewed_at?: string | null;
+  // True when the reviewer typed or chose the text. AI text alone never replaces
+  // what a person wrote.
+  description_edited?: boolean;
+  // The complete tag set; saved only if the description above saved.
+  tags?: TagPick[];
+}
+
+/** A product's AI draft. Nothing in it is on the product until someone approves it. */
+export interface CopyDraft extends TitleDraft {
+  // not_needed: people wrote this product's text. unavailable: database not updated yet.
+  status: "queued" | "drafting" | "ready" | "failed" | "not_needed" | "unavailable";
+  id: number | null;
+  source_card: string | null;
+  error: string | null;
+  description: string | null;
+  includes: string;
+  uncertain: string[];
+  conflicts: string[];
+  tags: ProposedTag[];
+}
+
+export type DraftSource =
+  | { kind: "backfill"; productid: string; fileId: string }
+  | { kind: "batch"; productid: string; itemId: number }
+  | { kind: "product"; productid: string };
+
+export interface CopyDraftOptions {
+  force?: boolean;  // the reviewer asked: Retry, or pay for a fresh draft
+  use_originals?: boolean;
+  use_mockup?: boolean;
+  note?: string;
+}
+
+const draftPath = (s: DraftSource) =>
+  s.kind === "backfill"
+    ? `/api/drafts/backfill/${encodeURIComponent(s.fileId)}?productid=${encodeURIComponent(s.productid)}`
+    : s.kind === "batch"
+      ? `/api/drafts/batch/${s.itemId}`
+      : `/api/drafts/product/${encodeURIComponent(s.productid)}`;
+
+export const requestCopyDraft = (source: DraftSource, options: CopyDraftOptions) =>
+  apiFetch<CopyDraft>(draftPath(source), { method: "POST", body: JSON.stringify(options) });
+
+export const getCopyDraft = (productid: string) =>
+  apiFetch<CopyDraft>(`/api/drafts/${encodeURIComponent(productid)}`);
 
 // Categories are a small, near-static list hit by every tab on mount.
 // Cache the in-flight promise so it's fetched once and shared (no refetch on
@@ -547,20 +596,13 @@ export const getBackfillSources = (fileId: string, productid: string | null) =>
       (productid ? `?productid=${encodeURIComponent(productid)}` : "")
   );
 
-export const approveBackfill = (b: TitleDetailFields & {
+export const approveBackfill = (b: ReviewedCopyFields & {
   file_id: string;
   productid: string;
   color?: string;
   theme_name?: string;
   aspect_ratio?: string;
   remove_watermark?: boolean;
-  // Sent only with an open description draft; saved after the image publishes
-  // if the description is unchanged since it was loaded.
-  description?: string;
-  expected_description?: string | null;
-  expected_reviewed_at?: string | null;
-  // The complete tag set; saved only if the description above saved.
-  tags?: TagPick[];
 }) =>
   apiFetch<{
     status: string; image_url: string; variation_id?: number;
@@ -577,14 +619,7 @@ export interface ProductDescription {
   description: string | null;
   description_source: DescriptionSource | null;
   description_reviewed_at: string | null;
-}
-
-export interface DescriptionDraft extends TitleDraft {
-  description: string;
-  includes: string;
-  uncertain: string[];
-  conflicts: string[];
-  tags: ProposedTag[];
+  replaceable: boolean;  // false when a person wrote it: AI text is offered, not filled in
 }
 
 export type TagSource = "manual" | "ai" | "ai_reviewed";
@@ -629,17 +664,6 @@ export const getBackfillTags = (productid: string) =>
 export const getBackfillDescription = (productid: string) =>
   apiFetch<ProductDescription>(`/api/backfill/description/${encodeURIComponent(productid)}`);
 
-export const draftBackfillDescription = (fileId: string, b: {
-  productid: string;
-  use_originals: boolean;
-  use_mockup: boolean;
-  note?: string;
-}) =>
-  apiFetch<DescriptionDraft>(
-    `/api/backfill/${encodeURIComponent(fileId)}/description/draft`,
-    { method: "POST", body: JSON.stringify(b) }
-  );
-
 export const flagBackfill = (b: { file_id: string; productid: string | null }) =>
   apiFetch<{ status: string; warning?: string | null }>("/api/backfill/flag", {
     method: "POST",
@@ -682,6 +706,17 @@ export interface BatchItem {
   storage_path: string | null;
   generated_thumb_url: string | null;
   error: string | null;
+  copy_preview?: CardCopy | null;
+}
+
+/** What one-click Accept on a card would approve. Without can_accept it opens Review. */
+export interface CardCopy {
+  can_accept: boolean;
+  draft_id: number | null;
+  title: string | null;
+  description: string | null;
+  colour_mismatch: string;
+  duplicate: boolean;
 }
 
 export interface BatchItems {
@@ -743,7 +778,7 @@ export function getBatchSources(id: number): Promise<BatchSources> {
   return apiFetch<BatchSources>(`/api/batch/${id}/sources`);
 }
 
-export function acceptBatch(id: number, body: TitleDetailFields & { color?: string | null; theme_name?: string | null; aspect_ratio?: string | null } = {}): Promise<{ status: string; warning: string | null }> {
+export function acceptBatch(id: number, body: ReviewedCopyFields & { color?: string | null; theme_name?: string | null; aspect_ratio?: string | null; approve_draft_id?: number } = {}): Promise<{ status: string; warning: string | null }> {
   return apiFetch(`/api/batch/${id}/accept`, { method: "POST", body: JSON.stringify(body) });
 }
 
