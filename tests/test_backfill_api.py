@@ -47,8 +47,8 @@ def _row(fid, pid="BC25001", name=None):
 
 def test_items_paginates_and_enriches(client, monkeypatch):
     monkeypatch.setattr(bf.items_repo, "page",
-                        lambda db, *, status, offset, limit: ([_row("a", name="Saree"),
-                                                               _row("b", "BCBAD")], 2))
+                        lambda db, *, status, offset, limit, category: ([_row("a", name="Saree"),
+                                                                         _row("b", "BCBAD")], 2))
     monkeypatch.setattr(bf.drive_client, "thumbnails_for",
                         lambda items: {i["file_id"]: f"data:{i['file_id']}" for i in items})
 
@@ -61,6 +61,47 @@ def test_items_paginates_and_enriches(client, monkeypatch):
     assert a["thumbnail_url"] == "data:a"
     bad = next(i for i in body["items"] if i["file_id"] == "b")
     assert bad["unknown_product"] is True   # productid present but no product row
+
+
+def test_items_passes_category_and_reports_each_items_category(client, monkeypatch):
+    seen = {}
+
+    def fake_page(db, *, status, offset, limit, category):
+        seen.update(status=status, offset=offset, limit=limit, category=category)
+        row = _row("a", name="Saree")
+        row.categoryid = "SA"
+        return [row], 41
+
+    monkeypatch.setattr(bf.items_repo, "page", fake_page)
+    monkeypatch.setattr(bf.drive_client, "thumbnails_for", lambda items: {})
+
+    r = client.get("/api/backfill/items?status=skipped&category=SA&offset=20&limit=20")
+    assert r.status_code == 200
+    assert seen == {"status": "skipped", "offset": 20, "limit": 20, "category": "SA"}
+    body = r.json()
+    assert body["total"] == 41 and body["offset"] == 20   # pager counts the category only
+    assert body["items"][0]["categoryid"] == "SA"
+
+
+@pytest.mark.parametrize("query", ["", "&category="])
+def test_items_without_a_category_is_unfiltered(client, monkeypatch, query):
+    seen = {}
+
+    def fake_page(db, *, status, offset, limit, category):
+        seen["category"] = category
+        return [], 0
+
+    monkeypatch.setattr(bf.items_repo, "page", fake_page)
+    assert client.get(f"/api/backfill/items?status=pending{query}").status_code == 200
+    assert seen["category"] is None
+
+
+def test_category_counts_returned_per_status(client, monkeypatch):
+    monkeypatch.setattr(bf.items_repo, "category_counts", lambda db: {
+        "pending": {"SA": 3}, "skipped": {}, "edit": {}, "regenerate": {}})
+    r = client.get("/api/backfill/category-counts")
+    assert r.status_code == 200
+    assert r.json()["counts"]["pending"] == {"SA": 3}
 
 
 def test_items_rejects_unknown_status(client):

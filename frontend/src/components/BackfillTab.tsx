@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  listBackfill, getBackfillCounts, rescanBackfill, getBackfillSources, getProductColors,
+  listBackfill, getBackfillCounts, getBackfillCategoryCounts, getCategories, rescanBackfill,
+  getBackfillSources, getProductColors,
   approveBackfill, flagBackfill, flagEditBackfill, skipBackfill, unskipBackfill,
-  type BackfillItem, type BackfillSources, type BackfillStatus, type ProductDescription, type TagPick,
-  type TitleEdit, titleFields, ApiError,
+  type BackfillCategoryCounts, type BackfillItem, type BackfillSources, type BackfillStatus,
+  type Category, type ProductDescription, type TagPick, type TitleEdit, titleFields, ApiError,
 } from "../api";
 import DescriptionSection from "./DescriptionSection";
 import { useImageLightbox } from "./Lightbox";
 
 const PAGE = 20;
 const ASPECTS = ["1:1", "4:5", "3:4", "9:16", "16:9"];
+const CATEGORY_KEY = "backfill.category";
 
 const TABS: { status: BackfillStatus; label: string }[] = [
   { status: "pending", label: "To review" },
@@ -45,27 +47,60 @@ export default function BackfillTab() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [rescanning, setRescanning] = useState(false);
+  const [cats, setCats] = useState<Category[]>([]);
+  // "" = all categories. Remembered so a refresh keeps the reviewer in their category.
+  const [category, setCategory] = useState(() => localStorage.getItem(CATEGORY_KEY) ?? "");
+  const [catCounts, setCatCounts] = useState<BackfillCategoryCounts | null>(null);
   const lightbox = useImageLightbox();
+  const loadSeq = useRef(0);
 
   const loadCounts = useCallback(() => {
     getBackfillCounts().then((r) => setCounts(r.counts)).catch(() => {});
+    getBackfillCategoryCounts().then((r) => setCatCounts(r.counts)).catch(() => {});
   }, []);
 
   const load = useCallback((s: BackfillStatus, off: number) => {
+    // Only the latest request may land: a slow reply for the previous category
+    // must not fill the grid under the new one.
+    const seq = ++loadSeq.current;
     setLoading(true);
     setError(null);
-    listBackfill({ status: s, offset: off, limit: PAGE })
+    listBackfill({ status: s, category, offset: off, limit: PAGE })
       .then((r) => {
+        if (seq !== loadSeq.current) return;
+        // Past the end (the last page just emptied): go to the new last page, so
+        // the empty state only ever means the queue itself is empty.
+        if (r.items.length === 0 && r.total > 0 && off > 0) {
+          load(s, Math.floor((r.total - 1) / PAGE) * PAGE);
+          return;
+        }
         setItems(r.items);
         setTotal(Number.isFinite(r.total) ? r.total : 0);
         setOffset(Number.isFinite(r.offset) ? r.offset : off);
       })
-      .catch((e: ApiError) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e: ApiError) => { if (seq === loadSeq.current) setError(e.message); })
+      .finally(() => { if (seq === loadSeq.current) setLoading(false); });
+  }, [category]);
+
+  const chooseCategory = useCallback((c: string) => {
+    if (c) localStorage.setItem(CATEGORY_KEY, c);
+    else localStorage.removeItem(CATEGORY_KEY);
+    setCategory(c);
+    setNotice(null);
   }, []);
 
   useEffect(() => { load(status, 0); }, [status, load]);
   useEffect(() => { loadCounts(); }, [loadCounts]);
+  useEffect(() => {
+    getCategories()
+      .then((cs) => {
+        setCats(cs);
+        // A remembered category that no longer exists has no option to show.
+        const saved = localStorage.getItem(CATEGORY_KEY);
+        if (saved && !cs.some((c) => c.categoryid === saved)) chooseCategory("");
+      })
+      .catch((e: ApiError) => setNotice(`Could not load categories: ${e.message}`));
+  }, [chooseCategory]);
 
   const reload = () => load(status, offset);
 
@@ -78,6 +113,15 @@ export default function BackfillTab() {
       if (to && to !== "published") next[to] = (next[to] ?? 0) + 1;
       return next;
     });
+    const cid = items.find((i) => i.file_id === fileId)?.categoryid;
+    if (cid) {
+      setCatCounts((c) => {
+        if (!c) return c;
+        const next = { ...c, [from]: { ...c[from], [cid]: Math.max(0, (c[from][cid] ?? 0) - 1) } };
+        if (to && to !== "published") next[to] = { ...next[to], [cid]: (next[to][cid] ?? 0) + 1 };
+        return next;
+      });
+    }
     setItems((xs) => {
       const left = xs.filter((i) => i.file_id !== fileId);
       if (left.length === 0 && total - 1 > 0) load(status, offset);
@@ -140,33 +184,62 @@ export default function BackfillTab() {
 
   const start = total === 0 ? 0 : offset + 1;
   const end = offset + items.length;
+  const categoryName = cats.find((c) => c.categoryid === category)?.name;
+  const tabCount = (s: BackfillStatus): number | null =>
+    category
+      ? catCounts && (catCounts[s][category] ?? 0)
+      : counts && (counts[s] ?? 0);
 
   return (
     <div className="stack">
       <div className="tabs subtabs" role="tablist" aria-label="Backfill review queues">
-        {TABS.map((t) => (
-          <button
-            key={t.status}
-            className="tab"
-            role="tab"
-            aria-selected={status === t.status}
-            onClick={() => setStatus(t.status)}
-          >
-            {t.label}
-            {counts && (
-              <span className="tab-count" aria-label={`${counts[t.status] ?? 0} items`}>
-                {counts[t.status] ?? 0}
-              </span>
-            )}
-          </button>
-        ))}
+        {TABS.map((t) => {
+          const n = tabCount(t.status);
+          return (
+            <button
+              key={t.status}
+              className="tab"
+              role="tab"
+              aria-selected={status === t.status}
+              onClick={() => setStatus(t.status)}
+            >
+              {t.label}
+              {n !== null && (
+                <span className="tab-count" aria-label={`${n} items`}>
+                  {n}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <div role="tabpanel" className="stack">
-        <div className="toolbar" style={{ justifyContent: "space-between", alignItems: "center" }}>
-          <span className="muted">
-            {loading ? "Loading…" : total === 0 ? "0 items" : `${start}–${end} of ${total}`}
-          </span>
+        <div className="toolbar" style={{ justifyContent: "space-between", alignItems: "flex-end" }}>
+          <div className="toolbar" style={{ alignItems: "flex-end", gap: "var(--sp-3)" }}>
+            <div className="field">
+              <label htmlFor="bf-category">Category</label>
+              <select
+                id="bf-category"
+                value={category}
+                disabled={busyId !== null}
+                onChange={(e) => chooseCategory(e.target.value)}
+              >
+                <option value="">
+                  All categories{counts ? ` (${counts[status] ?? 0})` : ""}
+                </option>
+                {category && !categoryName && <option value={category}>{category}</option>}
+                {cats.map((c) => (
+                  <option key={c.categoryid} value={c.categoryid}>
+                    {c.name}{catCounts ? ` (${catCounts[status][c.categoryid] ?? 0})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <span className="muted">
+              {loading ? "Loading…" : total === 0 ? "0 items" : `${start}–${end} of ${total}`}
+            </span>
+          </div>
           <div className="toolbar" style={{ gap: "var(--sp-2)" }}>
             <button onClick={reload} disabled={loading}>Refresh</button>
             <button onClick={onRescan} disabled={rescanning}>
@@ -185,7 +258,16 @@ export default function BackfillTab() {
         ) : loading ? (
           <p className="muted">Loading mockups…</p>
         ) : items.length === 0 ? (
-          <p className="muted">{EMPTY_COPY[status]}</p>
+          category ? (
+            <div className="stack-sm">
+              <p className="muted">
+                Nothing in {TABS.find((t) => t.status === status)?.label} for {categoryName ?? "this category"}.
+              </p>
+              <div><button onClick={() => chooseCategory("")}>Show all categories</button></div>
+            </div>
+          ) : (
+            <p className="muted">{EMPTY_COPY[status]}</p>
+          )
         ) : (
           <>
             <div style={gridStyle}>

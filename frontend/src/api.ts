@@ -499,6 +499,7 @@ export interface BackfillItem {
   filename: string;
   thumbnail_url: string | null;
   unknown_product: boolean;
+  categoryid: string | null;
 }
 
 export interface BackfillItems {
@@ -518,10 +519,11 @@ export interface BackfillSources {
 export type BackfillStatus = "pending" | "skipped" | "edit" | "regenerate";
 
 export function listBackfill(
-  p: { status?: BackfillStatus; offset?: number; limit?: number } = {}
+  p: { status?: BackfillStatus; category?: string; offset?: number; limit?: number } = {}
 ) {
   const q = new URLSearchParams();
   q.set("status", p.status ?? "pending");
+  if (p.category) q.set("category", p.category);
   if (p.offset != null) q.set("offset", String(p.offset));
   if (p.limit != null) q.set("limit", String(p.limit));
   return apiFetch<BackfillItems>(`/api/backfill/items?${q.toString()}`);
@@ -529,6 +531,12 @@ export function listBackfill(
 
 export const getBackfillCounts = () =>
   apiFetch<{ counts: Record<BackfillStatus, number> }>("/api/backfill/counts");
+
+/** Items per category id, per review queue. Categories with no items are absent. */
+export type BackfillCategoryCounts = Record<BackfillStatus, Record<string, number>>;
+
+export const getBackfillCategoryCounts = () =>
+  apiFetch<{ counts: BackfillCategoryCounts }>("/api/backfill/category-counts");
 
 export const rescanBackfill = () =>
   apiFetch<{ status: string; synced: number }>("/api/backfill/rescan", { method: "POST" });

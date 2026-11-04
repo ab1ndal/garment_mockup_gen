@@ -32,6 +32,7 @@ from backend.deps import get_db
 from backend.services.title_detail import save_title_detail
 from backend.schemas import (
     BackfillApproveRequest, BackfillCountsResponse, BackfillDescription,
+    BackfillCategoryCountsResponse,
     BackfillDraftRequest, BackfillDraftResponse, BackfillEditRequest,
     BackfillFlagRequest, BackfillItem, BackfillItemsResponse, BackfillTags,
     ProposedTagOut, TagGroupOut, TagOut, TagValue,
@@ -99,10 +100,12 @@ def _move(file_id: str, parent_id: str, where: str) -> str | None:
 
 @router.get("/items", response_model=BackfillItemsResponse)
 def list_items(status: str = items_repo.PENDING, offset: int = 0, limit: int = 20,
+               category: str | None = None,
                user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
     if status not in items_repo.TAB_STATUSES:
         raise HTTPException(status_code=400, detail=f"Unknown status: {status}")
-    rows, total = items_repo.page(db, status=status, offset=offset, limit=limit)
+    rows, total = items_repo.page(db, status=status, offset=offset, limit=limit,
+                                  category=category or None)
     thumbs = drive_client.thumbnails_for(
         [{"file_id": r.file_id, "thumbnail_link": r.thumbnail_link} for r in rows]
     ) if rows else {}
@@ -116,6 +119,7 @@ def list_items(status: str = items_repo.PENDING, offset: int = 0, limit: int = 2
             filename=r.filename,
             thumbnail_url=thumbs.get(r.file_id),
             unknown_product=not r.product_found,
+            categoryid=r.categoryid,
         )
         for r in rows
     ]
@@ -125,6 +129,11 @@ def list_items(status: str = items_repo.PENDING, offset: int = 0, limit: int = 2
 @router.get("/counts", response_model=BackfillCountsResponse)
 def counts(user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
     return BackfillCountsResponse(counts=items_repo.counts(db))
+
+
+@router.get("/category-counts", response_model=BackfillCategoryCountsResponse)
+def category_counts(user: CurrentUser = Depends(get_current_user), db: Client = Depends(get_db)):
+    return BackfillCategoryCountsResponse(counts=items_repo.category_counts(db))
 
 
 @router.post("/rescan")
