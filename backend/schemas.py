@@ -121,14 +121,46 @@ class GenerateResponse(BaseModel):
     variation_id: int | None = None
 
 
+class TitleDetailFields(BaseModel):
+    """What a publish request carries from the title detail field. Checked in the
+    route, not here, because a bad title must not block the image."""
+    title_detail: str | None = None
+    # The value the screen loaded, so a save cannot replace a newer one.
+    expected_title_detail: str | None = None
+    # True only when the reviewer typed or chose the text. An AI draft alone never
+    # replaces a detail that is already there.
+    title_detail_edited: bool = False
+
+
+class TitleCurrentOut(BaseModel):
+    title_detail: str | None
+    display_title: str | None
+
+
+class TitlePreviewOut(BaseModel):
+    title: str
+    duplicate: bool
+
+
+class TitleDraftRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=MAX_DRAFT_NOTE_CHARS)
+
+
+class TitleDraftOut(BaseModel):
+    title_detail: str
+    title_detail_note: str
+    colour_mismatch: str
+
+
 class ApproveResponse(BaseModel):
     status: str
     detail: str
     image_url: str
     variation_id: int | None = None
+    title_warning: str | None = None
 
 
-class ApproveExistingRequest(BaseModel):
+class ApproveExistingRequest(TitleDetailFields):
     """Publish an already-made Drive mockup as a generation (no AI call)."""
     productid: str
     file_id: str
@@ -166,7 +198,7 @@ class TagPick(BaseModel):
     confidence: float | None = None
 
 
-class BackfillApproveRequest(BaseModel):
+class BackfillApproveRequest(TitleDetailFields):
     file_id: str
     productid: str
     color: str | None = None
@@ -212,6 +244,9 @@ class BackfillDraftResponse(BaseModel):
     uncertain: list[str]
     conflicts: list[str]
     tags: list[ProposedTagOut]
+    title_detail: str
+    title_detail_note: str
+    colour_mismatch: str
 
 
 class TagValue(BaseModel):
@@ -311,7 +346,7 @@ class BatchActionResponse(BaseModel):
     warning: str | None = None
 
 
-class BatchAcceptRequest(BaseModel):
+class BatchAcceptRequest(TitleDetailFields):
     color: str | None = None
     theme_name: str | None = None
     aspect_ratio: str | None = None
@@ -369,7 +404,7 @@ class PreviewResponse(BaseModel):
     preview: str            # data:image/png;base64,...
 
 
-class ImportPublishRequest(BaseModel):
+class ImportPublishRequest(TitleDetailFields):
     productid: str
     file_id: str
     color: str | None = None
@@ -379,6 +414,7 @@ class ImportPublishRequest(BaseModel):
 class ImportPublishResponse(BaseModel):
     image_url: str
     displayorder: int
+    title_warning: str | None = None
 
 
 class PresetModel(BaseModel):

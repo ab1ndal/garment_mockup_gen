@@ -19,6 +19,7 @@ from supabase import Client
 
 from backend.auth import CurrentUser, get_current_user
 from backend.deps import get_db
+from backend.services.title_detail import save_title_detail
 from backend.schemas import (
     CreatePresetRequest, ImportDriveImagesResponse, ImportPublishRequest,
     ImportPublishResponse, PresetModel, PresetsResponse, PreviewRequest,
@@ -155,7 +156,9 @@ def publish_shot(req: ImportPublishRequest, user: CurrentUser = Depends(get_curr
     productimages_repo.insert(db, productid=req.productid, imageurl=url,
                               productcolor=req.color, theme=_PRODUCT_SHOT_THEME,
                               displayorder=order)
-    return ImportPublishResponse(image_url=url, displayorder=order)
+    title_warning = save_title_detail(db, req.productid, req.title_detail,
+                                      req.expected_title_detail, req.title_detail_edited)
+    return ImportPublishResponse(image_url=url, displayorder=order, title_warning=title_warning)
 
 
 @router.get("/presets", response_model=PresetsResponse)

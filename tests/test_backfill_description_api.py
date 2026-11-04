@@ -98,7 +98,8 @@ def test_draft_uses_first_three_originals_and_mockup(client, drafting):
     r = client.post("/api/backfill/f1/description/draft", json={"productid": "BC25001"})
     assert r.status_code == 200
     assert r.json() == {"description": "New text", "includes": "saree",
-                        "uncertain": ["length"], "conflicts": [], "tags": []}
+                        "uncertain": ["length"], "conflicts": [], "tags": [],
+                        "title_detail": "", "title_detail_note": "", "colour_mismatch": ""}
     assert drafting["originals"] == [b"bytes:a", b"bytes:b", b"bytes:r1"]
     assert drafting["mockup"] == b"bytes:f1"
 

@@ -29,6 +29,7 @@ from supabase import Client
 
 from backend.auth import CurrentUser, get_current_user
 from backend.deps import get_db
+from backend.services.title_detail import save_title_detail
 from backend.schemas import (
     BackfillApproveRequest, BackfillCountsResponse, BackfillDescription,
     BackfillDraftRequest, BackfillDraftResponse, BackfillEditRequest,
@@ -219,6 +220,9 @@ def approve(req: BackfillApproveRequest, background: BackgroundTasks,
         # New tags over a description that didn't save would describe a stale product.
         saved = req.description is not None and description_warning is None
         tags_warning = _save_tags(db, req) if saved else _TAGS_NOT_SAVED
+    # Independent of the description: it can save when a stale description does not.
+    title_warning = save_title_detail(db, req.productid, req.title_detail,
+                                      req.expected_title_detail, req.title_detail_edited)
 
     # Archiving the Drive original takes ~1.8s and the reviewer doesn't need to
     # wait for it: the row is already `published`, and a failed move is
@@ -230,7 +234,8 @@ def approve(req: BackfillApproveRequest, background: BackgroundTasks,
 
     return {"status": "ok", "image_url": result["image_url"],
             "variation_id": result["variation_id"], "warning": None,
-            "description_warning": description_warning, "tags_warning": tags_warning}
+            "description_warning": description_warning, "tags_warning": tags_warning,
+            "title_warning": title_warning}
 
 
 def _save_description(db: Client, req: BackfillApproveRequest) -> str | None:
@@ -358,7 +363,9 @@ def draft_description_route(file_id: str, req: BackfillDraftRequest,
     return BackfillDraftResponse(description=d.description, includes=d.includes,
                                  uncertain=d.uncertain, conflicts=d.conflicts,
                                  tags=[ProposedTagOut(group=t.group, value=t.value, confidence=t.confidence)
-                                       for t in d.tags])
+                                       for t in d.tags],
+                                 title_detail=d.title_detail, title_detail_note=d.title_detail_note,
+                                 colour_mismatch=d.colour_mismatch)
 
 
 def _archive_original(file_id: str) -> None:

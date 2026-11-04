@@ -22,6 +22,7 @@ from backend.routers import generate as generate_router
 from backend.routers import import_shots as import_router
 from backend.routers import products as products_router
 from backend.routers import prompts as prompts_router
+from backend.routers import titles as titles_router
 from mockup_generator.config import settings
 from mockup_generator.integrations.supabase_client import anon_client, service_client
 
@@ -72,6 +73,7 @@ app.include_router(prompts_router.router)
 app.include_router(backfill_router.router)
 app.include_router(import_router.router)
 app.include_router(batch_router.router)
+app.include_router(titles_router.router)
 
 
 # Turn raw Supabase/PostgREST errors into clear, non-opaque responses.

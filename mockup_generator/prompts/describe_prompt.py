@@ -3,7 +3,8 @@
 The prompt, output schema and owner-approved examples are vendored copies (see
 ``describe/SOURCE.md``); this module is a port of retail-inventory's
 ``scripts/describe/build_prompt.js`` so both pipelines send the model the same
-text for the same product.
+text for the same product, plus the title detail section (``title_detail.md`` and
+``_TITLE_FIELDS``), which only this app uses and so lives outside the vendored files.
 """
 
 from __future__ import annotations
@@ -20,6 +21,9 @@ from mockup_generator.prompts.tag_vocab import family_of, prompt_block
 _AI_CAPTION_MIN_CHARS = 201
 _AI_SOURCE = "written earlier by an AI from photos; it may be wrong, so trust the photos over it"
 _SHOP_SOURCE = "written by the shop; facts here are true unless a photo clearly contradicts them"
+
+# No maxLength: Claude structured outputs reject it. draft.py enforces the limit.
+_TITLE_FIELDS = {"title_detail": {"type": "string"}, "colour_mismatch": {"type": "string"}}
 
 
 @dataclass(frozen=True)
@@ -44,8 +48,16 @@ def _template() -> str:
 
 
 @lru_cache(maxsize=1)
+def _title_section() -> str:
+    return resources.files("mockup_generator.prompts").joinpath("title_detail.md").read_text("utf-8")
+
+
+@lru_cache(maxsize=1)
 def load_schema() -> dict:
-    return json.loads(_read("schema.json"))
+    schema = json.loads(_read("schema.json"))
+    schema["required"] += list(_TITLE_FIELDS)
+    schema["properties"].update(_TITLE_FIELDS)
+    return schema
 
 
 @lru_cache(maxsize=1)
@@ -75,4 +87,4 @@ def build_prompt(facts: ProductFacts, owner_note: str | None = None) -> str:
         .replace("{TEXT}", text or "(none)")
         .replace("{OWNER_NOTE}", note)
         .replace("{TAGS}", prompt_block(family))
-    )
+    ) + "\n\n" + _title_section()

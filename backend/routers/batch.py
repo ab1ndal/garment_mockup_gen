@@ -29,6 +29,7 @@ from backend.routers.generate import (
     ALLOWED_ASPECTS, ALLOWED_MODELS, ALLOWED_RESOLUTIONS, _DEFAULTS as GEN_DEFAULTS,
 )
 from backend.services import batch_worker as worker
+from backend.services.title_detail import missing_title_warning, save_title_detail
 
 router = APIRouter(prefix="/api/batch", tags=["batch"])
 log = logging.getLogger(__name__)
@@ -203,7 +204,13 @@ def accept(item_id: int, req: BatchAcceptRequest,
     items_repo.transition(db, item_id=item_id, expect=items_repo.PUBLISHED,
                           to=items_repo.PUBLISHED, storage_path=None)
     log.info("batch %s published as %s", item_id, result["image_url"])
-    return BatchActionResponse(status="ok", warning=warning)
+    # The grid's one-click Accept sends no title field, so the reviewer never saw it.
+    title_warning = (
+        missing_title_warning(db, row.productid) if req.title_detail is None
+        else save_title_detail(db, row.productid, req.title_detail,
+                               req.expected_title_detail, req.title_detail_edited))
+    warnings = [w for w in (warning, title_warning) if w]
+    return BatchActionResponse(status="ok", warning=" ".join(warnings) or None)
 
 
 @router.post("/{item_id}/reject", response_model=BatchActionResponse)

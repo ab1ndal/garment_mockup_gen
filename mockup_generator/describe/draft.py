@@ -16,6 +16,7 @@ import anthropic
 from PIL import Image
 
 from mockup_generator.config import settings
+from mockup_generator.describe.title_detail import MAX_TITLE_DETAIL_CHARS, normalize
 from mockup_generator.prompts.describe_prompt import (
     ProductFacts, build_prompt, load_examples, load_schema,
 )
@@ -50,6 +51,9 @@ class Draft:
     uncertain: list[str]
     conflicts: list[str]
     tags: list[ProposedTag] = field(default_factory=list)
+    title_detail: str = ""
+    title_detail_note: str = ""
+    colour_mismatch: str = ""
 
 
 class DraftFailed(RuntimeError):
@@ -96,6 +100,16 @@ def _proposed_tags(data: dict, family: str | None, productid: str) -> list[Propo
     for k in SINGLE:
         add(k, data.get(k) or "")
     return [ProposedTag(g, v, c) for (g, v), c in found.items()]
+
+
+def _title_detail(data: dict, productid: str) -> tuple[str, str]:
+    """The draft's title detail and a note for the reviewer. Too long is not worth
+    failing the draft over: the description is still good and a reviewer can write it."""
+    text = normalize(data.get("title_detail"))
+    if len(text) <= MAX_TITLE_DETAIL_CHARS:
+        return text, ""
+    log.info("description draft for %s: title detail is %d chars", productid, len(text))
+    return "", f'AI title detail was over {MAX_TITLE_DETAIL_CHARS} characters, left out: "{text}"'
 
 
 def _system() -> str:
@@ -159,6 +173,9 @@ def draft_description(facts: ProductFacts, originals: list[bytes], mockup: bytes
         raise DraftFailed("model returned an empty description")
     if len(description) > MAX_DESCRIPTION_CHARS:
         raise DraftFailed(f"draft is {len(description)} chars, over {MAX_DESCRIPTION_CHARS}")
+    title_detail, title_note = _title_detail(data, facts.productid)
     return Draft(description=description, includes=(data.get("includes") or "").strip(),
                  uncertain=list(data.get("uncertain") or []), conflicts=list(data.get("conflicts") or []),
-                 tags=_proposed_tags(data, family_of(facts.categoryid), facts.productid))
+                 tags=_proposed_tags(data, family_of(facts.categoryid), facts.productid),
+                 title_detail=title_detail, title_detail_note=title_note,
+                 colour_mismatch=(data.get("colour_mismatch") or "").strip())
