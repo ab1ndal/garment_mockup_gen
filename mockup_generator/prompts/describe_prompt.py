@@ -65,6 +65,10 @@ def load_examples() -> dict[str, str]:
     return json.loads(_read("approved.json"))
 
 
+def looks_ai_written(text: str) -> bool:
+    return "**" in text or len(text) >= _AI_CAPTION_MIN_CHARS
+
+
 def build_prompt(facts: ProductFacts, owner_note: str | None = None) -> str:
     # Tag values are limited to what the product's category family may use (tag_vocab.json).
     # retail's build_prompt.js throws for a category in no family; Backfill still needs a
@@ -75,7 +79,7 @@ def build_prompt(facts: ProductFacts, owner_note: str | None = None) -> str:
         f"colours: {', '.join(facts.colours)}\nsizes: {', '.join(facts.sizes)}"
     )
     text = facts.description or ""
-    ai_written = "**" in text or len(text) >= _AI_CAPTION_MIN_CHARS
+    ai_written = looks_ai_written(text)
     note = (
         f"\nOWNER REVIEW NOTE on the previous draft (follow it):\n{owner_note.strip()}\n"
         if owner_note and owner_note.strip() else ""

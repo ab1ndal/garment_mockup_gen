@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from supabase import Client
 
-from mockup_generator.db.product_descriptions_repo import _match
+from mockup_generator.db.product_descriptions_repo import CurrentDescription, _match
 from mockup_generator.prompts.describe_prompt import ProductFacts
 
 
@@ -25,6 +25,28 @@ class CurrentTitle:
 class TitlePreview:
     title: str
     duplicate: bool
+
+
+@dataclass(frozen=True)
+class ProductCopy:
+    title: CurrentTitle
+    description: CurrentDescription
+
+
+def get_copy_many(client: Client, productids: list[str]) -> dict[str, ProductCopy]:
+    """Current title and description for a page of cards, in one query."""
+    pids = list(dict.fromkeys(productids))
+    if not pids:
+        return {}
+    rows = (
+        client.table("products")
+        .select("productid, title_detail, display_title, description, description_source, description_reviewed_at")
+        .in_("productid", pids).execute()
+    ).data or []
+    return {r["productid"]: ProductCopy(
+        CurrentTitle(r.get("title_detail"), r.get("display_title")),
+        CurrentDescription(r.get("description"), r.get("description_source"), r.get("description_reviewed_at")),
+    ) for r in rows}
 
 
 def get_current(client: Client, productid: str) -> CurrentTitle | None:

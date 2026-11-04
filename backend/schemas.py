@@ -142,16 +142,6 @@ class TitlePreviewOut(BaseModel):
     duplicate: bool
 
 
-class TitleDraftRequest(BaseModel):
-    note: str | None = Field(default=None, max_length=MAX_DRAFT_NOTE_CHARS)
-
-
-class TitleDraftOut(BaseModel):
-    title_detail: str
-    title_detail_note: str
-    colour_mismatch: str
-
-
 class ApproveResponse(BaseModel):
     status: str
     detail: str
@@ -203,13 +193,8 @@ class TagPick(BaseModel):
     confidence: float | None = None
 
 
-class BackfillApproveRequest(TitleDetailFields):
-    file_id: str
-    productid: str
-    color: str | None = None
-    theme_name: str | None = None
-    aspect_ratio: str | None = None
-    remove_watermark: bool = False
+class ReviewedCopyFields(TitleDetailFields):
+    """The text a reviewer approves along with an image."""
     # Present only when the reviewer has a description draft open: it is saved
     # after the image publishes, if the product's description and review stamp
     # still equal the values the panel loaded.
@@ -218,23 +203,38 @@ class BackfillApproveRequest(TitleDetailFields):
     description: str | None = None
     expected_description: str | None = None
     expected_reviewed_at: str | None = None
+    # True only when the reviewer typed or chose the text. An AI draft alone never
+    # replaces a description a person wrote.
+    description_edited: bool = False
     # The reviewer's complete tag set, sent with a description draft. Saved only
     # if the description saved. Fields are checked in the route for the same
     # reason as the description length: bad tags must not block the image.
     tags: list[TagPick] | None = None
 
 
+class BackfillApproveRequest(ReviewedCopyFields):
+    file_id: str
+    productid: str
+    color: str | None = None
+    theme_name: str | None = None
+    aspect_ratio: str | None = None
+    remove_watermark: bool = False
+
+
 class BackfillDescription(BaseModel):
     description: str | None
     description_source: str | None
     description_reviewed_at: str | None
+    # False when a person wrote the text, so an AI draft is only offered, not filled in.
+    replaceable: bool
 
 
-class BackfillDraftRequest(BaseModel):
-    productid: str
+class CopyDraftRequest(BaseModel):
     use_originals: bool = True
     use_mockup: bool = True
     note: str | None = Field(default=None, max_length=MAX_DRAFT_NOTE_CHARS)
+    # The reviewer asked: Retry a failure, or pay for a fresh draft over a good one.
+    force: bool = False
 
 
 class ProposedTagOut(BaseModel):
@@ -243,15 +243,33 @@ class ProposedTagOut(BaseModel):
     confidence: float | None
 
 
-class BackfillDraftResponse(BaseModel):
-    description: str
-    includes: str
-    uncertain: list[str]
-    conflicts: list[str]
-    tags: list[ProposedTagOut]
-    title_detail: str
-    title_detail_note: str
-    colour_mismatch: str
+class CopyDraftOut(BaseModel):
+    """A product's AI draft. Status is queued, drafting, ready or failed, or
+    not_needed (people wrote the text) or unavailable (migration not applied)."""
+    status: str
+    id: int | None = None
+    source_card: str | None = None
+    error: str | None = None
+    description: str | None = None
+    includes: str = ""
+    uncertain: list[str] = []
+    conflicts: list[str] = []
+    tags: list[ProposedTagOut] = []
+    title_detail: str = ""
+    title_detail_note: str = ""
+    colour_mismatch: str = ""
+
+
+class CardCopyOut(BaseModel):
+    """What one-click Accept on a Batch card would approve. Accept may publish only
+    when ``can_accept``; otherwise it opens Review."""
+    can_accept: bool
+    # Set when Accept would save this draft. None when people wrote all of it.
+    draft_id: int | None = None
+    title: str | None = None
+    description: str | None = None
+    colour_mismatch: str = ""
+    duplicate: bool = False
 
 
 class TagValue(BaseModel):
@@ -321,6 +339,7 @@ class BatchItemOut(BaseModel):
     storage_path: str | None
     generated_thumb_url: str | None
     error: str | None
+    copy_preview: CardCopyOut | None = None
 
 
 class BatchItemsResponse(BaseModel):
@@ -351,10 +370,13 @@ class BatchActionResponse(BaseModel):
     warning: str | None = None
 
 
-class BatchAcceptRequest(TitleDetailFields):
+class BatchAcceptRequest(ReviewedCopyFields):
     color: str | None = None
     theme_name: str | None = None
     aspect_ratio: str | None = None
+    # One-click Accept: the draft the card showed. If it is no longer the product's
+    # ready draft the reviewer was looking at old text, so nothing publishes.
+    approve_draft_id: int | None = None
 
 
 class BatchEditRequest(BaseModel):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException
 from supabase import Client
@@ -13,11 +14,11 @@ from backend.deps import get_db
 from backend.schemas import (
     BatchAcceptRequest, BatchActionResponse, BatchCategorySummaryOut,
     BatchCategorySummaryResponse, BatchCountsResponse, BatchEditRequest,
-    BatchEnqueueRequest, BatchEnqueueResponse, BatchItemOut, BatchItemsResponse,
+    BatchEnqueueRequest, BatchEnqueueResponse, BatchItemOut, BatchItemsResponse, CardCopyOut,
 )
 from mockup_generator.config import settings
 from mockup_generator.db import batch_items_repo as items_repo
-from mockup_generator.db import products_repo, variants_repo
+from mockup_generator.db import copy_drafts_repo, products_repo, variants_repo
 from mockup_generator.generation import publish
 from mockup_generator.integrations import drive_client, storage_client
 from mockup_generator.integrations.drive_client import DriveNotConfigured
@@ -29,12 +30,14 @@ from backend.routers.generate import (
     ALLOWED_ASPECTS, ALLOWED_MODELS, ALLOWED_RESOLUTIONS, _DEFAULTS as GEN_DEFAULTS,
 )
 from backend.services import batch_worker as worker
-from backend.services.title_detail import missing_title_warning, save_title_detail
+from backend.services.reviewed_copy import apply_approved_draft, card_previews, save_reviewed_copy
+from backend.services.title_detail import missing_title_warning
 
 router = APIRouter(prefix="/api/batch", tags=["batch"])
 log = logging.getLogger(__name__)
 
 _ALREADY_HANDLED = "This card was already handled."
+_DRAFT_CHANGED = "The text on this card changed. Open Review to see it. Nothing was published."
 
 # tab name -> statuses queried for that sub-tab
 _TABS: dict[str, list[str]] = {
@@ -123,6 +126,7 @@ def list_items(tab: str = "ready", offset: int = 0, limit: int = 20,
         productid=pid,
     )
     names = products_repo.names_for(db, [r.productid for r in rows])
+    previews = card_previews(db, [r.productid for r in rows]) if tab == "ready" else {}
     items = [
         BatchItemOut(
             id=r.id, productid=r.productid, product_name=names.get(r.productid),
@@ -130,6 +134,7 @@ def list_items(tab: str = "ready", offset: int = 0, limit: int = 20,
             storage_path=r.storage_path,
             generated_thumb_url=_staged_url(r.storage_path),
             error=r.error,
+            copy_preview=CardCopyOut(**asdict(previews[r.productid])) if r.productid in previews else None,
         )
         for r in rows
     ]
@@ -183,6 +188,12 @@ def accept(item_id: int, req: BatchAcceptRequest,
     row = items_repo.get(db, item_id)
     if row is None or not row.storage_path:
         raise HTTPException(status_code=404, detail="Card not found or not ready.")
+    draft = None
+    if req.approve_draft_id is not None:
+        # Accept means approving what the card showed, so check before publishing.
+        draft = copy_drafts_repo.get_by_id(db, req.approve_draft_id)
+        if draft is None or draft.status != copy_drafts_repo.READY or draft.productid != row.productid:
+            raise HTTPException(status_code=412, detail=_DRAFT_CHANGED)
     # Reserve the row so a second reviewer can't also publish it.
     _claim(db, item_id, items_repo.READY, items_repo.PUBLISHED)
     try:
@@ -204,12 +215,16 @@ def accept(item_id: int, req: BatchAcceptRequest,
     items_repo.transition(db, item_id=item_id, expect=items_repo.PUBLISHED,
                           to=items_repo.PUBLISHED, storage_path=None)
     log.info("batch %s published as %s", item_id, result["image_url"])
-    # The grid's one-click Accept sends no title field, so the reviewer never saw it.
-    title_warning = (
-        missing_title_warning(db, row.productid) if req.title_detail is None
-        else save_title_detail(db, row.productid, req.title_detail,
-                               req.expected_title_detail, req.title_detail_edited))
-    warnings = [w for w in (warning, title_warning) if w]
+    if draft is not None:
+        copy_warnings = apply_approved_draft(db, row.productid, draft).all()
+    elif req.title_detail is None and req.description is None:
+        # A bare accept: the card has nothing to save, or a screen is older than this
+        # code. The current screens open Review when a title is missing.
+        missing = missing_title_warning(db, row.productid)
+        copy_warnings = [missing] if missing else []
+    else:
+        copy_warnings = save_reviewed_copy(db, row.productid, req).all()
+    warnings = ([warning] if warning else []) + copy_warnings
     return BatchActionResponse(status="ok", warning=" ".join(warnings) or None)
 
 

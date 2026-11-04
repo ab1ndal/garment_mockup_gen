@@ -17,7 +17,6 @@ from mockup_generator.db import product_titles_repo as repo
 from mockup_generator.db.product_titles_repo import CurrentTitle, TitlePreview
 from mockup_generator.db.profiles_repo import Profile
 from mockup_generator.describe import draft as d
-from mockup_generator.describe.draft import Draft, DraftFailed
 from mockup_generator.describe.title_detail import MAX_TITLE_DETAIL_CHARS, normalize, should_save
 from mockup_generator.prompts.describe_prompt import ProductFacts, build_prompt, load_schema
 
@@ -282,35 +281,6 @@ def test_preview_route_normalizes(client, monkeypatch):
     r = client.get("/api/titles/BC1/preview", params={"detail": "with Zari"})
     assert r.json() == {"title": "t", "duplicate": True}
     assert seen["detail"] == "Zari"
-
-
-def test_title_draft_route_uses_originals_only(client, monkeypatch):
-    seen = {}
-    monkeypatch.setattr(titles_router.descriptions_repo, "get_facts", lambda db, pid: _FACTS)
-    monkeypatch.setattr(titles_router, "_first_originals", lambda db, pid: [b"a"])
-
-    def fake(facts, originals, mockup, note):
-        seen.update(originals=originals, mockup=mockup, note=note)
-        return Draft("x", "y", [], [], title_detail="Zari", colour_mismatch="c")
-    monkeypatch.setattr(titles_router, "draft_description", fake)
-    r = client.post("/api/titles/BC1/draft", json={"note": "n"})
-    assert r.json() == {"title_detail": "Zari", "title_detail_note": "", "colour_mismatch": "c"}
-    assert seen == {"originals": [b"a"], "mockup": None, "note": "n"}
-
-
-def test_title_draft_route_without_photos_400(client, monkeypatch):
-    monkeypatch.setattr(titles_router.descriptions_repo, "get_facts", lambda db, pid: _FACTS)
-    monkeypatch.setattr(titles_router, "_first_originals", lambda db, pid: [])
-    assert client.post("/api/titles/BC1/draft", json={}).status_code == 400
-
-
-def test_title_draft_route_failure_502(client, monkeypatch):
-    monkeypatch.setattr(titles_router.descriptions_repo, "get_facts", lambda db, pid: _FACTS)
-    monkeypatch.setattr(titles_router, "_first_originals", lambda db, pid: [b"a"])
-
-    def fail(*a): raise DraftFailed("no")
-    monkeypatch.setattr(titles_router, "draft_description", fail)
-    assert client.post("/api/titles/BC1/draft", json={}).status_code == 502
 
 
 def _png():
