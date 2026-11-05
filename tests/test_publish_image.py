@@ -184,6 +184,49 @@ def test_encode_webp_unchanged():
         assert img.format == "WEBP" and img.size == (300, 200)
 
 
+# ---------------- AI metadata ----------------
+
+_AI_VALUE = b"digitalsourcetype/trainedAlgorithmicMedia"
+
+
+def _capture_webps(monkeypatch):
+    uploads = {}
+
+    def _upload(pid, data, key, **kw):
+        if kw.get("ext") == "webp":
+            uploads[key] = data
+        return f"{pid}/{key}", f"https://public/{pid}/{key}"
+
+    monkeypatch.setattr(publish.storage_client, "upload_mockup", _upload)
+    return uploads
+
+
+def test_published_image_marks_every_webp_copy_as_ai(monkeypatch):
+    uploads = _capture_webps(monkeypatch)
+    calls = {}
+    monkeypatch.setattr(publish.storage_client, "short_hex", lambda: "deadbeef")
+    monkeypatch.setattr(publish.productimages_repo, "next_display_order", lambda db, pid: 0)
+    monkeypatch.setattr(publish.publish_repo, "write_rows",
+                        lambda db, **kw: (calls.__setitem__("rows", kw) or 7))
+    publish.publish_image(object(), productid="BC1", png=_png_sized(1600, 2000), color="red",
+                          theme_name=None, aspect_ratio=None, created_by=None,
+                          prompt_text=None)
+    assert len(uploads) == 4  # display + 150/600/1200
+    for data in uploads.values():
+        assert _AI_VALUE in data
+        with Image.open(BytesIO(data)) as img:
+            assert img.format == "WEBP"
+            assert _AI_VALUE in img.info["xmp"]
+
+
+def test_real_photo_upload_is_not_marked_as_ai(monkeypatch):
+    uploads = _capture_webps(monkeypatch)
+    publish.upload_web_images("BC1", _png_sized(1600, 2000), "shot")
+    assert len(uploads) == 4
+    for data in uploads.values():
+        assert _AI_VALUE not in data
+
+
 # ---------------- parallel uploads ----------------
 
 _UPLOADS_PER_PUBLISH = 5  # archival PNG + display WEBP + 150/600/1200 variants
