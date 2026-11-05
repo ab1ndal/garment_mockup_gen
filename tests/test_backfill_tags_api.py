@@ -8,6 +8,8 @@ from backend.auth import CurrentUser, get_current_user
 from backend.deps import get_db
 from backend.main import app
 from backend.routers import backfill as bf
+from backend.services.reviewed_copy import TAGS_NOT_SAVED
+from mockup_generator.db.product_descriptions_repo import CurrentDescription
 from mockup_generator.db.product_tags_repo import TagRow
 from mockup_generator.db.profiles_repo import Profile
 
@@ -44,6 +46,8 @@ def approving(monkeypatch):
     monkeypatch.setattr(bf.drive_client, "move_file", lambda fid, parent: None)
     monkeypatch.setattr(bf.descriptions_repo, "save_reviewed",
                         lambda db, pid, text, **kw: calls.get("save_result", True))
+    monkeypatch.setattr(bf.descriptions_repo, "get_current",
+                        lambda db, pid: CurrentDescription(None, None, None))
     monkeypatch.setattr(bf.products_repo, "get_product", lambda db, pid: _product(calls.get("cat", "SA")))
 
     def replace(db, pid, tags):
@@ -102,13 +106,13 @@ def test_approve_skips_tags_when_description_not_saved(client, approving):
     approving["save_result"] = False
     r = _approve(client, tags=_TAGS)
     assert r.status_code == 200
-    assert r.json()["tags_warning"] == bf._TAGS_NOT_SAVED
+    assert r.json()["tags_warning"] == TAGS_NOT_SAVED
     assert approving["rpc"] == []
 
 
 def test_approve_skips_tags_without_description(client, approving):
     r = client.post("/api/backfill/approve", json={"file_id": "f1", "productid": "BC25001", "tags": _TAGS})
-    assert r.status_code == 200 and r.json()["tags_warning"] == bf._TAGS_NOT_SAVED
+    assert r.status_code == 200 and r.json()["tags_warning"] == TAGS_NOT_SAVED
     assert approving["rpc"] == []
 
 

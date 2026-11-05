@@ -25,6 +25,7 @@ from supabase import Client
 
 from backend.auth import CurrentUser, get_current_user
 from backend.deps import get_db
+from backend.services.title_detail import save_title_detail
 from backend.schemas import (
     ApproveExistingRequest, ApproveResponse, GeneratePreview, GenerateRequest, GenerateUploadPreview,
     VideoGenerateRequest, VideoJobResponse,
@@ -407,6 +408,9 @@ def approve_mockup(
     theme_name: str | None = Form(None),
     aspect_ratio: str | None = Form(None),
     source: str = Form("generated"),
+    title_detail: str | None = Form(None),
+    expected_title_detail: str | None = Form(None),
+    title_detail_edited: bool = Form(False),
     image: UploadFile = File(...),
     user: CurrentUser = Depends(get_current_user),
     db: Client = Depends(get_db),
@@ -447,9 +451,13 @@ def approve_mockup(
                  productid, len(raw), png_img.width, png_img.height,
                  format_timings(timings))
 
+    # FastAPI reads an empty form value as None, which would hide a reviewer clearing the detail.
+    detail = "" if title_detail is None and title_detail_edited else title_detail
+    title_warning = save_title_detail(db, productid, detail, expected_title_detail, title_detail_edited)
     return ApproveResponse(
         status="ok", detail="Published.",
         image_url=result["image_url"], variation_id=result["variation_id"],
+        title_warning=title_warning,
     )
 
 
@@ -492,9 +500,12 @@ def approve_existing(req: ApproveExistingRequest,
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Could not store the mockup: {exc}") from exc
 
+    title_warning = save_title_detail(db, req.productid, req.title_detail,
+                                      req.expected_title_detail, req.title_detail_edited)
     return ApproveResponse(
         status="ok", detail="Published.",
         image_url=result["image_url"], variation_id=result["variation_id"],
+        title_warning=title_warning,
     )
 
 

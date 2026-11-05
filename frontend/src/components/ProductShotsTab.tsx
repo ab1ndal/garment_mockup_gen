@@ -19,14 +19,17 @@ import {
   previewImportShot,
   publishImportShot,
   releaseImportShot,
+  titleFields,
   warmImportShot,
   type Category,
   type EditParams,
   type EditPreset,
   type ImportImage,
   type Product,
+  type TitleEdit,
 } from "../api";
 import { CheckIcon, ImageIcon } from "./icons";
+import { AutoTitleDetailField } from "./TitleDetailField";
 
 const PREVIEW_DEBOUNCE_MS = 450;
 const gridStyle: React.CSSProperties = {
@@ -110,6 +113,7 @@ export default function ProductShotsTab() {
   const [preview, setPreview] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [title, setTitle] = useState<TitleEdit | null>(null);
 
   // --- presets ---
   const [presets, setPresets] = useState<EditPreset[]>([]);
@@ -216,10 +220,13 @@ export default function ProductShotsTab() {
       file_id: active.id,
       color: color || null,
       params,
+      ...titleFields(title, selected.productid),
     })
       .then((r) => {
         setPublished((s) => new Set(s).add(active.id));
-        setNotice(`Published as image #${r.displayorder}.`);
+        setNotice(`Published as image #${r.displayorder}.${r.title_warning ? ` ${r.title_warning}` : ""}`);
+        // The product stays open, and the saved text is now what the database holds.
+        if (!r.title_warning) setTitle((t) => t && { ...t, expected: t.detail, edited: false });
         setActive(null);
         setPreview(null);
       })
@@ -573,6 +580,13 @@ export default function ProductShotsTab() {
                   </select>
                 </div>
               )}
+
+              <AutoTitleDetailField
+                key={selected.productid}
+                productid={selected.productid}
+                value={title}
+                onChange={setTitle}
+              />
 
               <div className="stack-sm mt-2">
                 <button

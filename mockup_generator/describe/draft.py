@@ -16,6 +16,7 @@ import anthropic
 from PIL import Image
 
 from mockup_generator.config import settings
+from mockup_generator.describe.title_detail import MAX_TITLE_DETAIL_CHARS, normalize
 from mockup_generator.prompts.describe_prompt import (
     ProductFacts, build_prompt, load_examples, load_schema,
 )
@@ -50,10 +51,35 @@ class Draft:
     uncertain: list[str]
     conflicts: list[str]
     tags: list[ProposedTag] = field(default_factory=list)
+    title_detail: str = ""
+    title_detail_note: str = ""
+    colour_mismatch: str = ""
+    input_tokens: int = field(default=0, compare=False)
+    output_tokens: int = field(default=0, compare=False)
 
 
 class DraftFailed(RuntimeError):
-    """The model returned no usable draft."""
+    """The model returned no usable draft. Tokens are set when the call was billed."""
+
+    def __init__(self, message: str, *, input_tokens: int = 0, output_tokens: int = 0):
+        super().__init__(message)
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+
+
+# USD per million tokens (input, output), first-party rates as of 2026-10-06.
+_USD_PER_MTOK = {
+    "claude-opus-5-5": (4.0, 20.0),
+    "claude-sonnet-5-5": (2.0, 10.0),
+    "claude-haiku-5-5": (0.10, 0.50),
+}
+# An unlisted model counts at the top price, so the spend cap errs toward stopping.
+_UNLISTED_USD_PER_MTOK = (10.0, 50.0)
+
+
+def draft_cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
+    per_in, per_out = _USD_PER_MTOK.get(model, _UNLISTED_USD_PER_MTOK)
+    return (input_tokens * per_in + output_tokens * per_out) / 1_000_000
 
 
 def prepare_image(raw: bytes) -> str:
@@ -96,6 +122,16 @@ def _proposed_tags(data: dict, family: str | None, productid: str) -> list[Propo
     for k in SINGLE:
         add(k, data.get(k) or "")
     return [ProposedTag(g, v, c) for (g, v), c in found.items()]
+
+
+def _title_detail(data: dict, productid: str) -> tuple[str, str]:
+    """The draft's title detail and a note for the reviewer. Too long is not worth
+    failing the draft over: the description is still good and a reviewer can write it."""
+    text = normalize(data.get("title_detail"))
+    if len(text) <= MAX_TITLE_DETAIL_CHARS:
+        return text, ""
+    log.info("description draft for %s: title detail is %d chars", productid, len(text))
+    return "", f'AI title detail was over {MAX_TITLE_DETAIL_CHARS} characters, left out: "{text}"'
 
 
 def _system() -> str:
@@ -144,21 +180,25 @@ def draft_description(facts: ProductFacts, originals: list[bytes], mockup: bytes
     except anthropic.APIError as exc:  # the SDK has already retried 429/5xx
         log.warning("description draft for %s: Claude API error: %s", facts.productid, exc)
         raise DraftFailed(f"Claude API error: {exc}") from exc
+    billed = {"input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens}
     if resp.stop_reason != "end_turn":
         log.warning("description draft for %s stopped with %s (request %s)",
                     facts.productid, resp.stop_reason, getattr(resp, "_request_id", None))
-        raise DraftFailed(f"model stopped with {resp.stop_reason}")
+        raise DraftFailed(f"model stopped with {resp.stop_reason}", **billed)
     text = next((b.text for b in resp.content if b.type == "text"), "")
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise DraftFailed("model returned invalid JSON") from exc
+        raise DraftFailed("model returned invalid JSON", **billed) from exc
     description = (data.get("description") or "").strip()
     if not description:
         # Approving an empty draft would wipe the current description.
-        raise DraftFailed("model returned an empty description")
+        raise DraftFailed("model returned an empty description", **billed)
     if len(description) > MAX_DESCRIPTION_CHARS:
-        raise DraftFailed(f"draft is {len(description)} chars, over {MAX_DESCRIPTION_CHARS}")
+        raise DraftFailed(f"draft is {len(description)} chars, over {MAX_DESCRIPTION_CHARS}", **billed)
+    title_detail, title_note = _title_detail(data, facts.productid)
     return Draft(description=description, includes=(data.get("includes") or "").strip(),
                  uncertain=list(data.get("uncertain") or []), conflicts=list(data.get("conflicts") or []),
-                 tags=_proposed_tags(data, family_of(facts.categoryid), facts.productid))
+                 tags=_proposed_tags(data, family_of(facts.categoryid), facts.productid),
+                 title_detail=title_detail, title_detail_note=title_note,
+                 colour_mismatch=(data.get("colour_mismatch") or "").strip(), **billed)

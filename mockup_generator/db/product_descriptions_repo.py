@@ -12,9 +12,10 @@ from datetime import datetime, timezone
 
 from supabase import Client
 
-from mockup_generator.prompts.describe_prompt import ProductFacts
+from mockup_generator.prompts.describe_prompt import ProductFacts, looks_ai_written
 
 AI_REVIEWED = "ai_reviewed"
+_HUMAN_SOURCES = ("manual", AI_REVIEWED)
 
 
 @dataclass
@@ -22,6 +23,18 @@ class CurrentDescription:
     description: str | None
     source: str | None
     reviewed_at: str | None
+
+    @property
+    def is_human(self) -> bool:
+        """A person wrote or approved this text, so an AI draft must not replace it
+        unless the reviewer chooses to. Most rows predate ``description_source``, so
+        an unmarked row is judged the way the prompt judges it."""
+        text = self.description or ""
+        if not text.strip():
+            return False
+        if self.source:
+            return self.source in _HUMAN_SOURCES
+        return not looks_ai_written(text)
 
 
 def get_current(client: Client, productid: str) -> CurrentDescription | None:

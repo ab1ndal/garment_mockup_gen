@@ -125,6 +125,24 @@ class Settings:
         return _get("DESCRIPTION_MODEL", default="claude-opus-5-5")  # type: ignore[return-value]
 
     @property
+    def draft_concurrency(self) -> int:
+        """How many AI drafts run at once. Low on purpose: each holds its images in
+        memory on a small box, and reviewers open cards one at a time."""
+        try:
+            return max(1, int(_get("DRAFT_CONCURRENCY", default="2")))  # type: ignore[arg-type]
+        except ValueError:
+            return 2
+
+    @property
+    def draft_daily_usd_cap(self) -> float:
+        """Stop starting AI drafts once the last 24 hours cost this much. A bad value
+        falls back to the default rather than to no limit."""
+        try:
+            return float(_get("DRAFT_DAILY_USD_CAP", default="10"))  # type: ignore[arg-type]
+        except ValueError:
+            return 10.0
+
+    @property
     def veo_model(self) -> str:
         """VEO video-generation model. Override for fast/lite variants."""
         return _get("VEO_MODEL", default="veo-3.1-generate-001")  # type: ignore[return-value]

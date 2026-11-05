@@ -11,20 +11,12 @@ from backend.main import app
 from backend.routers import backfill as bf
 from mockup_generator.db.product_descriptions_repo import CurrentDescription
 from mockup_generator.db.profiles_repo import Profile
-from mockup_generator.describe.draft import Draft, DraftFailed, ProposedTag
-from mockup_generator.prompts.describe_prompt import ProductFacts
-
-_FACTS = ProductFacts("BC25001", "Georgette Saree", "SA", "Saree", "Georgette", [], [], "old")
 
 
 def _png() -> bytes:
     buf = BytesIO()
     Image.new("RGB", (4, 4), (5, 5, 5)).save(buf, format="PNG")
     return buf.getvalue()
-
-
-def _img(i):
-    return {"id": i, "name": f"{i}.jpg", "mime_type": "image/jpeg", "thumbnail_url": "t"}
 
 
 @pytest.fixture
@@ -35,26 +27,6 @@ def client():
     app.dependency_overrides[get_db] = lambda: object()
     yield TestClient(app, raise_server_exceptions=False)
     app.dependency_overrides.clear()
-
-
-@pytest.fixture
-def drafting(monkeypatch):
-    """Product with a Drive folder holding loose a,b and group images r1,r2."""
-    calls = {"downloads": []}
-    monkeypatch.setattr(bf.descriptions_repo, "get_facts", lambda db, pid: _FACTS)
-    monkeypatch.setattr(bf.products_repo, "get_product", lambda db, pid: type("P", (), {
-        "producturl": "https://drive.google.com/drive/folders/ROOT"})())
-    monkeypatch.setattr(bf.drive_client, "list_folder_image_groups", lambda fid: {
-        "loose": [_img("a"), _img("b")],
-        "groups": [{"id": "G", "name": "Red", "images": [_img("r1"), _img("r2")]}]})
-    monkeypatch.setattr(bf.drive_client, "download_file",
-                        lambda fid: calls["downloads"].append(fid) or f"bytes:{fid}".encode())
-
-    def fake_draft(facts, originals, mockup, owner_note=None):
-        calls.update(originals=originals, mockup=mockup, note=owner_note)
-        return Draft("New text", "saree", ["length"], [], calls.get("tags", []))
-    monkeypatch.setattr(bf, "draft_description", fake_draft)
-    return calls
 
 
 @pytest.fixture
@@ -72,6 +44,8 @@ def approving(monkeypatch):
         calls["saved"] = (pid, text, expected_description, expected_reviewed_at)
         return calls.get("save_result", True)
     monkeypatch.setattr(bf.descriptions_repo, "save_reviewed", save)
+    monkeypatch.setattr(bf.descriptions_repo, "get_current",
+                        lambda db, pid: CurrentDescription(None, None, None))
     return calls
 
 
@@ -86,67 +60,12 @@ def test_get_description(client, monkeypatch):
     r = client.get("/api/backfill/description/BC25001")
     assert r.status_code == 200
     assert r.json() == {"description": "d", "description_source": "manual",
-                        "description_reviewed_at": None}
+                        "description_reviewed_at": None, "replaceable": False}
 
 
 def test_get_description_404(client, monkeypatch):
     monkeypatch.setattr(bf.descriptions_repo, "get_current", lambda db, pid: None)
     assert client.get("/api/backfill/description/BC9").status_code == 404
-
-
-def test_draft_uses_first_three_originals_and_mockup(client, drafting):
-    r = client.post("/api/backfill/f1/description/draft", json={"productid": "BC25001"})
-    assert r.status_code == 200
-    assert r.json() == {"description": "New text", "includes": "saree",
-                        "uncertain": ["length"], "conflicts": [], "tags": []}
-    assert drafting["originals"] == [b"bytes:a", b"bytes:b", b"bytes:r1"]
-    assert drafting["mockup"] == b"bytes:f1"
-
-
-def test_draft_mockup_only(client, drafting):
-    r = client.post("/api/backfill/f1/description/draft",
-                    json={"productid": "BC25001", "use_originals": False})
-    assert r.status_code == 200
-    assert drafting["originals"] == [] and drafting["mockup"] == b"bytes:f1"
-
-
-def test_draft_no_images_400(client, drafting, monkeypatch):
-    monkeypatch.setattr(bf.drive_client, "list_folder_image_groups", lambda fid: {"loose": [], "groups": []})
-    r = client.post("/api/backfill/f1/description/draft",
-                    json={"productid": "BC25001", "use_mockup": False})
-    assert r.status_code == 400
-
-
-def test_draft_both_toggles_off_400(client, drafting):
-    r = client.post("/api/backfill/f1/description/draft",
-                    json={"productid": "BC25001", "use_originals": False, "use_mockup": False})
-    assert r.status_code == 400
-
-
-def test_draft_unknown_product_404(client, drafting, monkeypatch):
-    monkeypatch.setattr(bf.descriptions_repo, "get_facts", lambda db, pid: None)
-    assert client.post("/api/backfill/f1/description/draft",
-                       json={"productid": "BC9"}).status_code == 404
-
-
-def test_draft_failed_502(client, drafting, monkeypatch):
-    def boom(*a, **k):
-        raise DraftFailed("model stopped with refusal")
-    monkeypatch.setattr(bf, "draft_description", boom)
-    r = client.post("/api/backfill/f1/description/draft", json={"productid": "BC25001"})
-    assert r.status_code == 502 and "Could not draft a description" in r.json()["detail"]
-
-
-def test_draft_note_passed_through(client, drafting):
-    client.post("/api/backfill/f1/description/draft",
-                json={"productid": "BC25001", "note": "has mirror work"})
-    assert drafting["note"] == "has mirror work"
-
-
-def test_draft_note_over_500_chars_422(client, drafting):
-    r = client.post("/api/backfill/f1/description/draft",
-                    json={"productid": "BC25001", "note": "x" * 501})
-    assert r.status_code == 422
 
 
 def test_approve_without_description_does_not_touch_it(client, approving):
@@ -201,11 +120,5 @@ def test_approve_description_cap_counts_trimmed_text(client, approving):
 
 
 def test_description_routes_are_sync():
-    for fn in (bf.get_description, bf.draft_description_route, bf.approve):
+    for fn in (bf.get_description, bf.approve):
         assert not inspect.iscoroutinefunction(fn)
-
-
-def test_draft_returns_proposed_tags(client, drafting):
-    drafting["tags"] = [ProposedTag("work", "zari", 0.9)]
-    r = client.post("/api/backfill/f1/description/draft", json={"productid": "BC25001"})
-    assert r.json()["tags"] == [{"group": "work", "value": "zari", "confidence": 0.9}]

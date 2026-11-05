@@ -4,9 +4,11 @@ import {
   enqueueBatch, listBatchItems, getBatchCounts, getBatchSources, getBatchCategorySummary,
   acceptBatch, editBatch, rejectBatch, retryBatch,
   type BatchItem, type BatchTabId, type BatchSources, type Category, type GenOptions,
-  type BatchCategorySummary,
+  type BatchCategorySummary, type ReviewedCopyFields,
 } from "../api";
+import DescriptionSection from "./DescriptionSection";
 import { useImageLightbox } from "./Lightbox";
+import { useReviewCopy } from "./useReviewCopy";
 
 const PAGE = 20;
 const POLL_MS = 5000;
@@ -433,7 +435,11 @@ export default function BatchTab() {
                         onEnlarge={() => it.generated_thumb_url
                           && lightbox.show(it.generated_thumb_url, it.productid)}>
                     <button className="btn-primary" onClick={() => setReview(it)}>Review</button>
-                    <button onClick={() => actInBackground(it, "published", () => acceptBatch(it.id))}>
+                    {/* Accept approves what the card shows. With nothing to show it opens Review. */}
+                    <button onClick={() => (it.copy_preview?.can_accept
+                      ? actInBackground(it, "published", () => acceptBatch(it.id, it.copy_preview?.draft_id != null
+                        ? { approve_draft_id: it.copy_preview.draft_id } : {}))
+                      : setReview(it))}>
                       Accept
                     </button>
                     <button className="btn-danger"
@@ -483,9 +489,10 @@ export default function BatchTab() {
       {review && (
         <ReviewModal
           item={review}
-          onClose={() => setReview(null)}
-          onAccept={(c) => actInBackground(review, "published",
-            () => acceptBatch(review.id, { color: c }))}
+          // A draft may have finished while it was open, so the card has new text to show.
+          onClose={() => { setReview(null); load(tabRef.current, offsetRef.current, true); }}
+          onAccept={(c, copy) => actInBackground(review, "published",
+            () => acceptBatch(review.id, { color: c, ...copy }))}
           onEdit={(note, ids) => actInBackground(review, "sent back for editing",
             () => editBatch(review.id, { prompt_note: note, image_ids: ids }))}
           onReject={() => actInBackground(review, "rejected", () => rejectBatch(review.id))}
@@ -612,7 +619,30 @@ function Card({ item, onEnlarge, children }: {
         {item.color && <span className="pill">{item.color}</span>}
       </div>
       {item.error && <p className="alert alert-error" role="note" style={{ fontSize: "var(--fs-xs)" }}>{item.error}</p>}
+      {item.status === "ready" && <CardCopyPreview item={item} />}
       <div className="toolbar bf-card-actions">{children}</div>
+    </div>
+  );
+}
+
+/** The text one click on Accept would approve, so that click means approving this. */
+function CardCopyPreview({ item }: { item: BatchItem }) {
+  const copy = item.copy_preview;
+  if (!copy?.can_accept) {
+    return <p className="muted" style={{ fontSize: "var(--fs-xs)" }}>No title yet. Accept opens Review.</p>;
+  }
+  return (
+    <div className="stack-sm" style={{ fontSize: "var(--fs-xs)" }}>
+      <strong>{copy.title}</strong>
+      {copy.description && (
+        <p title={copy.description} style={{
+          display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
+        }}>{copy.description}</p>
+      )}
+      {copy.duplicate && <p className="alert alert-info" role="note">Another product has this title.</p>}
+      {copy.colour_mismatch && (
+        <p className="alert alert-info" role="note">Check the recorded colour: {copy.colour_mismatch}</p>
+      )}
     </div>
   );
 }
@@ -657,7 +687,7 @@ function Modal({ title, onClose, children }: {
 
 function ReviewModal(props: {
   item: BatchItem; onClose: () => void;
-  onAccept: (color: string | null) => void;
+  onAccept: (color: string | null, copy: ReviewedCopyFields) => void;
   onEdit: (note: string, imageIds: string[]) => void;
   onReject: () => void;
 }) {
@@ -666,6 +696,7 @@ function ReviewModal(props: {
   const [note, setNote] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [color, setColor] = useState<string | null>(item.color);
+  const copy = useReviewCopy(item.productid);
   const [msg, setMsg] = useState<string | null>(null);
   const lightbox = useImageLightbox();
 
@@ -738,6 +769,12 @@ function ReviewModal(props: {
           </div>
         )}
 
+        <DescriptionSection
+          productid={item.productid}
+          source={{ kind: "batch", productid: item.productid, itemId: item.id }}
+          {...copy.section}
+        />
+
         <div className="field">
           <label htmlFor="batch-note">Revision note</label>
           <textarea id="batch-note" value={note} onChange={(e) => setNote(e.target.value)} rows={2}
@@ -755,7 +792,7 @@ function ReviewModal(props: {
           <button disabled={!note.trim()} onClick={() => onEdit(note, Array.from(picked))}>
             Edit &amp; regenerate
           </button>
-          <button className="btn-primary" onClick={() => onAccept(color)}>
+          <button className="btn-primary" onClick={() => onAccept(color, copy.fields())}>
             Accept &amp; publish
           </button>
         </div>

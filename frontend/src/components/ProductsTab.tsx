@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import {
   getCategories, listProducts, listPrompts, listProductImages, getProductColors,
   generateImage, startVideo, getVideoResult, approveMockup, approveExistingMockup, getGenerationOptions,
+  titleFields,
   type Category, type Product, type Prompt, type ProductImage, type ProductImages,
-  type GenOptions,
+  type GenOptions, type TitleEdit,
 } from "../api";
 import RefineButton from "./RefineButton";
+import { AutoTitleDetailField } from "./TitleDetailField";
 import { useImageLightbox } from "./Lightbox";
 import { ArrowUpRightIcon, CheckIcon, ExpandIcon, UploadIcon } from "./icons";
 
@@ -223,6 +225,7 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
   const active = variations[activeIdx] ?? null;
   const lightbox = useImageLightbox();
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
+  const [title, setTitle] = useState<TitleEdit | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [colors, setColors] = useState<string[]>([]);
   const [color, setColor] = useState("");
@@ -409,6 +412,11 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
       .finally(() => setBusy(null));
   };
 
+  // The product stays open after a publish, and the saved text is now what the database holds.
+  const titleAfterPublish = (warning?: string | null) => {
+    if (!warning) setTitle((t) => t && { ...t, expected: t.detail, edited: false });
+  };
+
   const publish = (blob: Blob, src: "generated" | "corrected") => {
     setPublishing(true);
     setMsg(null);
@@ -419,9 +427,20 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
     if (promptLabel) fd.append("theme_name", promptLabel);
     if (aspect) fd.append("aspect_ratio", aspect);
     fd.append("source", src);
+    const tf = titleFields(title, product.productid);
+    if (tf.title_detail !== undefined) {
+      fd.append("title_detail", tf.title_detail);
+      if (tf.expected_title_detail != null) fd.append("expected_title_detail", tf.expected_title_detail);
+      fd.append("title_detail_edited", String(tf.title_detail_edited));
+    }
     fd.append("image", blob, "mockup.png");
     approveMockup(fd)
-      .then((r) => { setPublishedUrl(r.image_url); setMsg({ kind: "info", text: r.detail }); onPublished?.(product.productid); })
+      .then((r) => {
+        setPublishedUrl(r.image_url);
+        setMsg({ kind: "info", text: r.title_warning ? `${r.detail} ${r.title_warning}` : r.detail });
+        titleAfterPublish(r.title_warning);
+        onPublished?.(product.productid);
+      })
       .catch((e: Error) => setMsg({ kind: "error", text: e.message.replace(/^\d+:\s*/, "") }))
       .finally(() => setPublishing(false));
   };
@@ -433,10 +452,12 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
     approveExistingMockup({
       productid: product.productid, file_id: useAsMockup.id,
       color: useColor || undefined, remove_watermark: useWm,
+      ...titleFields(title, product.productid),
     })
       .then((r) => {
         setPublishedUrl(r.image_url);
-        setUseMsg({ kind: "info", text: r.detail });
+        setUseMsg({ kind: "info", text: r.title_warning ? `${r.detail} ${r.title_warning}` : r.detail });
+        titleAfterPublish(r.title_warning);
         setUseAsMockup(null);
         onPublished?.(product.productid);
       })
@@ -579,6 +600,9 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
             <p className="mt-2 text-sm text-muted">
               Publishes this Drive image directly — no AI generation.
             </p>
+            <div className="mt-3">
+              <AutoTitleDetailField productid={product.productid} value={title} onChange={setTitle} />
+            </div>
             {useMsg && (
               <p className={`alert ${useMsg.kind === "error" ? "alert-error" : "alert-info"}`} role="alert">
                 {useMsg.text}
@@ -795,6 +819,9 @@ function GenerationStage({ product, onPublished }: { product: Product; onPublish
 
           {/* Publish — the single primary action */}
           <div className="mt-5 border-t border-line pt-4">
+            <div className="mb-3">
+              <AutoTitleDetailField productid={product.productid} value={title} onChange={setTitle} />
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <button className="btn-primary" onClick={approveGenerated} disabled={publishing || busy !== null}>
                 {publishing && <span className="spinner" aria-hidden />}
