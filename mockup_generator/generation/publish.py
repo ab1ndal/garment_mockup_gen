@@ -53,9 +53,24 @@ _VARIANT_QUALITY = 80
 _VARIANT_CACHE_CONTROL = "31536000"
 
 
-def _webp_bytes(img: Image.Image, quality: int) -> bytes:
+# Google requires AI-generated images to carry this IPTC value, and Pillow keeps no
+# metadata through a re-encode, so every WEBP copy gets it written explicitly.
+# https://support.google.com/merchants/answer/14743464
+AI_IMAGE_XMP = (
+    '<?xpacket begin="\ufeff" id="W5M0MpCehiHzreSzNTczkc9d"?>'
+    '<x:xmpmeta xmlns:x="adobe:ns:meta/">'
+    '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+    '<rdf:Description rdf:about="" '
+    'xmlns:Iptc4xmpExt="http://iptc.org/std/Iptc4xmpExt/2008-02-29/" '
+    'Iptc4xmpExt:DigitalSourceType='
+    '"http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"/>'
+    '</rdf:RDF></x:xmpmeta><?xpacket end="r"?>'
+).encode("utf-8")
+
+
+def _webp_bytes(img: Image.Image, quality: int, xmp: bytes = b"") -> bytes:
     buf = BytesIO()
-    img.save(buf, format="WEBP", quality=quality)
+    img.save(buf, format="WEBP", quality=quality, xmp=xmp)
     return buf.getvalue()
 
 
@@ -67,7 +82,7 @@ def _encode_webp(png: bytes) -> bytes:
         return _webp_bytes(img, _WEBP_QUALITY)
 
 
-def _encode_web_images(png: bytes, key: str) -> list[tuple[str, bytes, str | None]]:
+def _encode_web_images(png: bytes, key: str, xmp: bytes = b"") -> list[tuple[str, bytes, str | None]]:
     """Encode the display WEBP and its size variants as ``(key, bytes,
     cache_control)``, display first.
 
@@ -78,7 +93,7 @@ def _encode_web_images(png: bytes, key: str) -> list[tuple[str, bytes, str | Non
     """
     with _ENCODE_SLOTS, Image.open(BytesIO(png)) as img:
         img.thumbnail((_WEBP_MAX_SIDE, _WEBP_MAX_SIDE))
-        encoded = [(key, _webp_bytes(img, _WEBP_QUALITY), None)]
+        encoded = [(key, _webp_bytes(img, _WEBP_QUALITY, xmp), None)]
         # Palette images would resize with NEAREST (Pillow forces it for "P").
         src = img.convert("RGBA") if img.mode in ("P", "1") else img
         for width in _VARIANT_WIDTHS:
@@ -88,16 +103,20 @@ def _encode_web_images(png: bytes, key: str) -> list[tuple[str, bytes, str | Non
                 variant = src.resize((width, height), Image.LANCZOS)
             else:
                 variant = src
-            encoded.append((f"{key}_{width}", _webp_bytes(variant, _VARIANT_QUALITY),
+            encoded.append((f"{key}_{width}", _webp_bytes(variant, _VARIANT_QUALITY, xmp),
                             _VARIANT_CACHE_CONTROL))
             del variant
     return encoded
 
 
 def upload_web_images(productid: str, png: bytes, key: str,
-                      timings: dict[str, int] | None = None) -> str:
+                      timings: dict[str, int] | None = None,
+                      *, ai_generated: bool = False) -> str:
     """Upload the display WEBP ``{key}.webp`` plus its fixed-width variants and
     return the display WEBP's public URL.
+
+    ``ai_generated`` marks every copy as AI-made. The Drive product shot import
+    publishes real photos, so it leaves this off.
 
     Call before inserting the ``productimages`` row so a live row always has its
     variants. Uploads run in parallel, outside the encode slot; every one settles
@@ -114,7 +133,7 @@ def upload_web_images(productid: str, png: bytes, key: str,
                                                 cache_control=cache)
 
     with timed(t, "encode_webp"):
-        encoded = _encode_web_images(png, key)
+        encoded = _encode_web_images(png, key, AI_IMAGE_XMP if ai_generated else b"")
     with timed(t, "upload_webp_all"), ThreadPoolExecutor(max_workers=len(encoded)) as pool:
         futures = [pool.submit(upload, k, data, cache) for k, data, cache in encoded]
     _path, public_url = futures[0].result()
@@ -189,7 +208,7 @@ def _publish_image(
     # wait_png > 0 means the archival PNG upload outlasted all the WEBP work.
     with ThreadPoolExecutor(max_workers=1) as pool:
         archival = pool.submit(upload_archival)
-        public_url = upload_web_images(productid, png, key, timings)
+        public_url = upload_web_images(productid, png, key, timings, ai_generated=True)
         with timed(timings, "wait_png"):
             archival.result()
 
