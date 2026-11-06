@@ -203,8 +203,8 @@ def _set_job(job_id: str, **changes) -> None:
 # Vertex VEO safety support codes → plain-language reason (Responsible AI guide,
 # docs.cloud.google.com/vertex-ai/generative-ai/docs/video/responsible-ai-and-usage-guidelines).
 _VEO_BLOCK_REASONS = {
-    "29310472": "Celebrity filter: the face looks like a well-known person. Try a different photo.",
-    "15236754": "Celebrity filter: the face looks like a well-known person. Try a different photo.",
+    "29310472": "Celebrity filter: a face looks like a well-known person. Generate again, or try a different photo.",
+    "15236754": "Celebrity filter: a face looks like a well-known person. Generate again, or try a different photo.",
     "58061214": "Child filter: the image seems to show a child.",
     "17301594": "Child filter: the image seems to show a child.",
     "90789179": "Sexual-content filter.",
