@@ -4,6 +4,7 @@ import {
   type GenOptions, type VideoCaps, type VideoJob,
 } from "../api";
 import RefineButton from "./RefineButton";
+import DictateButton from "./DictateButton";
 import DropZone from "./DropZone";
 import { DownloadIcon, TrashIcon } from "./icons";
 
@@ -317,12 +318,18 @@ export default function QuickVideoTab() {
         <div className="field">
           <div className="flex items-center justify-between gap-3">
             <label htmlFor="qv-prompt" className="text-xs font-semibold text-subtle">Prompt</label>
-            <RefineButton
-              kind="video"
-              instruction={prompt}
-              onRefined={setPrompt}
-              onError={(m) => setMsg({ kind: "error", text: m })}
-            />
+            <div className="flex items-center gap-2">
+              <DictateButton
+                onText={(t) => setPrompt((p) => (p.trim() ? `${p.trimEnd()} ${t}` : t))}
+                onError={(m) => setMsg({ kind: "error", text: m })}
+              />
+              <RefineButton
+                kind="video"
+                instruction={prompt}
+                onRefined={setPrompt}
+                onError={(m) => setMsg({ kind: "error", text: m })}
+              />
+            </div>
           </div>
           <textarea id="qv-prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={5} />
         </div>
