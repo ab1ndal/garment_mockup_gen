@@ -227,6 +227,16 @@ def test_generation_options_lists_choices_and_defaults(client):
     assert body["video_defaults"]["resolution"] in body["video_resolutions"]
 
 
+def test_options_unknown_veo_model_env_falls_back_to_a_known_model(client, monkeypatch):
+    # A VEO_MODEL with no caps entry (e.g. the AI Studio "-preview" name, which
+    # Vertex does not serve) must not become the default: the Quick Video tab
+    # hides every option when video_caps has no entry for the default model.
+    monkeypatch.setenv("VEO_MODEL", "veo-3.1-generate-preview")
+    body = client.get("/api/generate/options").json()
+    assert body["video_defaults"]["model"] == "veo-3.1-generate-001"
+    assert body["video_models"] == list(body["video_caps"])
+
+
 _PUB_URL = "https://x.supabase.co/storage/v1/object/public/mockups/BC25001/blue_abcd1234.png"
 
 
@@ -549,6 +559,45 @@ def test_video_upload_image_mode_wires_start_frame(client, monkeypatch):
                     files=[_png_upload("start_frame")])
     assert r.status_code == 200
     assert calls["video"]["image_bytes"] is not None
+
+
+def test_video_upload_image_mode_threads_fit_audio_and_people(client, monkeypatch):
+    calls = {}
+    _wire_video_upload(monkeypatch, calls=calls)
+    r = client.post("/api/generate/video/upload",
+                    data={"mode": "image", "prompt": "slow pan", "resize_mode": "crop",
+                          "generate_audio": "false", "person_generation": "disallow"},
+                    files=[_png_upload("start_frame")])
+    assert r.status_code == 200
+    kw = calls["video"]["kw"]
+    assert kw["resize_mode"] == "crop"
+    assert kw["generate_audio"] is False
+    assert kw["person_generation"] == "disallow"
+
+
+def test_video_upload_rejects_unknown_resize_mode(client, monkeypatch):
+    _wire_video_upload(monkeypatch, calls={})
+    r = client.post("/api/generate/video/upload",
+                    data={"mode": "image", "prompt": "p", "resize_mode": "stretch"},
+                    files=[_png_upload("start_frame")])
+    assert r.status_code == 400
+
+
+def test_video_upload_rejects_resize_mode_outside_image_mode(client, monkeypatch):
+    # VEO applies resizeMode to image-to-video only.
+    _wire_video_upload(monkeypatch, calls={})
+    r = client.post("/api/generate/video/upload",
+                    data={"mode": "text", "prompt": "p", "resize_mode": "pad"})
+    assert r.status_code == 400
+
+
+def test_video_upload_rejects_allow_all_people(client, monkeypatch):
+    # allow_all needs a project allowlist on Vertex; only allow_adult/disallow are offered.
+    _wire_video_upload(monkeypatch, calls={})
+    r = client.post("/api/generate/video/upload",
+                    data={"mode": "image", "prompt": "p", "person_generation": "allow_all"},
+                    files=[_png_upload("start_frame")])
+    assert r.status_code == 400
 
 
 def test_video_upload_frames_mode_wires_last_frame(client, monkeypatch):

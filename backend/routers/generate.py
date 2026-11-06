@@ -105,7 +105,10 @@ _VIDEO_DEFAULTS = {"model": "veo-3.1-generate-001", "resolution": "720p",
 
 _VIDEO_MODES_FULL = ["text", "image", "frames", "reference", "extend"]
 _VIDEO_MODES_LITE = ["text", "image", "frames"]
-_VIDEO_PERSON_VALUES = ["allow_all", "allow_adult"]
+# allow_all needs a per-project allowlist on Vertex; without it VEO rejects the job.
+_VIDEO_PERSON_VALUES = ["allow_adult", "disallow"]
+# How VEO fits a start frame whose aspect differs from the output (image mode only).
+ALLOWED_VIDEO_RESIZE_MODES = ["pad", "crop"]
 
 VIDEO_CAPS = {
     "veo-3.1-generate-001": {
@@ -220,7 +223,7 @@ def _run_video_job(job_id, image_bytes, prompt, model, aspect_ratio, resolution,
 
 def _run_video_upload_job(
     job_id, prompt, model, aspect_ratio, resolution, duration,
-    negative_prompt, person_generation, generate_audio,
+    negative_prompt, person_generation, generate_audio, resize_mode,
     start_bytes, last_bytes, ref_bytes, ext_bytes,
 ) -> None:
     _set_job(job_id, status="running")
@@ -229,7 +232,7 @@ def _run_video_upload_job(
             start_bytes, prompt, model=model, aspect_ratio=aspect_ratio,
             resolution=resolution, duration=duration, negative_prompt=negative_prompt,
             person_generation=person_generation, generate_audio=generate_audio,
-            last_frame_bytes=last_bytes, reference_image_bytes=ref_bytes,
+            resize_mode=resize_mode, last_frame_bytes=last_bytes, reference_image_bytes=ref_bytes,
             extend_video_bytes=ext_bytes,
         )
         _set_job(job_id, status="done", data=mp4)
@@ -248,9 +251,11 @@ def generation_options(user: CurrentUser = Depends(get_current_user)):
     # ensure the env-configured default is offered even if not in the static list
     if settings.gemini_image_model not in models:
         models.insert(0, settings.gemini_image_model)
-    video_models = ALLOWED_VEO_MODELS.copy()
-    if settings.veo_model not in video_models:
-        video_models.insert(0, settings.veo_model)
+    # Unlike image models, an unlisted VEO_MODEL is not offered: /video rejects
+    # models outside ALLOWED_VEO_MODELS, and the client hides every video option
+    # when the default has no VIDEO_CAPS entry.
+    video_default_model = (settings.veo_model if settings.veo_model in VIDEO_CAPS
+                           else _DEFAULT_VIDEO_CAPS_MODEL)
     return {
         "models": models,
         "resolutions": ALLOWED_RESOLUTIONS,
@@ -258,12 +263,13 @@ def generation_options(user: CurrentUser = Depends(get_current_user)):
         "defaults": {**_DEFAULTS, "model": settings.gemini_image_model},
         "image_caps": IMAGE_CAPS,
         "image_compression": COMPRESSION_BOUNDS,
-        "video_models": video_models,
+        "video_models": ALLOWED_VEO_MODELS,
         "video_resolutions": ALLOWED_VIDEO_RESOLUTIONS,
         "video_aspect_ratios": ALLOWED_VIDEO_ASPECTS,
         "video_durations": ALLOWED_VIDEO_DURATIONS,
-        "video_defaults": {**_VIDEO_DEFAULTS, "model": settings.veo_model},
+        "video_defaults": {**_VIDEO_DEFAULTS, "model": video_default_model},
         "video_caps": VIDEO_CAPS,
+        "video_resize_modes": ALLOWED_VIDEO_RESIZE_MODES,
     }
 
 
@@ -561,6 +567,7 @@ async def generate_video_upload(
     negative_prompt: str | None = Form(None),
     person_generation: str | None = Form(None),
     generate_audio: bool | None = Form(None),
+    resize_mode: str | None = Form(None),
     start_frame: UploadFile | None = File(None),
     last_frame: UploadFile | None = File(None),
     reference_images: list[UploadFile] = File(default=[]),
@@ -572,6 +579,14 @@ async def generate_video_upload(
     DB, no Storage. Extension re-uses the in-session clip the client re-submits."""
     _validate_video_params(model=model, mode=mode, aspect_ratio=aspect_ratio,
                            resolution=resolution, duration=duration)
+    if person_generation and person_generation not in _video_caps_for(model)["person_generation"]:
+        raise HTTPException(status_code=400,
+                            detail=f"Unsupported person_generation: {person_generation}")
+    if resize_mode is not None:
+        if resize_mode not in ALLOWED_VIDEO_RESIZE_MODES:
+            raise HTTPException(status_code=400, detail=f"Unsupported resize_mode: {resize_mode}")
+        if mode != "image":
+            raise HTTPException(status_code=400, detail="resize_mode applies to Image → Video only.")
 
     async def _read(f: UploadFile, *, cap: int) -> bytes:
         raw = await f.read()
@@ -598,7 +613,7 @@ async def generate_video_upload(
     with _video_jobs_lock:
         _video_jobs[job_id] = _VideoJob(status="pending", filename="quick_video.mp4")
     _spawn(_run_video_upload_job, job_id, prompt, model, aspect_ratio, resolution, duration,
-           negative_prompt, person_generation, generate_audio,
+           negative_prompt, person_generation, generate_audio, resize_mode,
            start_bytes, last_bytes, ref_bytes, ext_bytes)
     return VideoJobResponse(job_id=job_id, status="pending")
 

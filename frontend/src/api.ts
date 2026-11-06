@@ -374,6 +374,7 @@ export interface GenOptions {
   video_durations: number[];
   video_defaults: { model: string; resolution: string; aspect_ratio: string; duration: number };
   video_caps: Record<string, VideoCaps>;
+  video_resize_modes: string[];
 }
 
 // Static, near-constant; fetched once and shared.
@@ -485,6 +486,7 @@ export function startVideoUpload(
     negative_prompt?: string;
     person_generation?: string;
     generate_audio?: boolean;
+    resize_mode?: string;
   },
   files: {
     startFrame?: File;
@@ -503,6 +505,7 @@ export function startVideoUpload(
   if (fields.negative_prompt) fd.append("negative_prompt", fields.negative_prompt);
   if (fields.person_generation) fd.append("person_generation", fields.person_generation);
   if (fields.generate_audio != null) fd.append("generate_audio", String(fields.generate_audio));
+  if (fields.resize_mode) fd.append("resize_mode", fields.resize_mode);
   if (files.startFrame) fd.append("start_frame", files.startFrame);
   if (files.lastFrame) fd.append("last_frame", files.lastFrame);
   (files.referenceImages ?? []).forEach((f) => fd.append("reference_images", f));

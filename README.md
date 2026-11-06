@@ -87,7 +87,7 @@ Key variables the backend requires at runtime:
 | `SUPABASE_PUBLISHABLE_KEY` | No | Client-safe anon key |
 | `SUPABASE_SECRET_KEY` | No | Server-only — never expose to clients |
 | `GEMINI_IMAGE_MODEL` | No (default `gemini-3-pro-image`) | Override to target a preview model |
-| `VEO_MODEL` | No (default `veo-3.1-generate-preview`) | |
+| `VEO_MODEL` | No (default `veo-3.1-generate-001`) | Vertex `-001` IDs only; `-preview` names 404 on Vertex |
 | `VEO_POLL_TIMEOUT_SEC` | No (default `900`) | |
 | `VEO_POLL_INTERVAL_SEC` | No (default `10`) | |
 

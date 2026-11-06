@@ -172,6 +172,24 @@ def test_generate_video_bytes_wires_last_frame_and_reference(monkeypatch):
     assert captured["video"] is None
 
 
+def test_generate_video_bytes_threads_resize_mode(monkeypatch):
+    captured = {}
+    op = _FakeOperation(videos=[_FakeGenerated(_FakeVideo(b"V"))], flips_after=0)
+    _patch_client(monkeypatch, _FakeClient(op, captured=captured))
+
+    video_service.generate_video_bytes(b"start", "p", resize_mode="crop")
+    assert captured["config"].resize_mode == video_service.types.ImageResizeMode.CROP
+
+
+def test_generate_video_bytes_omits_resize_mode_by_default(monkeypatch):
+    captured = {}
+    op = _FakeOperation(videos=[_FakeGenerated(_FakeVideo(b"V"))], flips_after=0)
+    _patch_client(monkeypatch, _FakeClient(op, captured=captured))
+
+    video_service.generate_video_bytes(b"start", "p")
+    assert captured["config"].resize_mode is None
+
+
 def test_generate_video_bytes_extension_uses_video_not_image(monkeypatch):
     captured = {}
     op = _FakeOperation(videos=[_FakeGenerated(_FakeVideo(b"V"))], flips_after=0)

@@ -51,6 +51,9 @@ export default function QuickVideoTab() {
   const [resolution, setResolution] = useState("");
   const [duration, setDuration] = useState<number>(4);
   const [personGen, setPersonGen] = useState("");
+  const [resizeMode, setResizeMode] = useState("");
+  // "" = leave to the model's default; "on"/"off" send generate_audio explicitly.
+  const [audio, setAudio] = useState<"" | "on" | "off">("");
   const [negative, setNegative] = useState(DEFAULT_NEGATIVE);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
 
@@ -165,6 +168,8 @@ export default function QuickVideoTab() {
           aspect_ratio: aspect || undefined, resolution: resolution || undefined,
           duration, negative_prompt: negative || undefined,
           person_generation: personGen || undefined,
+          generate_audio: audio === "" ? undefined : audio === "on",
+          resize_mode: mode === "image" ? resizeMode || undefined : undefined,
         },
         {
           startFrame: mode === "image" || mode === "frames" ? startFrame ?? undefined : undefined,
@@ -367,6 +372,30 @@ export default function QuickVideoTab() {
               </select>
             </label>
           )}
+          {mode === "image" && opts.video_resize_modes.length > 0 && (
+            <label className="field mb-0!">
+              <span className="text-xs font-semibold text-subtle">Image fit</span>
+              <select aria-label="Image fit" value={resizeMode} onChange={(e) => setResizeMode(e.target.value)}>
+                <option value="">— model default —</option>
+                {opts.video_resize_modes.map((r) => (
+                  <option key={r} value={r}>{r === "pad" ? "Pad (keep whole image)" : "Crop (fill frame)"}</option>
+                ))}
+              </select>
+              <span className="mt-1 text-xs text-subtle">When the photo's shape differs from the aspect ratio.</span>
+            </label>
+          )}
+          <label className="field mb-0!">
+            <span className="text-xs font-semibold text-subtle">Audio</span>
+            <select
+              aria-label="Audio" value={audio}
+              onChange={(e) => setAudio(e.target.value as "" | "on" | "off")}
+            >
+              <option value="">— model default —</option>
+              <option value="on">On</option>
+              <option value="off">Off</option>
+            </select>
+            <span className="mt-1 text-xs text-subtle">Off costs less per second.</span>
+          </label>
           <label className="field mb-0! sm:col-span-3">
             <span className="text-xs font-semibold text-subtle">Negative prompt (optional)</span>
             <input

@@ -48,6 +48,7 @@ def generate_video_bytes(
     negative_prompt: str | None = None,
     person_generation: str | None = None,
     generate_audio: bool | None = None,
+    resize_mode: str | None = None,
     last_frame_bytes: bytes | None = None,
     reference_image_bytes: list[bytes] | None = None,
     extend_video_bytes: bytes | None = None,
@@ -77,6 +78,8 @@ def generate_video_bytes(
         cfg_kwargs["person_generation"] = person_generation
     if generate_audio is not None:
         cfg_kwargs["generate_audio"] = generate_audio
+    if resize_mode:
+        cfg_kwargs["resize_mode"] = resize_mode
     if last_frame_bytes:
         cfg_kwargs["last_frame"] = types.Image(image_bytes=last_frame_bytes, mime_type="image/png")
     if reference_image_bytes:
