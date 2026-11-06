@@ -33,6 +33,10 @@ class NoVideoReturned(RuntimeError):
     """Raised when VEO completes but returns no usable video."""
 
 
+class VideoRejected(RuntimeError):
+    """Raised when VEO refuses the job (e.g. a safety filter); carries Google's message."""
+
+
 class VideoTimeout(RuntimeError):
     """Raised when the VEO job does not finish within the poll timeout."""
 
@@ -109,13 +113,20 @@ def generate_video_bytes(
         time.sleep(interval)
         operation = client.operations.get(operation)
 
+    error = operation.error or {}
+    if error.get("message"):
+        raise VideoRejected(error["message"])
+
     result = getattr(operation, "response", None)
     videos = getattr(result, "generated_videos", None) if result else None
     if not videos:
         raise NoVideoReturned(f"VEO returned no video (op={operation.name}, error={operation.error})")
 
     generated = videos[0]
-    client.files.download(file=generated.video)
+    # Vertex returns the mp4 inline (no output_gcs_uri set) and its client refuses
+    # files.download; only the Gemini Developer API hands back a URI to fetch.
+    if not settings.use_vertex:
+        client.files.download(file=generated.video)
     data = getattr(generated.video, "video_bytes", None)
     if not data:
         raise NoVideoReturned("VEO video had no bytes after download")

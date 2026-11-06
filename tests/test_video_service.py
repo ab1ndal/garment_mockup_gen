@@ -65,14 +65,22 @@ class _FakeClient:
         op._flips_after -= 1
         return op
 
-    # files.download — no-op (bytes already inline on the fake video)
+    # files.download — the real Vertex client raises here (google-genai 2.9 and
+    # 2.33): "only supported in the Gemini Developer client". Vertex returns the
+    # mp4 inline in video_bytes, so the service must not call this.
     def download(self, *, file):
-        return None
+        raise ValueError("This method is only supported in the Gemini Developer client.")
 
 
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch):
     monkeypatch.setattr(video_service.time, "sleep", lambda *_a, **_k: None)
+
+
+@pytest.fixture(autouse=True)
+def _vertex_mode(monkeypatch):
+    # Production runs on Vertex; pin it so the result doesn't depend on a local .env.
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
 
 
 def _patch_client(monkeypatch, client, seen=None):
@@ -131,6 +139,17 @@ def test_generate_video_bytes_uses_configured_model(monkeypatch):
 
     video_service.generate_video_bytes(b"i", "p")
     assert captured["model"] == "veo-3.1-fast-generate-001"
+
+
+def test_generate_video_bytes_raises_blocked_with_google_message(monkeypatch):
+    # Shape of a real Vertex safety block (celebrity filter), seen 2026-11-05.
+    msg = ("Veo could not generate videos because the input image violates Vertex AI's "
+           "usage guidelines. If you think this was an error, send feedback. Support codes: 15236754")
+    op = _FakeOperation(videos=None, error={"code": 3, "message": msg}, flips_after=0)
+    _patch_client(monkeypatch, _FakeClient(op))
+    with pytest.raises(video_service.VideoRejected) as exc:
+        video_service.generate_video_bytes(b"i", "p")
+    assert str(exc.value) == msg
 
 
 def test_generate_video_bytes_raises_when_no_video(monkeypatch):

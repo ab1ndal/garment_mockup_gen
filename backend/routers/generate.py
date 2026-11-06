@@ -200,6 +200,23 @@ def _set_job(job_id: str, **changes) -> None:
                 setattr(job, k, v)
 
 
+# Vertex VEO safety support codes → plain-language reason (Responsible AI guide,
+# docs.cloud.google.com/vertex-ai/generative-ai/docs/video/responsible-ai-and-usage-guidelines).
+_VEO_BLOCK_REASONS = {
+    "29310472": "Celebrity filter: the face looks like a well-known person. Try a different photo.",
+    "15236754": "Celebrity filter: the face looks like a well-known person. Try a different photo.",
+    "58061214": "Child filter: the image seems to show a child.",
+    "17301594": "Child filter: the image seems to show a child.",
+    "90789179": "Sexual-content filter.",
+    "43188360": "Sexual-content filter.",
+}
+
+
+def _rejection_detail(message: str) -> str:
+    reason = next((r for code, r in _VEO_BLOCK_REASONS.items() if code in message), None)
+    return f"{reason} ({message})" if reason else f"VEO refused the request: {message}"
+
+
 def _spawn(fn, *args) -> None:
     """Run ``fn`` off the request thread. Overridden in tests to run inline."""
     threading.Thread(target=fn, args=args, daemon=True).start()
@@ -215,6 +232,8 @@ def _run_video_job(job_id, image_bytes, prompt, model, aspect_ratio, resolution,
         _set_job(job_id, status="done", data=mp4)
     except video_service.VideoTimeout:
         _set_job(job_id, status="error", detail="Video generation timed out. Try again.")
+    except video_service.VideoRejected as exc:
+        _set_job(job_id, status="error", detail=_rejection_detail(str(exc)))
     except video_service.NoVideoReturned:
         _set_job(job_id, status="error", detail="The model returned no video. Try again.")
     except Exception as exc:  # noqa: BLE001 - surface any failure to the poller
@@ -238,6 +257,8 @@ def _run_video_upload_job(
         _set_job(job_id, status="done", data=mp4)
     except video_service.VideoTimeout:
         _set_job(job_id, status="error", detail="Video generation timed out. Try again.")
+    except video_service.VideoRejected as exc:
+        _set_job(job_id, status="error", detail=_rejection_detail(str(exc)))
     except video_service.NoVideoReturned:
         _set_job(job_id, status="error", detail="The model returned no video. Try again.")
     except Exception as exc:  # noqa: BLE001 - surface any failure to the poller

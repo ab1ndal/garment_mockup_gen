@@ -575,6 +575,21 @@ def test_video_upload_image_mode_threads_fit_audio_and_people(client, monkeypatc
     assert kw["person_generation"] == "disallow"
 
 
+def test_video_upload_surfaces_rejection_reason(client, monkeypatch):
+    monkeypatch.setattr(gen, "_spawn", lambda fn, *a: fn(*a))
+
+    def rejected(*a, **kw):
+        raise gen.video_service.VideoRejected("input image violates usage guidelines. Support codes: 15236754")
+
+    monkeypatch.setattr(gen.video_service, "generate_video_bytes", rejected)
+    r = client.post("/api/generate/video/upload",
+                    data={"mode": "image", "prompt": "p"}, files=[_png_upload("start_frame")])
+    job = client.get(f"/api/generate/video/{r.json()['job_id']}").json()
+    assert job["status"] == "error"
+    assert "15236754" in job["detail"]
+    assert "Celebrity" in job["detail"]
+
+
 def test_video_upload_rejects_unknown_resize_mode(client, monkeypatch):
     _wire_video_upload(monkeypatch, calls={})
     r = client.post("/api/generate/video/upload",
