@@ -279,6 +279,16 @@ button:disabled {
 .btn-refine .sparkle {
   color: var(--gold-2);
 }
+/* Dictation live: red mic + "Stop" label, so state isn't carried by colour alone */
+.btn-refine.dictate-live {
+  background: var(--danger-soft);
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+.btn-refine.dictate-live:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
 
 /* Add-variant button: dashed affordance, secondary weight */
 .btn-add {

@@ -21,15 +21,17 @@ class _FakeGenerated:
 
 
 class _FakeResponse:
-    def __init__(self, videos):
+    def __init__(self, videos, filtered_reasons=None):
         self.generated_videos = videos
+        self.rai_media_filtered_reasons = filtered_reasons
 
 
 class _FakeOperation:
     """`done` flips True after `flips_after` polls; carries a response/error."""
 
-    def __init__(self, *, videos=None, error=None, flips_after=0):
+    def __init__(self, *, videos=None, error=None, flips_after=0, filtered_reasons=None):
         self._videos = videos
+        self._filtered = filtered_reasons
         self.error = error
         self._flips_after = flips_after
         self.name = "op/123"
@@ -40,7 +42,7 @@ class _FakeOperation:
 
     @property
     def response(self):
-        return _FakeResponse(self._videos) if self._videos is not None else None
+        return _FakeResponse(self._videos, self._filtered) if self._videos is not None else None
 
 
 class _FakeClient:
@@ -150,6 +152,18 @@ def test_generate_video_bytes_raises_blocked_with_google_message(monkeypatch):
     with pytest.raises(video_service.VideoRejected) as exc:
         video_service.generate_video_bytes(b"i", "p")
     assert str(exc.value) == msg
+
+
+def test_generate_video_bytes_raises_rejected_when_output_filtered(monkeypatch):
+    # Real shape, 2026-11-05: the render finished but the output was filtered;
+    # operation.error is None and the reason is only in rai_media_filtered_reasons.
+    reason = ("1 videos were filtered out because they violated Vertex AI's usage guidelines. "
+              "You will not be charged for blocked videos. Support codes: 15236754")
+    op = _FakeOperation(videos=[], filtered_reasons=[reason], flips_after=0)
+    _patch_client(monkeypatch, _FakeClient(op))
+    with pytest.raises(video_service.VideoRejected) as exc:
+        video_service.generate_video_bytes(b"i", "p")
+    assert str(exc.value) == reason
 
 
 def test_generate_video_bytes_raises_when_no_video(monkeypatch):

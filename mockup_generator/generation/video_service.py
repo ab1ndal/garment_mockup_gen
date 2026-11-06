@@ -119,6 +119,11 @@ def generate_video_bytes(
 
     result = getattr(operation, "response", None)
     videos = getattr(result, "generated_videos", None) if result else None
+    # A render blocked after generation has no operation.error; the reason (and
+    # support code) is only in rai_media_filtered_reasons. Google doesn't bill it.
+    filtered = getattr(result, "rai_media_filtered_reasons", None) if result else None
+    if not videos and filtered:
+        raise VideoRejected(" ".join(filtered))
     if not videos:
         raise NoVideoReturned(f"VEO returned no video (op={operation.name}, error={operation.error})")
 
